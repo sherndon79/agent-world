@@ -29,6 +29,11 @@ logs/
 # Node (if present)
 node_modules/
 
+# Isaac Sim
+isaac-sim-host*/
+*.zip
+scripts/launch_agent_world.sh
+
 # Misc
 *.bak
 *.backup
