@@ -36,9 +36,11 @@ Open the manager from Isaac Sim or directly via http://localhost:8891/waypoint_m
 
 ## API Endpoints
 
+Note: Modern structured endpoints are preferred (e.g., `/waypoints/create`). Backward-compatible flat endpoints may also exist.
+
 ### Waypoint Operations
 
-**POST** `/create_waypoint`
+**POST** `/waypoints/create`
 ```json
 {
   "position": [10, 5, 2],
@@ -48,10 +50,10 @@ Open the manager from Isaac Sim or directly via http://localhost:8891/waypoint_m
 }
 ```
 
-**GET** `/list_waypoints` - Get all waypoints
+**GET** `/waypoints/list` - Get all waypoints
 **GET** `/list_waypoints?waypoint_type=camera_position` - Filter by type
 
-**POST** `/update_waypoint`
+**POST** `/waypoints/update`
 ```json
 {
   "waypoint_id": "wp_12345",
@@ -61,7 +63,7 @@ Open the manager from Isaac Sim or directly via http://localhost:8891/waypoint_m
 }
 ```
 
-**POST** `/remove_waypoint`
+**POST** `/waypoints/remove`
 ```json
 {
   "waypoint_id": "wp_12345"
@@ -70,7 +72,7 @@ Open the manager from Isaac Sim or directly via http://localhost:8891/waypoint_m
 
 ### Group Management
 
-**POST** `/create_group`
+**POST** `/groups/create`
 ```json
 {
   "name": "camera_positions",
@@ -80,11 +82,11 @@ Open the manager from Isaac Sim or directly via http://localhost:8891/waypoint_m
 }
 ```
 
-**GET** `/list_groups` - Get all groups
-**GET** `/get_group/{group_id}` - Get specific group details
-**GET** `/get_group_hierarchy` - Get complete group structure
+**GET** `/groups/list` - Get all groups
+**GET** `/groups/get` - Get specific group details
+**GET** `/groups/hierarchy` - Get complete group structure
 
-**POST** `/add_waypoint_to_groups`
+**POST** `/groups/add_waypoint`
 ```json
 {
   "waypoint_id": "wp_12345", 
@@ -94,14 +96,14 @@ Open the manager from Isaac Sim or directly via http://localhost:8891/waypoint_m
 
 ### Visibility Control
 
-**POST** `/set_markers_visible`
+**POST** `/markers/visible`
 ```json
 {
   "visible": true
 }
 ```
 
-**POST** `/set_individual_marker_visible`
+**POST** `/markers/individual`
 ```json
 {
   "waypoint_id": "wp_12345",
@@ -109,7 +111,7 @@ Open the manager from Isaac Sim or directly via http://localhost:8891/waypoint_m
 }
 ```
 
-**POST** `/set_selective_markers_visible`
+**POST** `/markers/selective`
 ```json
 {
   "visible_waypoint_ids": ["wp_123", "wp_456", "wp_789"]
@@ -118,7 +120,7 @@ Open the manager from Isaac Sim or directly via http://localhost:8891/waypoint_m
 
 ### Navigation
 
-**POST** `/goto_waypoint`
+**POST** `/waypoints/goto`
 ```json
 {
   "waypoint_id": "wp_12345"
@@ -127,9 +129,9 @@ Open the manager from Isaac Sim or directly via http://localhost:8891/waypoint_m
 
 ### Data Management
 
-**GET** `/export_waypoints` - Export all waypoints and groups
-**POST** `/import_waypoints` - Import waypoint collections
-**POST** `/clear_all_waypoints` - Remove all waypoints (requires confirmation)
+**GET** `/waypoints/export` - Export all waypoints and groups
+**POST** `/waypoints/import` - Import waypoint collections
+**POST** `/waypoints/clear` - Remove all waypoints (requires confirmation)
 
 ## Configuration
 
@@ -186,7 +188,7 @@ WorldSurveyor supports multiple waypoint types for different use cases:
 import requests
 
 # Create a point of interest
-waypoint = requests.post('http://localhost:8891/create_waypoint', json={
+waypoint = requests.post('http://localhost:8891/waypoints/create', json={
     'position': [0, 0, 5],
     'waypoint_type': 'point_of_interest',
     'name': 'overview_point'
@@ -199,13 +201,13 @@ print(f"Created waypoint: {waypoint_id}")
 ### Organized Waypoint System
 ```python
 # Create groups for organization
-camera_group = requests.post('http://localhost:8891/create_group', json={
+camera_group = requests.post('http://localhost:8891/groups/create', json={
     'name': 'camera_positions',
     'description': 'Saved camera viewpoints',
     'color': '#FF6B35'
 })
 
-lighting_group = requests.post('http://localhost:8891/create_group', json={
+lighting_group = requests.post('http://localhost:8891/groups/create', json={
     'name': 'lighting_setup', 
     'description': 'Key lighting positions',
     'color': '#F7931E'
@@ -221,7 +223,7 @@ viewpoints = [
 camera_group_id = camera_group.json()['group_id']
 
 for viewpoint in viewpoints:
-    wp = requests.post('http://localhost:8891/create_waypoint', json={
+    wp = requests.post('http://localhost:8891/waypoints/create', json={
         'position': viewpoint['pos'],
         'waypoint_type': 'camera_position',
         'name': viewpoint['name'],
@@ -229,7 +231,7 @@ for viewpoint in viewpoints:
     })
     
     # Add to camera group
-    requests.post('http://localhost:8891/add_waypoint_to_groups', json={
+    requests.post('http://localhost:8891/groups/add_waypoint', json={
         'waypoint_id': wp.json()['waypoint_id'],
         'group_ids': [camera_group_id]
     })
@@ -238,7 +240,7 @@ for viewpoint in viewpoints:
 ### Navigation and Visualization
 ```python
 # Get all camera waypoints
-camera_waypoints = requests.get('http://localhost:8891/list_waypoints', 
+camera_waypoints = requests.get('http://localhost:8891/waypoints/list', 
                                params={'waypoint_type': 'camera_position'})
 
 # Navigate through each viewpoint
@@ -246,7 +248,7 @@ for wp in camera_waypoints.json()['waypoints']:
     print(f"Moving to {wp['name']}")
     
     # Navigate to waypoint (positions WorldViewer camera)
-    requests.post('http://localhost:8891/goto_waypoint', json={
+    requests.post('http://localhost:8891/waypoints/goto', json={
         'waypoint_id': wp['id']
     })
     
@@ -259,14 +261,14 @@ for wp in camera_waypoints.json()['waypoints']:
 ### Selective Visibility
 ```python
 # Hide all markers initially
-requests.post('http://localhost:8891/set_markers_visible', json={'visible': False})
+requests.post('http://localhost:8891/markers/visible', json={'visible': False})
 
 # Show only lighting waypoints
-lighting_waypoints = requests.get('http://localhost:8891/list_waypoints',
+lighting_waypoints = requests.get('http://localhost:8891/waypoints/list',
                                  params={'waypoint_type': 'lighting_position'})
 
 visible_ids = [wp['id'] for wp in lighting_waypoints.json()['waypoints']]
-requests.post('http://localhost:8891/set_selective_markers_visible', json={
+requests.post('http://localhost:8891/markers/selective', json={
     'visible_waypoint_ids': visible_ids
 })
 ```
@@ -274,7 +276,7 @@ requests.post('http://localhost:8891/set_selective_markers_visible', json={
 ### Data Management
 ```python
 # Export waypoints for backup
-export_data = requests.get('http://localhost:8891/export_waypoints')
+export_data = requests.get('http://localhost:8891/waypoints/export')
 
 # Save to file
 with open('scene_waypoints.json', 'w') as f:
@@ -284,7 +286,7 @@ with open('scene_waypoints.json', 'w') as f:
 with open('scene_waypoints.json', 'r') as f:
     import_data = json.load(f)
 
-requests.post('http://localhost:8891/import_waypoints', json={
+requests.post('http://localhost:8891/waypoints/import', json={
     'import_data': import_data,
     'merge_mode': 'append'  # or 'replace'
 })
@@ -306,7 +308,7 @@ WorldSurveyor provides comprehensive MCP tools:
 ### Waypoint Metadata
 ```python
 # Create waypoint with rich metadata
-waypoint = requests.post('http://localhost:8891/create_waypoint', json={
+waypoint = requests.post('http://localhost:8891/waypoints/create', json={
     'position': [5, 5, 2],
     'waypoint_type': 'point_of_interest',
     'name': 'analysis_point',
@@ -319,7 +321,7 @@ waypoint = requests.post('http://localhost:8891/create_waypoint', json={
 })
 
 # Update with additional notes
-requests.post('http://localhost:8891/update_waypoint', json={
+requests.post('http://localhost:8891/waypoints/update', json={
     'waypoint_id': waypoint.json()['waypoint_id'],
     'notes': 'Primary thermal analysis point for southern quadrant'
 })
@@ -328,7 +330,7 @@ requests.post('http://localhost:8891/update_waypoint', json={
 ### Group Hierarchies
 ```python
 # Create nested group structure
-main_group = requests.post('http://localhost:8891/create_group', json={
+main_group = requests.post('http://localhost:8891/groups/create', json={
     'name': 'site_survey',
     'description': 'Complete site survey waypoints'
 })
@@ -337,13 +339,13 @@ sub_groups = ['building_a', 'building_b', 'outdoor_areas']
 main_id = main_group.json()['group_id']
 
 for sub_name in sub_groups:
-    requests.post('http://localhost:8891/create_group', json={
+    requests.post('http://localhost:8891/groups/create', json={
         'name': sub_name,
         'parent_group_id': main_id
     })
 
 # Get complete hierarchy  
-hierarchy = requests.get('http://localhost:8891/get_group_hierarchy')
+hierarchy = requests.get('http://localhost:8891/groups/hierarchy')
 ```
 
 ## Error Handling

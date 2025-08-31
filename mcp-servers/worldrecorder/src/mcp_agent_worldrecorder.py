@@ -553,7 +553,7 @@ class WorldRecorderMCP:
     async def _get_status(self, arguments: Dict[str, Any]) -> List[TextContent]:
         """Get current video recording status and session information"""
         try:
-            response = await self._make_request("GET", "/status")
+            response = await self._make_request("GET", "/video/status")
             if response.get('success'):
                 return [TextContent(
                     type="text",

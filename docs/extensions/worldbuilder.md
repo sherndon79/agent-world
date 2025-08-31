@@ -78,14 +78,14 @@ Build and manipulate 3D scenes programmatically in Isaac Sim. WorldBuilder provi
 
 **GET** `/get_scene` - Retrieve complete scene structure
 **GET** `/list_elements` - Get flat list of all elements
-**POST** `/query_objects_by_type` - Find objects by semantic type
-**POST** `/query_objects_in_bounds` - Spatial bounding box queries
-**POST** `/query_objects_near_point` - Proximity-based searches
+**POST** `/query/objects_by_type` - Find objects by semantic type
+**POST** `/query/objects_in_bounds` - Spatial bounding box queries
+**POST** `/query/objects_near_point` - Proximity-based searches
 
 ### Scene Management
 
 **POST** `/remove_element` - Remove specific elements
-**POST** `/clear_scene` - Bulk scene clearing (with confirmation)
+**POST** `/clear_path` - Clear specific USD paths from scene
 **POST** `/transform_asset` - Modify existing object transforms
 
 ### Utilities

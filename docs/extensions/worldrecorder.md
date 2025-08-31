@@ -11,11 +11,11 @@ Capture screenshots and record videos from Isaac Sim viewports. WorldRecorder en
 - **Automatic Naming**: Timestamp-based filenames or custom paths
 
 ### Video Recording
-- **Multiple Codecs**: H.264, H.265, and other formats
-- **Hardware Acceleration**: GPU-accelerated encoding when available
-- **Quality Control**: Configurable CRF (Constant Rate Factor) settings
+- **Kit-Native Capture**: Uses omni.kit.capture.viewport for optimal performance
+- **Multiple Formats**: MP4, AVI, MOV support
+- **Quality Control**: Configurable FPS and duration settings
 - **Duration Limits**: Automatic stop after specified time
-- **Queue Management**: Buffered frame processing for smooth recording
+- **Session Management**: Tracked recording sessions with unique IDs
 
 ### Output Management
 - **Flexible Paths**: Custom output directories and filenames  
@@ -26,14 +26,14 @@ Capture screenshots and record videos from Isaac Sim viewports. WorldRecorder en
 ### Performance Features
 - **Non-blocking Operation**: Capture without stopping simulation
 - **Thread Safety**: Proper Isaac Sim viewport integration
-- **Memory Management**: Efficient frame buffering and cleanup
-- **Hardware Detection**: Automatic encoder optimization
+- **Kit Integration**: Native omni.kit.capture.viewport usage
+- **Session Tracking**: Efficient session and output management
 
 ## API Endpoints
 
 ### Screenshot Capture
 
-**POST** `/capture_frame`
+**POST** `/viewport/capture_frame`
 ```json
 {
   "output_path": "/tmp/screenshot.png",
@@ -45,7 +45,7 @@ Capture screenshots and record videos from Isaac Sim viewports. WorldRecorder en
 
 ### Video Recording
 
-**POST** `/start_recording`
+**POST** `/video/start`
 ```json
 {
   "output": "/tmp/simulation.mp4",
@@ -59,7 +59,7 @@ Capture screenshots and record videos from Isaac Sim viewports. WorldRecorder en
 }
 ```
 
-**POST** `/stop_recording`
+**POST** `/video/stop`
 ```json
 {
   "output": "/tmp/recording.mp4"
@@ -68,15 +68,13 @@ Capture screenshots and record videos from Isaac Sim viewports. WorldRecorder en
 
 ### Status and Control
 
-**GET** `/get_status` - Current recording status and statistics
+**GET** `/video/status` - Current recording status and statistics
 **GET** `/health` - Extension health and encoder availability  
 **GET** `/metrics` - Performance metrics and hardware status
 
 ### Debug and Diagnostics
 
-**GET** `/debug_capture` - Viewport and capture function status
-**GET** `/debug_pyav` - FFmpeg codec availability
-**GET** `/debug_state` - Internal recording state
+Debug endpoints have been removed in the current implementation. Use `/health` and `/metrics` for troubleshooting.
 
 ## Configuration
 
@@ -126,7 +124,7 @@ Capture screenshots and record videos from Isaac Sim viewports. WorldRecorder en
 import requests
 
 # Capture current viewport
-response = requests.post('http://localhost:8892/capture_frame', json={
+response = requests.post('http://localhost:8892/viewport/capture_frame', json={
     'output_path': '/tmp/current_view.png'
 })
 
@@ -137,7 +135,7 @@ if response.json()['success']:
 ### High-Quality Screenshots
 ```python
 # Capture high-resolution screenshot with depth
-response = requests.post('http://localhost:8892/capture_frame', json={
+response = requests.post('http://localhost:8892/viewport/capture_frame', json={
     'output_path': '/tmp/hires_capture.png',
     'width': 3840,
     'height': 2160,
@@ -152,7 +150,7 @@ print(f"Captured at {response.json()['resolution']}")
 import time
 
 # Start recording
-start_response = requests.post('http://localhost:8892/start_recording', json={
+start_response = requests.post('http://localhost:8892/video/start', json={
     'output': '/tmp/simulation_recording.mp4',
     'fps': 30,
     'crf': 20,  # High quality
@@ -166,7 +164,7 @@ if start_response.json()['success']:
     # Monitor recording status
     for i in range(12):  # Check for 60 seconds
         time.sleep(5)
-        status = requests.get('http://localhost:8892/get_status')
+        status = requests.get('http://localhost:8892/video/status')
         
         if status.json()['recording']:
             frames = status.json()['frames_captured']
@@ -175,7 +173,7 @@ if start_response.json()['success']:
             break
     
     # Stop recording
-    stop_response = requests.post('http://localhost:8892/stop_recording')
+    stop_response = requests.post('http://localhost:8892/video/stop')
     if stop_response.json()['success']:
         print(f"Recording saved: {stop_response.json()['output_path']}")
 ```
@@ -210,7 +208,7 @@ for viewpoint in viewpoints:
 ### Time-lapse Recording
 ```python
 # Create time-lapse of scene changes
-requests.post('http://localhost:8892/start_recording', json={
+requests.post('http://localhost:8892/video/start', json={
     'output': '/tmp/timelapse.mp4',
     'fps': 10,  # Lower FPS for time-lapse effect
     'crf': 18,  # High quality
@@ -221,7 +219,7 @@ requests.post('http://localhost:8892/start_recording', json={
 # Recording captures all viewport changes automatically
 
 # Stop when done
-requests.post('http://localhost:8892/stop_recording')
+requests.post('http://localhost:8892/video/stop')
 ```
 
 ### Batch Screenshot Generation
@@ -316,7 +314,7 @@ response = requests.post('http://localhost:8892/start_recording', json=recording
 ### Performance Monitoring
 ```python
 # Monitor recording performance
-status = requests.get('http://localhost:8892/get_status')
+status = requests.get('http://localhost:8892/video/status')
 metrics = requests.get('http://localhost:8892/metrics')
 
 print(f"Recording: {status.json()['recording']}")
@@ -359,8 +357,7 @@ WorldRecorder provides detailed error information:
 
 ### Debug Information
 
-Use debug endpoints for troubleshooting:
-- `/debug_capture` - Viewport connection issues
-- `/debug_pyav` - Codec availability problems  
-- `/debug_state` - Internal state inspection
-- `/metrics` - Performance bottlenecks
+Use standard endpoints for troubleshooting:
+- `/health` - Extension health and connectivity issues
+- `/metrics` - Performance metrics and hardware status
+- `/video/status` - Current recording state information
