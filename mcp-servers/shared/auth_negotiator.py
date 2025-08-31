@@ -172,22 +172,30 @@ class AuthNegotiator:
             logger.error("Missing HMAC secret or auth token")
             return {}
         
-        # Create signature
+        # Create timestamp and signature for Isaac Sim HMAC format
+        import time
+        timestamp = str(time.time())
         signature = self._create_hmac_signature(
-            method, url, body,
+            method, url, timestamp,
             self.auth_config.hmac_secret,
             self.auth_config.auth_token
         )
         
         return {
-            'Authorization': f'HMAC-SHA256 Credential={self.auth_config.auth_token}, Signature={signature}'
+            'X-Timestamp': timestamp,
+            'X-Signature': signature
         }
     
-    def _create_hmac_signature(self, method: str, url: str, body: str, 
+    def _create_hmac_signature(self, method: str, url: str, timestamp: str, 
                               secret: str, token: str) -> str:
-        """Create HMAC-SHA256 signature for request."""
-        # Standard HMAC signing string
-        string_to_sign = f"{method.upper()}\n{url}\n{body}"
+        """Create HMAC-SHA256 signature for request using Isaac Sim format."""
+        # Isaac Sim expects: "METHOD|PATH|TIMESTAMP" format
+        # Extract path from full URL
+        from urllib.parse import urlparse
+        parsed_url = urlparse(url)
+        path = parsed_url.path
+        
+        string_to_sign = f"{method.upper()}|{path}|{timestamp}"
         
         signature = hmac.new(
             secret.encode('utf-8'),

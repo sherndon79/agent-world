@@ -11,13 +11,16 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEFAULT_VERSION="5.0.0"
 DEST_DIR=""
 
-# Parse flags: --dest, --version
+# Parse flags: --dest, --version, --uninstall
+UNINSTALL_MODE=false
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -d|--dest)
       DEST_DIR="$2"; shift 2;;
     -v|--version)
       DEFAULT_VERSION="$2"; shift 2;;
+    -u|--uninstall)
+      UNINSTALL_MODE=true; shift;;
     --) shift; break;;
     *) break;;
   esac
@@ -124,7 +127,164 @@ EOF
   chmod +x "$out_path"
 }
 
+create_mcp_venvs() {
+  local mcp_dir="$ROOT_DIR/mcp-servers"
+  echo "==> Setting up MCP server virtual environments..."
+  
+  for server_dir in "$mcp_dir"/*; do
+    if [[ -d "$server_dir" && -f "$server_dir/pyproject.toml" ]]; then
+      local server_name=$(basename "$server_dir")
+      local venv_path="$server_dir/venv"
+      
+      echo "Creating venv for $server_name..."
+      
+      # Create virtual environment
+      python3 -m venv "$venv_path"
+      
+      # Upgrade pip and install build tools
+      "$venv_path/bin/pip" install --upgrade pip setuptools wheel
+      
+      # Install package in development mode with dependencies
+      cd "$server_dir"
+      "$venv_path/bin/pip" install -e .
+      
+      echo "✓ $server_name venv created successfully"
+    fi
+  done
+  
+  echo "==> MCP virtual environments setup complete!"
+}
+
+cleanup_mcp_venvs() {
+  local mcp_dir="$ROOT_DIR/mcp-servers"
+  echo "==> Removing MCP server virtual environments..."
+  
+  for server_dir in "$mcp_dir"/*; do
+    if [[ -d "$server_dir" ]]; then
+      local server_name=$(basename "$server_dir")
+      local venv_path="$server_dir/venv"
+      
+      if [[ -d "$venv_path" ]]; then
+        echo "Removing $server_name venv..."
+        rm -rf "$venv_path"
+        echo "✓ $server_name venv removed"
+      fi
+    fi
+  done
+  
+  echo "==> MCP virtual environments cleanup complete!"
+}
+
+cleanup_extension_symlinks() {
+  local exts_user="$1"
+  echo "==> Removing Agent World extension symlinks from $exts_user..."
+  
+  local extensions=("omni.agent.worldbuilder" "omni.agent.worldviewer" "omni.agent.worldsurveyor" "omni.agent.worldrecorder")
+  for ext in "${extensions[@]}"; do
+    local link_path="$exts_user/$ext"
+    if [[ -L "$link_path" ]]; then
+      echo "Removing symlink: $link_path"
+      rm "$link_path"
+      echo "✓ $ext symlink removed"
+    elif [[ -e "$link_path" ]]; then
+      echo "⚠️  $link_path exists but is not a symlink (skipping)"
+    fi
+  done
+  
+  echo "==> Extension symlinks cleanup complete!"
+}
+
+cleanup_generated_files() {
+  echo "==> Removing generated files..."
+  
+  # Remove .env file
+  local env_path="$ROOT_DIR/.env"
+  if [[ -f "$env_path" ]]; then
+    echo "Removing environment file: $env_path"
+    rm "$env_path"
+    echo "✓ .env file removed"
+  fi
+  
+  # Remove launch script
+  local launcher="$ROOT_DIR/scripts/launch_agent_world.sh"
+  if [[ -f "$launcher" ]]; then
+    echo "Removing launch script: $launcher"
+    rm "$launcher"
+    echo "✓ launch script removed"
+  fi
+  
+  echo "==> Generated files cleanup complete!"
+}
+
+is_local_isaac_installation() {
+  local isaac_dir="$1"
+  # Check if it's under our repo root (local installation)
+  [[ "$isaac_dir" == "$ROOT_DIR"/* ]]
+}
+
+uninstall() {
+  echo "==> Agent World Uninstaller (Linux/macOS)"
+  echo "This will remove Agent World components."
+  
+  if ! prompt_yn "Are you sure you want to uninstall Agent World?" n; then
+    echo "Uninstall cancelled."
+    exit 0
+  fi
+  
+  # Clean up MCP virtual environments
+  cleanup_mcp_venvs
+  
+  # Clean up generated files (.env, launch script, etc.)
+  cleanup_generated_files
+  
+  # Handle extension symlinks
+  echo ""
+  echo "Extension symlink cleanup:"
+  read -r -p "Enter the extsUser path where extensions were linked (leave blank to skip): " exts_user || true
+  
+  if [[ -n "$exts_user" && -d "$exts_user" ]]; then
+    cleanup_extension_symlinks "$exts_user"
+  elif [[ -n "$exts_user" ]]; then
+    echo "Directory not found: $exts_user (skipping extension cleanup)"
+  else
+    echo "Skipping extension symlink cleanup"
+  fi
+  
+  # Handle Isaac Sim installation
+  echo ""
+  echo "Isaac Sim installation cleanup:"
+  read -r -p "Enter the Isaac Sim installation path (leave blank to skip): " isaac_dir || true
+  
+  if [[ -n "$isaac_dir" && -d "$isaac_dir" ]]; then
+    if is_local_isaac_installation "$isaac_dir"; then
+      if prompt_yn "Remove local Isaac Sim installation at $isaac_dir?" n; then
+        echo "Removing Isaac Sim installation: $isaac_dir"
+        rm -rf "$isaac_dir"
+        echo "✓ Isaac Sim installation removed"
+      fi
+    else
+      echo "ℹ️  Isaac Sim installation is external ($isaac_dir)"
+      echo "   You may need to manually remove Agent World extension symlinks if any were created."
+      echo "   Extension symlinks would be in: $isaac_dir/extsUser/"
+    fi
+  else
+    echo "Skipping Isaac Sim cleanup"
+  fi
+  
+  echo ""
+  echo "==> Uninstall complete!"
+  echo "Note: This script does not remove:"
+  echo "  - The Agent World repository itself"
+  echo "  - External Isaac Sim installations"
+  echo "  - Manual modifications you may have made"
+}
+
 main() {
+  if [[ "$UNINSTALL_MODE" == "true" ]]; then
+    uninstall
+    return 0
+  fi
+  
   echo "==> Agent World Installer (Linux/macOS)"
   local have_isaac; prompt_yn "Is Isaac Sim already installed locally?" y && have_isaac=1 || have_isaac=0
   local isaac_dir
@@ -174,6 +334,10 @@ AGENT_EXT_HMAC_SECRET=$secret
 # AGENT_WORLDRECORDER_HMAC_SECRET=$secret
 ENV
     echo "Wrote secrets to: $env_path"
+  fi
+
+  if prompt_yn "Create Python virtual environments for MCP servers?" y; then
+    create_mcp_venvs
   fi
 
   local default_exts="$isaac_dir/extsUser"

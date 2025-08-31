@@ -2,17 +2,17 @@
   "mcpServers": {
     "screenshot-server": {
       "type": "stdio",
-      "command": "/home/sherndon/agent-world-prod/mcp-servers/desktop-screenshot/venv/bin/python",
+      "command": "/home/sherndon/agent-world/mcp-servers/desktop-screenshot/venv/bin/python",
       "args": [
-        "/home/sherndon/agent-world-prod/mcp-servers/desktop-screenshot/src/mcp_screenshot_server.py"
+        "/home/sherndon/agent-world/mcp-servers/desktop-screenshot/src/mcp_screenshot_server.py"
       ],
       "env": {}
     },
     "worldbuilder-server": {
       "type": "stdio",
-      "command": "/home/sherndon/agent-world-prod/mcp-servers/worldbuilder/venv/bin/python",
+      "command": "/home/sherndon/agent-world/mcp-servers/worldbuilder/venv/bin/python",
       "args": [
-        "/home/sherndon/agent-world-prod/mcp-servers/worldbuilder/src/mcp_agent_worldbuilder.py"
+        "/home/sherndon/agent-world/mcp-servers/worldbuilder/src/mcp_agent_worldbuilder.py"
       ],
       "env": {
         "AGENT_WORLDBUILDER_BASE_URL": "http://localhost:8899",
@@ -22,9 +22,9 @@
     },
     "worldviewer-server": {
       "type": "stdio",
-      "command": "/home/sherndon/agent-world-prod/mcp-servers/worldviewer/venv/bin/python",
+      "command": "/home/sherndon/agent-world/mcp-servers/worldviewer/venv/bin/python",
       "args": [
-        "/home/sherndon/agent-world-prod/mcp-servers/worldviewer/src/mcp_agent_worldviewer.py"
+        "/home/sherndon/agent-world/mcp-servers/worldviewer/src/mcp_agent_worldviewer.py"
       ],
       "env": {
         "AGENT_WORLDVIEWER_BASE_URL": "http://localhost:8900",
@@ -34,9 +34,9 @@
     },
     "worldsurveyor-server": {
       "type": "stdio",
-      "command": "/home/sherndon/agent-world-prod/mcp-servers/worldsurveyor/venv/bin/python",
+      "command": "/home/sherndon/agent-world/mcp-servers/worldsurveyor/venv/bin/python",
       "args": [
-        "/home/sherndon/agent-world-prod/mcp-servers/worldsurveyor/src/mcp_worldsurveyor.py"
+        "/home/sherndon/agent-world/mcp-servers/worldsurveyor/src/mcp_worldsurveyor.py"
       ],
       "env": {
         "AGENT_WORLDSURVEYOR_BASE_URL": "http://localhost:8891",
@@ -46,9 +46,9 @@
     },
     "worldrecorder-server": {
       "type": "stdio",
-      "command": "/home/sherndon/agent-world-prod/mcp-servers/worldrecorder-server/venv/bin/python",
+      "command": "/home/sherndon/agent-world/mcp-servers/worldrecorder/venv/bin/python",
       "args": [
-        "/home/sherndon/agent-world-prod/mcp-servers/worldrecorder-server/src/mcp_agent_worldrecorder.py"
+        "/home/sherndon/agent-world/mcp-servers/worldrecorder/src/mcp_agent_worldrecorder.py"
       ],
       "env": {
         "AGENT_WORLDRECORDER_BASE_URL": "http://localhost:8892",

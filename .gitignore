@@ -33,6 +33,10 @@ node_modules/
 isaac-sim-host*/
 *.zip
 scripts/launch_agent_world.sh
+scripts/launch_agent_world.ps1
+
+# Screenshots
+screenshots/
 
 # Misc
 *.bak
