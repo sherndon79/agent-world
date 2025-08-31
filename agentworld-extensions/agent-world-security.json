@@ -1,0 +1,51 @@
+{
+  "_comment": "Security and authentication settings for Agent World Extensions",
+  "_usage": "Unified security configuration across all World* extensions",
+  
+  "global_settings": {
+    "auth_enabled": true,
+    "rate_limiting_enabled": true,
+    "cors_enabled": true,
+    "isaac_sim_settings_override": true,
+    "bearer_token_required": false
+  },
+  
+  "rate_limiting": {
+    "requests_per_minute": 60,
+    "burst_size": 10,
+    "cleanup_interval_seconds": 300,
+    "memory_cleanup_threshold": 1000,
+    "blocked_duration_seconds": 60
+  },
+  
+  "authentication": {
+    "bearer_token_header": "Authorization",
+    "token_prefix": "Bearer ",
+    "environment_token_key": "AGENT_EXT_AUTH_TOKEN",
+    "isaac_sim_auth_path": "/exts/omni.agent.{extension}/auth_enabled",
+    "fallback_auth_enabled": true
+  },
+  
+  "cors_settings": {
+    "allow_origins": "*",
+    "allow_methods": ["GET", "POST", "OPTIONS"],
+    "allow_headers": ["Content-Type", "Authorization"],
+    "expose_headers": [],
+    "allow_credentials": false,
+    "max_age_seconds": 86400
+  },
+  
+  "request_validation": {
+    "max_content_length": 10485760,
+    "require_content_type": true,
+    "allowed_content_types": ["application/json"],
+    "validate_json_syntax": true
+  },
+  
+  "logging": {
+    "log_auth_failures": true,
+    "log_rate_limit_violations": true,
+    "log_blocked_requests": false,
+    "security_event_level": "WARNING"
+  }
+}

@@ -1,0 +1,39 @@
+[core]
+reloadable = true
+order = 0
+
+[package]
+version = "0.1.0"
+category = "Agent WorldViewer"
+title = "Agent WorldViewer"
+description = "Thread-safe camera control and viewport management extension with HTTP API for AI-powered world viewing in Isaac Sim"
+authors = ["Agent World Team"]
+repository = ""
+keywords = ["isaac", "worldviewer", "camera", "viewport", "api", "ai", "thread-safe"]
+changelog = "docs/CHANGELOG.md"
+readme = "docs/README.md"
+icon = "data/icon.png"
+writeTarget.kit = true
+writeTarget.platform = true
+
+[dependencies]
+"omni.usd" = {}
+"omni.ui" = {}
+"omni.kit.viewport.utility" = {}
+
+# Hot reloading support
+[fswatcher.patterns]
+include = ["*.py", "*.toml"]
+exclude = ["__pycache__"]
+
+[[python.module]]
+name = "omni.agent.worldviewer"
+
+[[test]]
+dependencies = []
+stdoutFailPatterns.exclude = [
+    "*[Error] [carb.glinterop.plugin] GLInteropContext::init: carb::windowing is not available*",
+]
+
+[settings]
+exts."omni.agent.worldviewer".auth_enabled = true

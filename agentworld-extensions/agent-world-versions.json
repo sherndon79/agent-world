@@ -1,0 +1,39 @@
+{
+  "_comment": "Centralized version management for Agent World Extensions",
+  "_usage": "Import this config to get consistent versioning across all extensions",
+  
+  "default_version": "0.1.0",
+  "suite_version": "1.0.0-alpha",
+  "release_stage": "alpha",
+  
+  "extensions": {
+    "worldbuilder": {
+      "version": "0.1.0",
+      "api_version": "0.1.0",
+      "service_name": "Agent WorldBuilder API"
+    },
+    "worldviewer": {
+      "version": "0.1.0", 
+      "api_version": "0.1.0",
+      "service_name": "Agent WorldViewer API"
+    },
+    "worldsurveyor": {
+      "version": "0.1.0",
+      "api_version": "0.1.0",
+      "service_name": "Agent WorldSurveyor API"
+    },
+    "worldrecorder": {
+      "version": "0.1.0",
+      "api_version": "0.1.0",
+      "service_name": "Agent WorldRecorder API"
+    }
+  },
+  
+  "version_history": {
+    "0.1.0": {
+      "release_date": "2025-08-25",
+      "description": "Initial alpha release",
+      "breaking_changes": false
+    }
+  }
+}

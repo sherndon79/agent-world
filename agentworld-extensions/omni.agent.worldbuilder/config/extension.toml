@@ -1,0 +1,38 @@
+[core]
+reloadable = true
+order = 0
+
+[package]
+version = "0.1.0"
+category = "Agent WorldBuilder"
+title = "Agent WorldBuilder"
+description = "Thread-safe USD scene management extension with HTTP API for AI-powered worldbuilding in Isaac Sim"
+authors = ["Agent World Team"]
+repository = ""
+keywords = ["isaac", "worldbuilder", "usd", "scene-management", "api", "ai", "thread-safe"]
+changelog = "docs/CHANGELOG.md"
+readme = "docs/README.md"
+icon = "data/icon.png"
+writeTarget.kit = true
+writeTarget.platform = true
+
+[dependencies]
+"omni.usd" = {}
+"omni.ui" = {}
+
+# Hot reloading support
+[fswatcher.patterns]
+include = ["*.py", "*.toml"]
+exclude = ["__pycache__"]
+
+[[python.module]]
+name = "omni.agent.worldbuilder"
+
+[[test]]
+dependencies = []
+stdoutFailPatterns.exclude = [
+    "*[Error] [carb.glinterop.plugin] GLInteropContext::init: carb::windowing is not available*",
+]
+
+[settings]
+exts."omni.agent.worldbuilder".auth_enabled = true

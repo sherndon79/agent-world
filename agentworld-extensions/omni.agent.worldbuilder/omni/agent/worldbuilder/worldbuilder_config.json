@@ -1,0 +1,8 @@
+{
+  "_comment": "WorldBuilder Extension Configuration",
+  "debug_mode": true,
+  "verbose_logging": true,
+  "server_port": 8899,
+  "max_scene_elements": 500,
+  "shutdown_timeout": 10.0
+}

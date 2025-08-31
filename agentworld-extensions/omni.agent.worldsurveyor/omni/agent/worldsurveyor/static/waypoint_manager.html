@@ -1,0 +1,1304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WorldSurveyor Waypoint Manager</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #1a1a1a;
+            color: #ffffff;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        h1 {
+            color: #4fc3f7;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .main-layout {
+            display: grid;
+            grid-template-columns: 300px 1fr;
+            gap: 20px;
+        }
+        
+        /* Sidebar for groups */
+        .sidebar {
+            background-color: #2d2d2d;
+            border-radius: 5px;
+            padding: 15px;
+            height: fit-content;
+            border-left: 4px solid #66bb6a;
+        }
+        
+        .sidebar h3 {
+            color: #66bb6a;
+            margin-top: 0;
+            margin-bottom: 15px;
+        }
+        
+        .group-item {
+            padding: 8px 12px;
+            border-radius: 4px;
+            margin-bottom: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            border-left: 3px solid transparent;
+        }
+        
+        .group-item:hover {
+            background-color: #363636;
+        }
+        
+        .group-item.active {
+            background-color: #363636;
+            border-left-color: #66bb6a;
+        }
+        
+        .group-item.nested {
+            margin-left: 15px;
+            padding-left: 8px;
+        }
+        
+        .group-actions {
+            display: flex;
+            gap: 5px;
+            margin-top: 10px;
+        }
+        
+        /* Main content area */
+        .main-content {
+            min-width: 0;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background-color 0.3s;
+        }
+        .btn-primary { background-color: #4fc3f7; color: #000; }
+        .btn-success { background-color: #66bb6a; color: #000; }
+        .btn-warning { background-color: #ffab40; color: #000; }
+        .btn-danger { background-color: #ef5350; color: #fff; }
+        .btn:hover { opacity: 0.8; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        
+        .status {
+            background-color: #2d2d2d;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            border-left: 4px solid #4fc3f7;
+        }
+        
+        .waypoint-list {
+            background-color: #2d2d2d;
+            border-radius: 5px;
+            overflow: hidden;
+        }
+        .waypoint-item {
+            display: flex;
+            align-items: center;
+            padding: 15px;
+            border-bottom: 1px solid #404040;
+            transition: background-color 0.3s;
+            cursor: move;
+        }
+        .waypoint-item:hover {
+            background-color: #363636;
+        }
+        .waypoint-item.hidden {
+            opacity: 0.5;
+            background-color: #2a2a2a;
+        }
+        .waypoint-item.dragging {
+            opacity: 0.5;
+            background-color: #4fc3f7;
+        }
+        .waypoint-item.drag-over {
+            border-top: 3px solid #4fc3f7;
+        }
+        
+        .waypoint-info {
+            flex: 1;
+            min-width: 0;
+        }
+        .waypoint-name {
+            font-weight: bold;
+            font-size: 16px;
+            margin-bottom: 5px;
+        }
+        .waypoint-details {
+            font-size: 12px;
+            color: #aaa;
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+        .waypoint-type {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: bold;
+        }
+        .type-camera_position { background-color: #ef5350; }
+        .type-point_of_interest { background-color: #2196f3; }
+        .type-asset_placement { background-color: #66bb6a; }
+        .type-object_anchor { background-color: #ff9800; }
+        .type-lighting_position { background-color: #ffeb3b; color: #000; }
+        .type-audio_source { background-color: #9c27b0; }
+        .type-spawn_point { background-color: #795548; }
+        
+        .waypoint-groups {
+            display: flex;
+            gap: 5px;
+            flex-wrap: wrap;
+            margin-top: 5px;
+        }
+        
+        .group-tag {
+            background-color: #4fc3f7;
+            color: #000;
+            padding: 2px 6px;
+            border-radius: 10px;
+            font-size: 10px;
+            font-weight: bold;
+        }
+        
+        .waypoint-actions {
+            display: flex;
+            gap: 5px;
+            flex-wrap: wrap;
+        }
+        .btn-small {
+            padding: 5px 10px;
+            font-size: 12px;
+        }
+        
+        .drag-handle {
+            cursor: move;
+            color: #666;
+            margin-right: 10px;
+            user-select: none;
+        }
+        
+        .annotation-input, .notes-input {
+            width: 100%;
+            background-color: #404040;
+            border: 1px solid #666;
+            color: #fff;
+            padding: 5px;
+            border-radius: 3px;
+            margin-top: 5px;
+        }
+        
+        .notes-input {
+            min-height: 60px;
+            resize: vertical;
+            font-family: inherit;
+            font-size: 12px;
+        }
+        
+        .notes-display {
+            background-color: #363636;
+            padding: 8px;
+            border-radius: 3px;
+            margin-top: 5px;
+            font-size: 12px;
+            color: #ddd;
+            border-left: 3px solid #4fc3f7;
+            white-space: pre-wrap;
+        }
+        
+        .notes-empty {
+            color: #888;
+            font-style: italic;
+        }
+        
+        /* Edit modes */
+        .edit-mode .waypoint-name { display: none; }
+        .edit-mode .annotation-input { display: block; }
+        .annotation-input { display: none; }
+        
+        .edit-notes-mode .notes-display { display: none; }
+        .edit-notes-mode .notes-input { display: block; }
+        .notes-input { display: none; }
+        
+        /* Modal styles */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+        }
+        
+        .modal-content {
+            background-color: #2d2d2d;
+            margin: 5% auto;
+            padding: 20px;
+            border-radius: 10px;
+            width: 80%;
+            max-width: 600px;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        
+        .modal h3 {
+            color: #4fc3f7;
+            margin-top: 0;
+        }
+        
+        .form-group {
+            margin-bottom: 15px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        
+        .form-group input, .form-group textarea, .form-group select {
+            width: 100%;
+            padding: 8px;
+            border-radius: 4px;
+            border: 1px solid #666;
+            background-color: #404040;
+            color: #fff;
+            box-sizing: border-box;
+        }
+        
+        .checkbox-list {
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px solid #666;
+            border-radius: 4px;
+            padding: 10px;
+            background-color: #404040;
+        }
+        
+        .checkbox-list label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 5px;
+            cursor: pointer;
+        }
+        
+        /* Bulk controls */
+        .bulk-controls {
+            background-color: #2d2d2d;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            border-left: 4px solid #ffab40;
+        }
+        
+        .bulk-controls-row {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 10px;
+            flex-wrap: wrap;
+        }
+        
+        .export-import-controls {
+            background-color: #2d2d2d;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            border-left: 4px solid #9c27b0;
+        }
+        
+        .export-import-controls h4 {
+            color: #9c27b0;
+            margin-top: 0;
+            margin-bottom: 10px;
+        }
+        
+        .file-input {
+            margin: 10px 0;
+        }
+        
+        .file-input input[type="file"] {
+            background-color: #404040;
+            border: 1px solid #666;
+            border-radius: 4px;
+            padding: 8px;
+            color: #fff;
+        }
+        
+        /* Responsive design */
+        @media (max-width: 768px) {
+            .main-layout {
+                grid-template-columns: 1fr;
+            }
+            
+            .sidebar {
+                order: 2;
+            }
+            
+            .controls {
+                flex-direction: column;
+            }
+            
+            .bulk-controls-row {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🗺️ WorldSurveyor Waypoint Manager</h1>
+        
+        <div class="main-layout">
+            <!-- Sidebar for Groups -->
+            <div class="sidebar">
+                <h3>📁 Groups</h3>
+                <div id="groupsList">
+                    <!-- Groups will be populated here -->
+                </div>
+                <div class="group-actions">
+                    <button class="btn btn-success btn-small" onclick="createGroup()">➕ New</button>
+                    <button class="btn btn-primary btn-small" onclick="refreshGroups()">🔄 Refresh</button>
+                </div>
+                <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #404040;">
+                    <button class="btn btn-warning btn-small" style="width: 100%;" onclick="showAllWaypoints()">Show All Waypoints</button>
+                </div>
+            </div>
+            
+            <!-- Main Content -->
+            <div class="main-content">
+                <div class="status" id="status">
+                    <strong>Status:</strong> <span id="statusText">Loading...</span>
+                </div>
+                
+                <div class="controls">
+                    <button class="btn btn-primary" onclick="refreshWaypoints(currentGroupFilter)">🔄 Refresh</button>
+                    <button class="btn btn-success" onclick="showAllMarkers()">👁️ Show All Markers</button>
+                    <button class="btn btn-warning" onclick="hideAllMarkers()">🙈 Hide All Markers</button>
+                    <button class="btn btn-danger" onclick="clearAllWaypoints()">🗑️ Clear All</button>
+                </div>
+                
+                <div class="export-import-controls">
+                    <h4>🔄 Data Management</h4>
+                    <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+                        <button class="btn btn-primary btn-small" onclick="exportWaypoints()">📤 Export</button>
+                        <div class="file-input">
+                            <input type="file" id="importFile" accept=".json" onchange="importWaypoints()">
+                            <label for="importFile" class="btn btn-success btn-small" style="margin-left: 10px; cursor: pointer;">📥 Import</label>
+                        </div>
+                        <select id="importMode" style="background-color: #404040; border: 1px solid #666; color: #fff; padding: 5px; border-radius: 3px;">
+                            <option value="replace">Replace All</option>
+                            <option value="append">Append to Existing</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="bulk-controls">
+                    <div class="bulk-controls-row">
+                        <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
+                            <input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll()" style="transform: scale(1.2);">
+                            <strong>Select All</strong>
+                        </label>
+                        <button class="btn btn-warning btn-small" onclick="hideSelectedWaypoints()">🙈 Hide Selected</button>
+                        <button class="btn btn-success btn-small" onclick="showSelectedWaypoints()">👁️ Show Selected</button>
+                        <button class="btn btn-primary btn-small" onclick="assignSelectedToGroups()">📁 Assign to Groups</button>
+                        <span id="selectedCount" style="color: #aaa; font-size: 12px;">0 selected</span>
+                    </div>
+                </div>
+                
+                <div class="waypoint-list" id="waypointList">
+                    <!-- Waypoints will be populated here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Group Creation Modal -->
+    <div id="groupModal" class="modal">
+        <div class="modal-content">
+            <h3>📁 Create New Group</h3>
+            <div class="form-group">
+                <label for="groupName">Group Name:</label>
+                <input type="text" id="groupName" placeholder="Enter group name">
+            </div>
+            <div class="form-group">
+                <label for="groupDescription">Description (optional):</label>
+                <textarea id="groupDescription" placeholder="Enter description" rows="3"></textarea>
+            </div>
+            <div class="form-group">
+                <label for="groupParent">Parent Group (optional):</label>
+                <select id="groupParent">
+                    <option value="">No Parent (Root Level)</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="groupColor">Color:</label>
+                <input type="color" id="groupColor" value="#4A90E2">
+            </div>
+            <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                <button class="btn btn-danger" onclick="closeGroupModal()">Cancel</button>
+                <button class="btn btn-success" onclick="saveGroup()">Create Group</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Group Assignment Modal -->
+    <div id="assignModal" class="modal">
+        <div class="modal-content">
+            <h3>📁 Assign Waypoints to Groups</h3>
+            <div class="form-group">
+                <label>Select Groups:</label>
+                <div id="groupCheckboxList" class="checkbox-list">
+                    <!-- Group checkboxes will be populated here -->
+                </div>
+            </div>
+            <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                <button class="btn btn-danger" onclick="closeAssignModal()">Cancel</button>
+                <button class="btn btn-success" onclick="saveGroupAssignment()">Update Group Membership</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // API base URL
+        const API_BASE = window.location.origin;
+        let waypoints = [];
+        let groups = [];
+        let currentGroupFilter = null;
+        
+        async function apiCall(endpoint, method = 'GET', data = null) {
+            try {
+                const options = {
+                    method,
+                    headers: { 'Content-Type': 'application/json' }
+                };
+                if (data) options.body = JSON.stringify(data);
+                
+                const response = await fetch(`${API_BASE}/${endpoint}`, options);
+                return await response.json();
+            } catch (error) {
+                console.error('API call failed:', error);
+                return { success: false, error: error.message };
+            }
+        }
+        
+        // Status and refresh functions
+        async function updateStatus() {
+            const status = await apiCall('debug_status');
+            const statusEl = document.getElementById('statusText');
+            
+            if (status.success) {
+                const ds = status.debug_status;
+                const groupText = currentGroupFilter ? ` | Filtered by: ${currentGroupFilter}` : '';
+                statusEl.innerHTML = `
+                    Debug Draw: ${ds.available ? '✅' : '❌'} | 
+                    Waypoints: ${status.waypoint_count} | 
+                    Debug Points: ${ds.num_points} | 
+                    Markers Visible: ${ds.markers_visible ? '✅' : '❌'}${groupText}
+                `;
+            } else {
+                statusEl.textContent = `Error: ${status.error}`;
+            }
+        }
+        
+        // Request management to prevent race conditions
+        let currentRequest = null;
+        let requestSequence = 0;
+
+        async function refreshWaypoints(groupId = null) {
+            // Cancel previous request if still pending
+            if (currentRequest) {
+                currentRequest.cancelled = true;
+            }
+            
+            const thisRequest = { cancelled: false, sequence: ++requestSequence };
+            currentRequest = thisRequest;
+            
+            let endpoint;
+            if (groupId) {
+                endpoint = `get_group_waypoints?group_id=${groupId}`;
+            } else {
+                endpoint = 'list_waypoints';
+            }
+            
+            try {
+                const result = await apiCall(endpoint);
+                
+                // Check if this request was cancelled or superseded
+                if (thisRequest.cancelled || thisRequest.sequence < requestSequence) {
+                    return;
+                }
+                
+                if (result.success) {
+                    waypoints = result.waypoints;
+                    currentGroupFilter = groupId;
+                    renderWaypoints();
+                }
+                
+                await updateStatus();
+            } catch (error) {
+                // Check if this request was cancelled
+                if (thisRequest.cancelled || thisRequest.sequence < requestSequence) {
+                    return;
+                }
+                console.error('Error refreshing waypoints:', error);
+            } finally {
+                if (currentRequest === thisRequest) {
+                    currentRequest = null;
+                }
+            }
+        }
+        
+        async function refreshGroups() {
+            const result = await apiCall('get_group_hierarchy');
+            if (result.success) {
+                groups = result.hierarchy || [];
+                renderGroups();
+            }
+        }
+        
+        // Group management functions
+        function renderGroups() {
+            const container = document.getElementById('groupsList');
+            
+            if (groups.length === 0) {
+                container.innerHTML = '<div style="color: #666; font-style: italic;">No groups created</div>';
+                return;
+            }
+            
+            function renderGroupHierarchy(groups, indent = 0) {
+                return groups.map(group => {
+                    const style = indent > 0 ? `margin-left: ${indent * 15}px;` : '';
+                    let html = `
+                        <div class="group-item ${currentGroupFilter === group.id ? 'active' : ''}" 
+                             style="${style}" 
+                             onclick="filterByGroup('${group.id}', '${group.name}')">
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <span>📁 ${group.name}</span>
+                                <div style="display: flex; gap: 5px;">
+                                    <button class="btn btn-danger btn-small" 
+                                            onclick="event.stopPropagation(); removeGroup('${group.id}')"
+                                            style="padding: 2px 6px; font-size: 10px;">🗑️</button>
+                                </div>
+                            </div>
+                            ${group.description ? `<div style="font-size: 11px; color: #aaa; margin-top: 2px;">${group.description}</div>` : ''}
+                        </div>
+                    `;
+                    
+                    // Add children recursively
+                    if (group.children && group.children.length > 0) {
+                        html += renderGroupHierarchy(group.children, indent + 1);
+                    }
+                    
+                    return html;
+                }).join('');
+            }
+            
+            container.innerHTML = renderGroupHierarchy(groups);
+        }
+        
+        function createGroup() {
+            // Populate parent group options
+            const parentSelect = document.getElementById('groupParent');
+            parentSelect.innerHTML = '<option value="">No Parent (Root Level)</option>';
+            
+            function addGroupOptions(groups, prefix = '') {
+                groups.forEach(group => {
+                    parentSelect.innerHTML += `<option value="${group.id}">${prefix}${group.name}</option>`;
+                    if (group.children) {
+                        addGroupOptions(group.children, prefix + '└─ ');
+                    }
+                });
+            }
+            
+            addGroupOptions(groups);
+            
+            // Clear form
+            document.getElementById('groupName').value = '';
+            document.getElementById('groupDescription').value = '';
+            document.getElementById('groupColor').value = '#4A90E2';
+            
+            // Show modal
+            document.getElementById('groupModal').style.display = 'block';
+        }
+        
+        async function saveGroup() {
+            const name = document.getElementById('groupName').value.trim();
+            if (!name) {
+                alert('Group name is required');
+                return;
+            }
+            
+            const groupData = {
+                name: name,
+                description: document.getElementById('groupDescription').value.trim(),
+                color: document.getElementById('groupColor').value
+            };
+            
+            const parentId = document.getElementById('groupParent').value;
+            if (parentId) {
+                groupData.parent_group_id = parentId;
+            }
+            
+            const result = await apiCall('create_group', 'POST', groupData);
+            if (result.success) {
+                console.log('Created group:', result.group_id);
+                closeGroupModal();
+                await refreshGroups();
+            } else {
+                alert(`Error creating group: ${result.error}`);
+            }
+        }
+        
+        function closeGroupModal() {
+            document.getElementById('groupModal').style.display = 'none';
+        }
+        
+        async function removeGroup(groupId) {
+            if (confirm('Are you sure you want to remove this group? This will unassign all waypoints from the group.')) {
+                const result = await apiCall('remove_group', 'POST', { group_id: groupId });
+                if (result.success) {
+                    await refreshGroups();
+                    if (currentGroupFilter === groupId) {
+                        showAllWaypoints();
+                    }
+                } else {
+                    alert(`Error removing group: ${result.error}`);
+                }
+            }
+        }
+        
+        function filterByGroup(groupId, groupName) {
+            refreshWaypoints(groupId);
+            updateStatus();
+        }
+        
+        function showAllWaypoints() {
+            refreshWaypoints(null);
+            
+            // Remove active class from all group items
+            document.querySelectorAll('.group-item').forEach(item => {
+                item.classList.remove('active');
+            });
+        }
+        
+        // Waypoint rendering with group support
+        function renderWaypoints() {
+            const container = document.getElementById('waypointList');
+            
+            if (waypoints.length === 0) {
+                const message = currentGroupFilter ? 
+                    'No waypoints found in this group' : 
+                    'No waypoints found';
+                container.innerHTML = `<div style="padding: 20px; text-align: center; color: #666;">${message}</div>`;
+                return;
+            }
+            
+            container.innerHTML = waypoints.map((wp, index) => {
+                const notes = wp.metadata && wp.metadata.notes ? wp.metadata.notes : '';
+                const notesDisplay = notes ? notes : 'No notes added';
+                const notesClass = notes ? '' : 'notes-empty';
+                
+                // Render group tags
+                const groups = wp.metadata && wp.metadata.groups ? wp.metadata.groups : [];
+                const groupTags = groups.map(group => 
+                    `<span class="group-tag">${group.name}</span>`
+                ).join('');
+                
+                return `
+                    <div class="waypoint-item" data-id="${wp.id}" data-index="${index}" draggable="true">
+                        <label class="waypoint-checkbox" style="margin-right: 10px; cursor: pointer;">
+                            <input type="checkbox" class="waypoint-select" data-waypoint-id="${wp.id}" onchange="updateSelectedCount()" style="transform: scale(1.1);">
+                        </label>
+                        <div class="drag-handle">⋮⋮</div>
+                        <div class="waypoint-info">
+                            <div class="waypoint-name">${wp.name}</div>
+                            <input type="text" class="annotation-input" value="${wp.name}" 
+                                   onblur="saveAnnotation('${wp.id}', this.value)"
+                                   onkeypress="if(event.key==='Enter') this.blur()">
+                            
+                            <div class="notes-display ${notesClass}">${notesDisplay}</div>
+                            <textarea class="notes-input" placeholder="Add notes..." 
+                                      onblur="saveNotes('${wp.id}', this.value)"
+                                      onkeydown="if(event.key==='Escape') this.blur()">${notes}</textarea>
+                            
+                            <div class="waypoint-details">
+                                <span class="waypoint-type type-${wp.waypoint_type}">${wp.waypoint_type.replace('_', ' ')}</span>
+                                <span>Position: [${wp.position.map(p => p.toFixed(1)).join(', ')}]</span>
+                                ${(wp.waypoint_type === 'camera_position' || wp.waypoint_type === 'directional_lighting') && wp.target ? `<span>Target: [${wp.target.map(t => t.toFixed(1)).join(', ')}]</span>` : ''}
+                                <span>ID: ${wp.id}</span>
+                                <span>${new Date(wp.timestamp).toLocaleString()}</span>
+                            </div>
+                            
+                            ${groupTags ? `<div class="waypoint-groups">${groupTags}</div>` : ''}
+                        </div>
+                        <div class="waypoint-actions">
+                            <button class="btn btn-primary btn-small" onclick="editAnnotation('${wp.id}')">✏️ Name</button>
+                            <button class="btn btn-warning btn-small" onclick="editNotes('${wp.id}')">📝 Notes</button>
+                            <button class="btn btn-success btn-small" onclick="assignWaypointToGroups('${wp.id}')">📁 Groups</button>
+                            <button class="btn btn-success btn-small" onclick="moveToWaypoint('${wp.id}')">📍 Go To</button>
+                            <button class="btn btn-danger btn-small" onclick="removeWaypoint('${wp.id}')">🗑️ Remove</button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            // Add drag and drop event listeners
+            addDragAndDropListeners();
+        }
+        
+        // Drag and drop with persistence
+        function addDragAndDropListeners() {
+            const items = document.querySelectorAll('.waypoint-item');
+            
+            items.forEach(item => {
+                item.addEventListener('dragstart', handleDragStart);
+                item.addEventListener('dragover', handleDragOver);
+                item.addEventListener('dragenter', handleDragEnter);
+                item.addEventListener('dragleave', handleDragLeave);
+                item.addEventListener('drop', handleDrop);
+                item.addEventListener('dragend', handleDragEnd);
+            });
+        }
+        
+        let draggedElement = null;
+        
+        function handleDragStart(e) {
+            draggedElement = this;
+            this.classList.add('dragging');
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/html', this.outerHTML);
+        }
+        
+        function handleDragOver(e) {
+            if (e.preventDefault) {
+                e.preventDefault();
+            }
+            e.dataTransfer.dropEffect = 'move';
+            return false;
+        }
+        
+        function handleDragEnter(e) {
+            this.classList.add('drag-over');
+        }
+        
+        function handleDragLeave(e) {
+            this.classList.remove('drag-over');
+        }
+        
+        async function handleDrop(e) {
+            if (e.stopPropagation) {
+                e.stopPropagation();
+            }
+            
+            if (draggedElement !== this) {
+                const draggedId = draggedElement.dataset.id;
+                const targetIndex = parseInt(this.dataset.index);
+                
+                // Find the dragged waypoint in our array
+                const draggedIndex = waypoints.findIndex(wp => wp.id === draggedId);
+                
+                if (draggedIndex !== -1) {
+                    // Remove from old position and insert at new position
+                    const [draggedWaypoint] = waypoints.splice(draggedIndex, 1);
+                    waypoints.splice(targetIndex, 0, draggedWaypoint);
+                    
+                    // Re-render the list
+                    renderWaypoints();
+                    
+                    // TODO: Implement waypoint reordering API endpoint
+                    // For now, reordering is visual only - needs backend support
+                    console.log('Reordered waypoints (visual only):', waypoints.map(wp => wp.id));
+                }
+            }
+            
+            return false;
+        }
+        
+        function handleDragEnd(e) {
+            document.querySelectorAll('.waypoint-item').forEach(item => {
+                item.classList.remove('dragging', 'drag-over');
+            });
+            draggedElement = null;
+        }
+        
+        // Group assignment functions
+        function assignWaypointToGroups(waypointId) {
+            // Populate group checkboxes
+            const container = document.getElementById('groupCheckboxList');
+            
+            function renderGroupCheckboxes(groups, prefix = '') {
+                return groups.map(group => {
+                    return `
+                        <label>
+                            <input type="checkbox" value="${group.id}">
+                            ${prefix}${group.name}
+                        </label>
+                        ${group.children ? renderGroupCheckboxes(group.children, prefix + '└─ ') : ''}
+                    `;
+                }).join('');
+            }
+            
+            container.innerHTML = renderGroupCheckboxes(groups);
+            
+            // Pre-check groups this waypoint is already in
+            const waypoint = waypoints.find(wp => wp.id === waypointId);
+            if (waypoint && waypoint.metadata && waypoint.metadata.groups) {
+                const currentGroups = waypoint.metadata.groups.map(g => g.id);
+                container.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
+                    if (currentGroups.includes(checkbox.value)) {
+                        checkbox.checked = true;
+                    }
+                });
+            }
+            
+            // Store waypoint ID for save function
+            container.dataset.waypointId = waypointId;
+            
+            document.getElementById('assignModal').style.display = 'block';
+        }
+        
+        function assignSelectedToGroups() {
+            const selectedCheckboxes = document.querySelectorAll('.waypoint-select:checked');
+            console.log(`Found ${selectedCheckboxes.length} selected waypoint checkboxes`);
+            
+            if (selectedCheckboxes.length === 0) {
+                alert('Please select waypoints to assign to groups');
+                return;
+            }
+            
+            const container = document.getElementById('groupCheckboxList');
+            
+            function renderGroupCheckboxes(groups, prefix = '') {
+                return groups.map(group => {
+                    return `
+                        <label>
+                            <input type="checkbox" value="${group.id}">
+                            ${prefix}${group.name}
+                        </label>
+                        ${group.children ? renderGroupCheckboxes(group.children, prefix + '└─ ') : ''}
+                    `;
+                }).join('');
+            }
+            
+            container.innerHTML = renderGroupCheckboxes(groups);
+            
+            // Store selected waypoint IDs
+            const waypointIds = Array.from(selectedCheckboxes).map(cb => cb.dataset.waypointId);
+            container.dataset.waypointIds = JSON.stringify(waypointIds);
+            
+            document.getElementById('assignModal').style.display = 'block';
+        }
+        
+        async function saveGroupAssignment() {
+            const container = document.getElementById('groupCheckboxList');
+            const selectedGroups = Array.from(container.querySelectorAll('input[type="checkbox"]:checked'))
+                                        .map(cb => cb.value);
+            
+            let waypointIds;
+            if (container.dataset.waypointId) {
+                // Single waypoint assignment
+                waypointIds = [container.dataset.waypointId];
+            } else if (container.dataset.waypointIds) {
+                // Multiple waypoint assignment
+                waypointIds = JSON.parse(container.dataset.waypointIds);
+            } else {
+                alert('No waypoints selected');
+                return;
+            }
+            
+            // Process each waypoint
+            for (const waypointId of waypointIds) {
+                console.log(`Processing waypoint: ${waypointId}`);
+                try {
+                    // Get current groups for this waypoint
+                    const currentGroupsResult = await apiCall(`get_waypoint_groups?waypoint_id=${waypointId}`);
+                    if (!currentGroupsResult.success) {
+                        console.error(`Failed to get current groups for waypoint ${waypointId}:`, currentGroupsResult.error);
+                        continue;
+                    }
+                    
+                    const currentGroups = currentGroupsResult.groups.map(g => g.id);
+                    
+                    // Calculate differences
+                    const groupsToAdd = selectedGroups.filter(g => !currentGroups.includes(g));
+                    const groupsToRemove = currentGroups.filter(g => !selectedGroups.includes(g));
+                    
+                    // Add to new groups
+                    if (groupsToAdd.length > 0) {
+                        const addResult = await apiCall('add_waypoint_to_groups', 'POST', {
+                            waypoint_id: waypointId,
+                            group_ids: groupsToAdd
+                        });
+                        if (!addResult.success) {
+                            console.error(`Failed to add waypoint ${waypointId} to groups:`, addResult.error);
+                        }
+                    }
+                    
+                    // Remove from old groups (including all groups if selectedGroups is empty)
+                    if (groupsToRemove.length > 0) {
+                        const removeResult = await apiCall('remove_waypoint_from_groups', 'POST', {
+                            waypoint_id: waypointId,
+                            group_ids: groupsToRemove
+                        });
+                        if (!removeResult.success) {
+                            console.error(`Failed to remove waypoint ${waypointId} from groups:`, removeResult.error);
+                        }
+                    }
+                    
+                } catch (error) {
+                    console.error(`Error processing waypoint ${waypointId}:`, error);
+                }
+            }
+            
+            closeAssignModal();
+            await refreshWaypoints(currentGroupFilter);
+        }
+        
+        function closeAssignModal() {
+            document.getElementById('assignModal').style.display = 'none';
+        }
+        
+        // Export/Import functions
+        async function exportWaypoints() {
+            const result = await apiCall('export_waypoints?include_groups=true');
+            if (result.success) {
+                const dataStr = JSON.stringify(result.export_data, null, 2);
+                const dataBlob = new Blob([dataStr], { type: 'application/json' });
+                
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(dataBlob);
+                link.download = `waypoints_export_${new Date().toISOString().split('T')[0]}.json`;
+                link.click();
+                
+                console.log(`Exported ${result.waypoint_count} waypoints and ${result.group_count} groups`);
+            } else {
+                alert(`Export failed: ${result.error}`);
+            }
+        }
+        
+        async function importWaypoints() {
+            const fileInput = document.getElementById('importFile');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                return;
+            }
+            
+            try {
+                const fileContent = await file.text();
+                const importData = JSON.parse(fileContent);
+                const mergeMode = document.getElementById('importMode').value;
+                
+                if (mergeMode === 'replace' && !confirm('This will replace all existing waypoints and groups. Continue?')) {
+                    return;
+                }
+                
+                const result = await apiCall('import_waypoints', 'POST', {
+                    import_data: importData,
+                    merge_mode: mergeMode
+                });
+                
+                if (result.success) {
+                    alert(`Import successful! Imported ${result.imported_waypoints} waypoints and ${result.imported_groups} groups`);
+                    await refreshWaypoints(currentGroupFilter);
+                    await refreshGroups();
+                    fileInput.value = ''; // Clear file input
+                } else {
+                    alert(`Import failed: ${result.error}`);
+                }
+            } catch (error) {
+                alert(`Error reading file: ${error.message}`);
+            }
+        }
+        
+        // Existing functions adapted for new backend
+        async function editAnnotation(waypointId) {
+            const item = document.querySelector(`[data-id="${waypointId}"]`);
+            item.classList.add('edit-mode');
+            const input = item.querySelector('.annotation-input');
+            input.focus();
+            input.select();
+        }
+        
+        async function saveAnnotation(waypointId, newName) {
+            const item = document.querySelector(`[data-id="${waypointId}"]`);
+            item.classList.remove('edit-mode');
+            
+            try {
+                const result = await apiCall('update_waypoint', 'POST', {
+                    waypoint_id: waypointId,
+                    name: newName
+                });
+                
+                if (result.success) {
+                    const waypoint = waypoints.find(wp => wp.id === waypointId);
+                    if (waypoint) {
+                        waypoint.name = newName;
+                        item.querySelector('.waypoint-name').textContent = newName;
+                    }
+                    console.log('Updated waypoint name:', waypointId, newName);
+                } else {
+                    alert(`Error updating name: ${result.error}`);
+                    const waypoint = waypoints.find(wp => wp.id === waypointId);
+                    if (waypoint) {
+                        item.querySelector('.annotation-input').value = waypoint.name;
+                    }
+                }
+            } catch (error) {
+                console.error('Error updating waypoint name:', error);
+                alert('Error updating waypoint name');
+            }
+        }
+        
+        function editNotes(waypointId) {
+            const item = document.querySelector(`[data-id="${waypointId}"]`);
+            item.classList.add('edit-notes-mode');
+            const textarea = item.querySelector('.notes-input');
+            textarea.focus();
+        }
+        
+        async function saveNotes(waypointId, notes) {
+            const item = document.querySelector(`[data-id="${waypointId}"]`);
+            item.classList.remove('edit-notes-mode');
+            
+            try {
+                const result = await apiCall('update_waypoint', 'POST', {
+                    waypoint_id: waypointId,
+                    notes: notes
+                });
+                
+                if (result.success) {
+                    const waypoint = waypoints.find(wp => wp.id === waypointId);
+                    if (waypoint) {
+                        if (!waypoint.metadata) waypoint.metadata = {};
+                        waypoint.metadata.notes = notes;
+                        
+                        const notesDisplay = item.querySelector('.notes-display');
+                        if (notes.trim()) {
+                            notesDisplay.textContent = notes;
+                            notesDisplay.classList.remove('notes-empty');
+                        } else {
+                            notesDisplay.textContent = 'No notes added';
+                            notesDisplay.classList.add('notes-empty');
+                        }
+                    }
+                    console.log('Updated waypoint notes:', waypointId, notes);
+                } else {
+                    alert(`Error updating notes: ${result.error}`);
+                }
+            } catch (error) {
+                console.error('Error updating waypoint notes:', error);
+                alert('Error updating waypoint notes');
+            }
+        }
+        
+        async function moveToWaypoint(waypointId) {
+            const waypoint = waypoints.find(wp => wp.id === waypointId);
+            if (waypoint) {
+                try {
+                    console.log(`Positioning camera at waypoint: ${waypoint.name}`);
+                    
+                    // Use internal WorldSurveyor goto endpoint (no external dependencies)
+                    const response = await fetch(`${API_BASE}/goto_waypoint`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ waypoint_id: waypointId })
+                    });
+                    
+                    const result = await response.json();
+                    if (result.success) {
+                        console.log(`Camera positioned at waypoint: ${waypoint.name}`);
+                        console.log(`Positioning type: ${result.positioning_type}`);
+                        if (result.positioning_type === 'exact_captured_position') {
+                            showMessage(`Restored to exact captured camera position: ${waypoint.name}`, 'success');
+                        } else {
+                            showMessage(`Camera positioned to view waypoint: ${waypoint.name}`, 'success');
+                        }
+                    } else {
+                        console.log('Camera positioning failed:', result.error);
+                        showMessage(`Position: [${waypoint.position.map(p => p.toFixed(2)).join(', ')}] - ${result.error || 'Viewport not available'}`, 'info');
+                    }
+                } catch (error) {
+                    console.log('Camera positioning failed:', error);
+                    showMessage(`Position: [${waypoint.position.map(p => p.toFixed(2)).join(', ')}] - Network error`, 'info');
+                }
+            }
+        }
+        
+        async function removeWaypoint(waypointId) {
+            if (confirm('Are you sure you want to remove this waypoint?')) {
+                const result = await apiCall('remove_waypoint', 'POST', { waypoint_id: waypointId });
+                if (result.success) {
+                    await refreshWaypoints(currentGroupFilter);
+                } else {
+                    alert(`Error: ${result.error}`);
+                }
+            }
+        }
+        
+        async function showAllMarkers() {
+            const result = await apiCall('set_markers_visible', 'POST', { visible: true });
+            if (result.success) await updateStatus();
+        }
+        
+        async function hideAllMarkers() {
+            const result = await apiCall('set_markers_visible', 'POST', { visible: false });
+            if (result.success) await updateStatus();
+        }
+        
+        async function clearAllWaypoints() {
+            if (confirm('Are you sure you want to clear ALL waypoints? This cannot be undone.')) {
+                try {
+                    const result = await apiCall('clear_all_waypoints', 'POST', { confirm: true });
+                    if (result.success) {
+                        console.log(`Cleared ${result.cleared_count} waypoints`);
+                        currentGroupFilter = null; // Reset filter when all waypoints are cleared
+                        await refreshWaypoints();
+                        await refreshGroups();
+                        alert(`Successfully cleared ${result.cleared_count} waypoints`);
+                    } else {
+                        alert(`Error clearing waypoints: ${result.error}`);
+                    }
+                } catch (error) {
+                    console.error('Error clearing waypoints:', error);
+                    alert('Error clearing waypoints - check console for details');
+                }
+            }
+        }
+        
+        // Bulk selection functions (fixed for filtering)
+        function toggleSelectAll() {
+            const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+            // Only select checkboxes for waypoints that are currently visible/rendered
+            const waypointCheckboxes = document.querySelectorAll('.waypoint-item:not([style*="display: none"]) .waypoint-select');
+            
+            waypointCheckboxes.forEach(checkbox => {
+                checkbox.checked = selectAllCheckbox.checked;
+            });
+            
+            updateSelectedCount();
+        }
+        
+        function updateSelectedCount() {
+            const selectedCheckboxes = document.querySelectorAll('.waypoint-select:checked');
+            const totalCheckboxes = document.querySelectorAll('.waypoint-select');
+            const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+            const selectedCountSpan = document.getElementById('selectedCount');
+            
+            selectedCountSpan.textContent = `${selectedCheckboxes.length} selected`;
+            
+            if (selectedCheckboxes.length === 0) {
+                selectAllCheckbox.checked = false;
+                selectAllCheckbox.indeterminate = false;
+            } else if (selectedCheckboxes.length === totalCheckboxes.length) {
+                selectAllCheckbox.checked = true;
+                selectAllCheckbox.indeterminate = false;
+            } else {
+                selectAllCheckbox.checked = false;
+                selectAllCheckbox.indeterminate = true;
+            }
+        }
+        
+        async function hideSelectedWaypoints() {
+            const selectedCheckboxes = document.querySelectorAll('.waypoint-select:checked');
+            
+            if (selectedCheckboxes.length === 0) {
+                alert('Please select waypoints to hide');
+                return;
+            }
+            
+            const selectedWaypointIds = Array.from(selectedCheckboxes).map(cb => cb.dataset.waypointId);
+            
+            // Hide each selected waypoint individually
+            for (const waypointId of selectedWaypointIds) {
+                try {
+                    const result = await apiCall('set_individual_marker_visible', 'POST', {
+                        waypoint_id: waypointId,
+                        visible: false
+                    });
+                    
+                    if (!result.success) {
+                        console.error(`Failed to hide waypoint ${waypointId}:`, result.error);
+                    }
+                } catch (error) {
+                    console.error(`Error hiding waypoint ${waypointId}:`, error);
+                }
+            }
+            
+            console.log(`Hidden ${selectedWaypointIds.length} selected waypoints using individual visibility`);
+            await updateStatus();
+        }
+        
+        async function showSelectedWaypoints() {
+            const selectedCheckboxes = document.querySelectorAll('.waypoint-select:checked');
+            
+            if (selectedCheckboxes.length === 0) {
+                alert('Please select waypoints to show');
+                return;
+            }
+            
+            const waypointIds = Array.from(selectedCheckboxes).map(cb => cb.dataset.waypointId);
+            
+            try {
+                const result = await apiCall('set_selective_markers_visible', 'POST', {
+                    visible_waypoint_ids: waypointIds
+                });
+                
+                if (result.success) {
+                    console.log(`Entered selective mode - showing only ${waypointIds.length} selected waypoints`);
+                } else {
+                    console.error('Failed to set selective visibility:', result.error);
+                }
+            } catch (error) {
+                console.error('Error setting selective visibility:', error);
+            }
+            
+            await updateStatus();
+        }
+        
+        // Modal close on outside click
+        window.onclick = function(event) {
+            const groupModal = document.getElementById('groupModal');
+            const assignModal = document.getElementById('assignModal');
+            
+            if (event.target === groupModal) {
+                closeGroupModal();
+            }
+            if (event.target === assignModal) {
+                closeAssignModal();
+            }
+        }
+        
+        // Initialize
+        refreshWaypoints();
+        refreshGroups();
+        setInterval(updateStatus, 5000);
+    </script>
+</body>
+</html>

@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/
+**/venv/
+
+# Build/output
+build/
+dist/
+*.log
+logs/
+*.db
+*.sqlite
+
+# Editors/OS
+.DS_Store
+.idea/
+.vscode/
+
+# Env/config
+.env
+.env.*
+
+# Node (if present)
+node_modules/
+
+# Misc
+*.bak
+*.backup
+*.swp
+*.swo

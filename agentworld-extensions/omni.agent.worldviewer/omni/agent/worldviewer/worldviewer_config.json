@@ -1,0 +1,12 @@
+{
+  "_comment": "WorldViewer Extension Configuration",
+  "debug_mode": true,
+  "verbose_logging": true,
+  "log_camera_operations": true,
+  "server_port": 8900,
+  "cache_duration_ms": 500,
+  "ui_update_frequency_ms": 250,
+  "shutdown_timeout": 10.0,
+  "default_camera_distance": 15.0,
+  "default_movement_duration": 4.0
+}

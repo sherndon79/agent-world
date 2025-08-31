@@ -1,0 +1,27 @@
+[core]
+reloadable = true
+order = 0
+
+[package]
+version = "0.1.0"
+category = "Agent World Extensions"
+title = "Agent WorldRecorder"
+description = "Kit-native video recording and screenshot capture HTTP API. Replaces PyAV-based implementation with reliable omni.kit.capture.viewport integration."
+authors = ["Agent World Team"]
+keywords = ["isaac", "recording", "video", "screenshot", "capture", "kit", "api", "worldrecorder"]
+writeTarget.kit = true
+writeTarget.platform = true
+
+[dependencies]
+"omni.kit.capture.viewport" = {}
+
+[fswatcher.patterns]
+include = ["*.py", "*.toml"]
+exclude = ["__pycache__"]
+
+[[python.module]]
+name = "omni.agent.worldrecorder"
+
+[settings]
+"/exts/omni.agent.worldrecorder/auth_enabled" = { type="bool", default=true, description="Enable authentication for WorldRecorder API" }
+

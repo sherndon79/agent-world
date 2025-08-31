@@ -1,0 +1,41 @@
+[core]
+reloadable = true
+order = 0
+
+[package]
+version = "0.1.0"
+category = "Agent WorldSurveyor"
+title = "Agent WorldSurveyor"
+description = "Thread-safe waypoint management and spatial surveying extension with HTTP API for AI-powered scene planning in Isaac Sim"
+authors = ["Agent World Team"]
+repository = ""
+keywords = ["isaac", "worldsurveyor", "waypoint", "spatial", "surveying", "api", "ai", "thread-safe"]
+changelog = "docs/CHANGELOG.md"
+readme = "docs/README.md"
+icon = "data/icon.png"
+writeTarget.kit = true
+writeTarget.platform = true
+
+[dependencies]
+"omni.usd" = {}
+"omni.ui" = {}
+"omni.kit.viewport.utility" = {}
+"omni.kit.widget.toolbar" = {}
+"isaacsim.util.debug_draw" = {}
+
+# Hot reloading support
+[fswatcher.patterns]
+include = ["*.py", "*.toml"]
+exclude = ["__pycache__"]
+
+[[python.module]]
+name = "omni.agent.worldsurveyor"
+
+[[test]]
+dependencies = []
+stdoutFailPatterns.exclude = [
+    "*[Error] [carb.glinterop.plugin] GLInteropContext::init: carb::windowing is not available*",
+]
+
+[settings]
+"/exts/omni.agent.worldsurveyor/auth_enabled" = { type="bool", default=false, description="Enable authentication for WorldSurveyor API (WARNING: Keep disabled to allow waypoint manager webpage access)" }

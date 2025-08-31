@@ -1,0 +1,63 @@
+{
+  "_comment": "HTTP server configuration for Agent World Extensions",
+  "_usage": "Unified HTTP handling settings and response formats",
+  
+  "server_defaults": {
+    "request_timeout_seconds": 30,
+    "socket_timeout_seconds": 5,
+    "max_content_length": 10485760,
+    "enable_keepalive": true,
+    "socket_reuse_address": true,
+    "socket_linger_enabled": true,
+    "socket_linger_timeout": 0,
+    "log_requests": false
+  },
+  
+  "response_formats": {
+    "json_ensure_ascii": false,
+    "json_indent": null,
+    "json_separators": [",", ":"],
+    "prometheus_content_type": "text/plain; version=0.0.4; charset=utf-8",
+    "default_charset": "utf-8"
+  },
+  
+  "cors_headers": {
+    "access_control_allow_origin": "*",
+    "access_control_allow_methods": "GET, POST, OPTIONS",
+    "access_control_allow_headers": "Content-Type, Authorization",
+    "access_control_max_age": "86400",
+    "vary_header": "Origin"
+  },
+  
+  "standard_endpoints": {
+    "health_path": "health",
+    "metrics_json_paths": ["metrics", "metrics.json"],
+    "metrics_prometheus_path": "metrics.prom",
+    "openapi_paths": ["docs", "openapi.json"],
+    "status_check_paths": ["status", "ping"]
+  },
+  
+  "error_handling": {
+    "include_traceback_in_debug": true,
+    "generic_error_message": "Internal server error occurred",
+    "rate_limit_error_message": "Rate limit exceeded",
+    "auth_error_message": "Unauthorized",
+    "not_found_message": "Endpoint not found",
+    "method_not_allowed_message": "Method not allowed"
+  },
+  
+  "request_parsing": {
+    "max_url_length": 2048,
+    "max_header_count": 50,
+    "max_query_params": 50,
+    "strict_json_parsing": true,
+    "allow_empty_post_body": true
+  },
+  
+  "performance": {
+    "response_compression": false,
+    "cache_static_responses": false,
+    "connection_pool_size": 10,
+    "worker_thread_count": 1
+  }
+}
