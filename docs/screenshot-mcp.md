@@ -24,9 +24,33 @@ Cross-platform desktop screenshot capture MCP server for AI agents. Provides sys
 ## Installation
 
 ### Prerequisites
+
+#### Quick Setup (Recommended)
+Use the Agent World installer to automatically set up MCP server virtual environments:
+
 ```bash
-pip install pillow mcp
+# Linux/macOS
+./scripts/install_agent_world.sh
+# Answer "yes" when prompted: "Create Python virtual environments for MCP servers?"
+
+# Windows
+./scripts/install_agent_world.ps1
+# Answer "yes" when prompted: "Create Python virtual environments for MCP servers?"
 ```
+
+#### Manual Setup
+If setting up manually, create a virtual environment for the desktop-screenshot MCP server:
+
+```bash
+# Create virtual environment for desktop-screenshot MCP server
+cd mcp-servers/desktop-screenshot
+python -m venv venv
+source venv/bin/activate  # Linux/macOS
+# or: venv\Scripts\activate  # Windows
+pip install -e .
+```
+
+**Note:** The MCP server uses modern Python packaging (`pyproject.toml`) and must be installed in development mode (`pip install -e .`) to work properly.
 
 ### Platform-Specific Requirements
 

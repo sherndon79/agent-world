@@ -15,7 +15,7 @@ Settings are loaded in order of precedence (highest to lowest):
 
 ### Monolithic Configuration
 
-The primary configuration file is `agent-world-config.json` in the extensions root:
+The primary configuration file is `agent-world-config.json` in the `agentworld-extensions/` directory:
 
 ```json
 {
@@ -158,13 +158,13 @@ Extensions integrate with Isaac Sim's native carb.settings system:
 
 ### Security Configuration File
 
-Central security settings are read from `agent-world-security.json` if present (loaded automatically by each extension):
+Central security settings are read from `agent-world-security.json` in the `agentworld-extensions/` directory if present (loaded automatically by each extension):
 
 - `authentication.bearer_token_header` – customize the header used for the Bearer token (default `Authorization`)
 - `authentication.token_prefix` – customize token prefix (default `Bearer `)
 - `rate_limiting.requests_per_minute` – configure per-IP request budget (default 60)
 
-Cross‑cutting HTTP settings like CORS and JSON formatting are managed in `agent-world-http.json` and applied by the unified HTTP handler.
+Cross‑cutting HTTP settings like CORS and JSON formatting are managed in `agent-world-http.json` in the `agentworld-extensions/` directory and applied by the unified HTTP handler.
 
 ### WorldSurveyor UI Authentication
 

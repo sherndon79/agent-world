@@ -212,10 +212,41 @@ print(f"WorldRecorder: {'✓' if response.status_code == 200 else '✗'}")
 
 ## MCP Integration Setup
 
-### Install MCP Client
+### Install MCP Servers
+
+#### Quick Setup (Recommended)
+The Agent World installer can automatically set up MCP server virtual environments:
+
 ```bash
-pip install model-context-protocol
+# Linux/macOS
+./scripts/install_agent_world.sh
+# Answer "yes" when prompted: "Create Python virtual environments for MCP servers?"
+
+# Windows
+./scripts/install_agent_world.ps1
+# Answer "yes" when prompted: "Create Python virtual environments for MCP servers?"
 ```
+
+#### Manual Setup
+If setting up manually, each MCP server requires its own virtual environment:
+
+```bash
+# Create virtual environments for each MCP server
+cd mcp-servers/worldbuilder
+python -m venv venv
+source venv/bin/activate  # Linux/macOS
+# or: venv\Scripts\activate  # Windows
+pip install -e .
+
+cd ../worldviewer
+python -m venv venv 
+source venv/bin/activate
+pip install -e .
+
+# Repeat for worldrecorder, worldsurveyor, desktop-screenshot
+```
+
+**Note:** MCP servers use modern Python packaging (`pyproject.toml`) and must be installed in development mode (`pip install -e .`) to work properly.
 
 ### Configure MCP Servers
 Copy MCP server configurations to your MCP client:
