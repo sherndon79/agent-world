@@ -32,6 +32,8 @@ from typing import Dict, Set
 FSTRING_ENDPOINT_RE = re.compile(r"\{self\.base_url\}/([A-Za-z0-9_.\-/]+)")
 REQUEST_FUNC_RE = re.compile(r"_request\(\s*['\"](?:GET|POST)['\"]\s*,\s*['\"]([^'\"]+)['\"]")
 MAKE_REQUEST_RE = re.compile(r"_make_request\(\s*['\"][A-Z]+['\"]\s*,\s*['\"]([^'\"]+)['\"]")
+EXECUTE_OP_RE = re.compile(r"_execute_camera_operation\(\s*(?:[fFbBrR]?['\"][^'\"]+['\"])\s*,\s*(?:[fFbBrR]?['\"](?:GET|POST)['\"])\s*,\s*(?:[fFbBrR]?['\"]([^'\"]+)['\"])\s*")
+CLIENT_CALL_RE = re.compile(r"self\.client\.(?:get|post|put|delete)\(\s*(?:[fFbBrR]?['\"](/?[^'\"\s]+)['\"])\s*")
 
 
 DEFAULT_PORTS: Dict[str, int] = {
@@ -46,11 +48,18 @@ def parse_mcp_endpoints(mcp_source: str) -> Set[str]:
     endpoints: Set[str] = set()
 
     for m in FSTRING_ENDPOINT_RE.finditer(mcp_source):
-        endpoints.add(m.group(1).lstrip('/'))
+        path = m.group(1)
+        endpoints.add(path.split('?', 1)[0].lstrip('/'))
     for m in REQUEST_FUNC_RE.finditer(mcp_source):
-        endpoints.add(m.group(1).lstrip('/'))
+        endpoints.add(m.group(1).split('?', 1)[0].lstrip('/'))
     for m in MAKE_REQUEST_RE.finditer(mcp_source):
-        endpoints.add(m.group(1).lstrip('/'))
+        endpoints.add(m.group(1).split('?', 1)[0].lstrip('/'))
+    # self.client.get("/endpoint") and similar
+    for m in CLIENT_CALL_RE.finditer(mcp_source):
+        endpoints.add(m.group(1).split('?', 1)[0].lstrip('/'))
+    # _execute_camera_operation("op", "METHOD", "/endpoint")
+    for m in EXECUTE_OP_RE.finditer(mcp_source):
+        endpoints.add(m.group(1).split('?', 1)[0].lstrip('/'))
 
     return endpoints
 

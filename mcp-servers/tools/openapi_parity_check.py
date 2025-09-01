@@ -30,6 +30,8 @@ from typing import Set, Tuple
 FSTRING_ENDPOINT_RE = re.compile(r"\{self\.base_url\}/([A-Za-z0-9_.\-/]+)")
 REQUEST_FUNC_RE = re.compile(r"_request\(\s*['\"](?:GET|POST)['\"]\s*,\s*['\"]([^'\"]+)['\"]")
 MAKE_REQUEST_RE = re.compile(r"_make_request\(\s*['\"][A-Z]+['\"]\s*,\s*['\"]([^'\"]+)['\"]")
+EXECUTE_OP_RE = re.compile(r"_execute_camera_operation\(\s*(?:[fFbBrR]?['\"][^'\"]+['\"])\s*,\s*(?:[fFbBrR]?['\"](?:GET|POST)['\"])\s*,\s*(?:[fFbBrR]?['\"]([^'\"]+)['\"])\s*")
+CLIENT_CALL_RE = re.compile(r"self\.client\.(?:get|post|put|delete)\(\s*(?:[fFbBrR]?['\"](/?[^'\"\s]+)['\"])\s*")
 
 
 def parse_mcp_endpoints(mcp_source: str) -> Set[str]:
@@ -44,15 +46,23 @@ def parse_mcp_endpoints(mcp_source: str) -> Set[str]:
 
     # f"{self.base_url}/endpoint"
     for m in FSTRING_ENDPOINT_RE.finditer(mcp_source):
-        endpoints.add(m.group(1).lstrip('/'))
+        path = m.group(1)
+        endpoints.add(path.split('?', 1)[0].lstrip('/'))
 
     # _request("METHOD", "endpoint")
     for m in REQUEST_FUNC_RE.finditer(mcp_source):
-        endpoints.add(m.group(1).lstrip('/'))
+        endpoints.add(m.group(1).split('?', 1)[0].lstrip('/'))
 
     # _make_request("METHOD", "/endpoint")
     for m in MAKE_REQUEST_RE.finditer(mcp_source):
-        endpoints.add(m.group(1).lstrip('/'))
+        endpoints.add(m.group(1).split('?', 1)[0].lstrip('/'))
+    # _execute_camera_operation("op", "METHOD", "/endpoint")
+    for m in EXECUTE_OP_RE.finditer(mcp_source):
+        endpoints.add(m.group(1).split('?', 1)[0].lstrip('/'))
+
+    # self.client.get("/endpoint") and friends
+    for m in CLIENT_CALL_RE.finditer(mcp_source):
+        endpoints.add(m.group(1).split('?', 1)[0].lstrip('/'))
 
     return endpoints
 
