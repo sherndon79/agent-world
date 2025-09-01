@@ -11,19 +11,21 @@ import json
 import sys
 import os
 from typing import Any, Dict, List, Optional
-import hashlib
-import hmac
-import time
 
-import httpx
+import aiohttp
+
+# Add shared modules to path
+shared_path = os.path.join(os.path.dirname(__file__), '..', '..', 'shared')
+if shared_path not in sys.path:
+    sys.path.insert(0, shared_path)
+
+# Import unified auth client
+from mcp_base_client import MCPBaseClient
 from mcp.server import Server
 from mcp.server.models import InitializationOptions
 from mcp.server.stdio import stdio_server
 from mcp.server.lowlevel import NotificationOptions
-from mcp.types import (
-    Tool,
-    TextContent,
-)
+from mcp.types import Tool, TextContent
 
 
 def get_movement_style_schema(shot_type: str) -> Dict:
@@ -147,7 +149,6 @@ class CameraResponseFormatter:
         
         return error_message
 
-# Add shared compatibility utilities
 shared_compat_path = os.path.join(os.path.dirname(__file__), '..', '..', 'shared')
 if shared_compat_path not in sys.path:
     sys.path.insert(0, shared_compat_path)
@@ -156,50 +157,18 @@ try:
     from worldviewer_config import get_config
     config = get_config()
 except ImportError:
-    # Fallback if shared config not available
     config = None
 
-# Import Pydantic compatibility utilities
 try:
     from pydantic_compat import (
         create_compatible_position_schema,
         validate_position,
-        sanitize_schema_for_v1,
         PYDANTIC_VERSION
     )
     HAS_COMPAT = True
 except ImportError:
     HAS_COMPAT = False
     PYDANTIC_VERSION = 1
-
-# Import enums from the synchronous cinematic controller
-try:
-    from cinematic_controller_sync import EasingType, ShotType, FramingStyle
-except ImportError:
-    # Fallback enum definitions if import fails
-    from enum import Enum
-    
-    class EasingType(Enum):
-        LINEAR = "linear"
-        EASE_IN = "ease_in"
-        EASE_OUT = "ease_out"
-        EASE_IN_OUT = "ease_in_out"
-        BOUNCE = "bounce"
-        ELASTIC = "elastic"
-    
-    class ShotType(Enum):
-        CLOSE_UP = "close_up"
-        MEDIUM = "medium"
-        WIDE = "wide"
-        ESTABLISHING = "establishing"
-        EXTREME_WIDE = "extreme_wide"
-    
-    class FramingStyle(Enum):
-        CENTER = "center"
-        RULE_OF_THIRDS_LEFT = "rule_of_thirds_left"
-        RULE_OF_THIRDS_RIGHT = "rule_of_thirds_right"
-        LOW_ANGLE = "low_angle"
-        HIGH_ANGLE = "high_angle"
 
 
 def create_position_schema(description: str = "Camera position as [x, y, z]") -> Dict:
@@ -232,19 +201,28 @@ class WorldViewerMCP:
             self.timeout = 10.0
             self.retry_attempts = 3
         
-        # Authentication configuration
-        self.auth_token = os.getenv("AGENT_WORLDVIEWER_AUTH_TOKEN") or os.getenv("AGENT_EXT_AUTH_TOKEN")
-        self.hmac_secret = os.getenv("AGENT_WORLDVIEWER_HMAC_SECRET") or os.getenv("AGENT_EXT_HMAC_SECRET")
-        
-        # HTTP client connection pooling
-        self._http_client = None
-        self._client_lock = asyncio.Lock()
+        # Initialize unified auth client
+        self.client = MCPBaseClient("WORLDVIEWER", self.base_url)
         
         # Response formatter
         self.formatter = CameraResponseFormatter()
         
         # Register tool handlers
         self._register_tools()
+    
+    async def _initialize_client(self):
+        """Initialize the unified auth client"""
+        if not self.client._initialized:
+            await self.client.initialize()
+    
+    async def __aenter__(self):
+        """Async context manager entry"""
+        await self._initialize_client()
+        return self
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit"""
+        await self.client.close()
     
     def _register_tools(self):
         """Register all MCP tools"""
@@ -505,128 +483,26 @@ class WorldViewerMCP:
                 else:
                     return [TextContent(type="text", text=f"Unknown tool: {name}")]
             
-            except httpx.RequestError as e:
+            except aiohttp.ClientError as e:
                 return [TextContent(type="text", text=f"❌ Connection error: {str(e)}")]
             except Exception as e:
                 return [TextContent(type="text", text=f"❌ Tool execution failed: {str(e)}")]
     
-    async def _get_http_client(self) -> httpx.AsyncClient:
-        """Get or create persistent HTTP client with connection pooling"""
-        async with self._client_lock:
-            if self._http_client is None or self._http_client.is_closed:
-                # Create new client with connection pooling and optimized settings
-                limits = httpx.Limits(
-                    max_keepalive_connections=5,
-                    max_connections=10,
-                    keepalive_expiry=30.0  # Keep connections alive for 30 seconds
-                )
-                
-                self._http_client = httpx.AsyncClient(
-                    timeout=httpx.Timeout(self.timeout, connect=5.0),
-                    limits=limits,
-                    headers={
-                        "User-Agent": "XR-WorldViewer-MCP/1.0.0",
-                        "Accept": "application/json",
-                        "Content-Type": "application/json"
-                    }
-                )
-        
-        return self._http_client
     
-    def _get_auth_headers(self, method: str, endpoint: str) -> Dict[str, str]:
-        """Generate authentication headers for requests"""
-        headers = {}
-        
-        # Check if auth is disabled for troubleshooting
-        auth_disabled = os.getenv('AGENT_EXT_AUTH_ENABLED', '1').lower() in ('0', 'false', 'no', 'off')
-        if auth_disabled:
-            return headers
-        
-        # Add Bearer token if available
-        if self.auth_token:
-            headers["Authorization"] = f"Bearer {self.auth_token}"
-        
-        # Add HMAC signature if secret is available
-        if self.hmac_secret:
-            timestamp = str(time.time())
-            # Normalize endpoint to start with /
-            if not endpoint.startswith('/'):
-                endpoint = '/' + endpoint
-            message = f"{method.upper()}|{endpoint}|{timestamp}".encode('utf-8')
-            signature = hmac.new(
-                self.hmac_secret.encode('utf-8'), 
-                message, 
-                hashlib.sha256
-            ).hexdigest()
-            
-            headers.update({
-                "X-Timestamp": timestamp,
-                "X-Signature": signature
-            })
-        
-        return headers
     
-    async def _make_request(self, method: str, endpoint: str, data: Optional[Dict] = None) -> Dict:
-        """Make HTTP request to Agent WorldViewer extension with connection pooling"""
-        
-        url = f"{self.base_url}/{endpoint.lstrip('/')}"
-        auth_headers = self._get_auth_headers(method, endpoint)
-        
-        for attempt in range(self.retry_attempts):
-            try:
-                client = await self._get_http_client()
-                
-                if method.upper() == "GET":
-                    response = await client.get(url, headers=auth_headers)
-                elif method.upper() == "POST":
-                    response = await client.post(url, json=data or {}, headers=auth_headers)
-                else:
-                    raise ValueError(f"Unsupported HTTP method: {method}")
-                
-                response.raise_for_status()
-                return response.json()
-                
-            except httpx.ConnectError as e:
-                if attempt == self.retry_attempts - 1:  # Last attempt
-                    return {
-                        "success": False,
-                        "error": "Could not connect to Agent WorldViewer extension. Is Isaac Sim running with the extension enabled?"
-                    }
-                await asyncio.sleep(0.5 * (attempt + 1))  # Exponential backoff
-                
-            except httpx.TimeoutException as e:
-                if attempt == self.retry_attempts - 1:  # Last attempt
-                    return {
-                        "success": False,
-                        "error": f"Request timed out after {self.timeout} seconds"
-                    }
-                await asyncio.sleep(0.5 * (attempt + 1))  # Exponential backoff
-                
-            except httpx.HTTPStatusError as e:
-                # Don't retry HTTP errors (4xx, 5xx)
-                return {
-                    "success": False,
-                    "error": f"HTTP {e.response.status_code}: {e.response.text}"
-                }
-            except Exception as e:
-                if attempt == self.retry_attempts - 1:  # Last attempt
-                    return {
-                        "success": False,
-                        "error": f"Request failed: {str(e)}"
-                    }
-                await asyncio.sleep(0.5 * (attempt + 1))  # Exponential backoff
-        
-        # Should not reach here, but safety fallback
-        return {
-            "success": False,
-            "error": "All retry attempts failed"
-        }
     
     async def _execute_camera_operation(self, operation: str, method: str, endpoint: str, 
                                        data: Optional[Dict] = None, **template_vars) -> List[TextContent]:
         """Unified camera operation execution with consistent response formatting"""
         try:
-            response = await self._make_request(method, endpoint, data)
+            await self._initialize_client()
+            
+            if method.upper() == "GET":
+                response = await self.client.get(endpoint)
+            elif method.upper() == "POST":
+                response = await self.client.post(endpoint, json=data)
+            else:
+                raise ValueError(f"Unsupported method: {method}")
             
             if response.get("success"):
                 message = self.formatter.format_success(operation, response, **template_vars)
@@ -635,6 +511,9 @@ class WorldViewerMCP:
                 error_message = self.formatter.format_error(operation, response.get('error', 'Unknown error'))
                 return [TextContent(type="text", text=error_message)]
         
+        except aiohttp.ClientError as e:
+            error_message = self.formatter.format_error(operation, f"Connection error: {str(e)}")
+            return [TextContent(type="text", text=error_message)]
         except Exception as e:
             error_message = self.formatter.format_error(operation, f"Execution error: {str(e)}")
             return [TextContent(type="text", text=error_message)]
@@ -736,56 +615,47 @@ class WorldViewerMCP:
             return [TextContent(type="text", text="❌ Error: usd_path is required")]
         
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.get(
-                    f"{self.base_url}/get_asset_transform",
-                    params={
-                        "usd_path": usd_path,
-                        "calculation_mode": calculation_mode
-                    },
-                    timeout=self.timeout
+            await self._initialize_client()
+            result = await self.client.get("/get_asset_transform", params={
+                "usd_path": usd_path,
+                "calculation_mode": calculation_mode
+            })
+            
+            if result.get("success"):
+                # Format the transform data nicely
+                pos = result.get("position", [0, 0, 0])
+                bounds = result.get("bounds", {})
+                bounds_center = bounds.get("center", [0, 0, 0])
+                asset_type = result.get("type", "unknown")
+                child_count = result.get("child_count", 0)
+                calc_mode = result.get("calculation_mode", "auto")
+                
+                transform_text = (
+                    f"🔍 Asset Transform: {usd_path}\n"
+                    f"• Type: {asset_type} ({child_count} children)\n"
+                    f"• Position: [{pos[0]:.2f}, {pos[1]:.2f}, {pos[2]:.2f}]\n"
+                    f"• Bounds Center: [{bounds_center[0]:.2f}, {bounds_center[1]:.2f}, {bounds_center[2]:.2f}]\n"
+                    f"• Calculation Mode: {calc_mode}\n"
+                    f"• Source: worldviewer"
                 )
                 
-                if response.status_code == 200:
-                    result = response.json()
+                # Add bounds info if available
+                if bounds.get("min") and bounds.get("max"):
+                    bounds_min = bounds["min"]
+                    bounds_max = bounds["max"]
+                    size = [bounds_max[i] - bounds_min[i] for i in range(3)]
+                    transform_text += (
+                        f"\n• Bounds Size: [{size[0]:.2f}, {size[1]:.2f}, {size[2]:.2f}]"
+                        f"\n• Bounds Min: [{bounds_min[0]:.2f}, {bounds_min[1]:.2f}, {bounds_min[2]:.2f}]"
+                        f"\n• Bounds Max: [{bounds_max[0]:.2f}, {bounds_max[1]:.2f}, {bounds_max[2]:.2f}]"
+                    )
+                
+                return [TextContent(type="text", text=transform_text)]
+            else:
+                error_msg = result.get('error', 'Unknown error')
+                return [TextContent(type="text", text=f"❌ Failed to get asset transform: {error_msg}")]
                     
-                    if result.get("success"):
-                        # Format the transform data nicely
-                        pos = result.get("position", [0, 0, 0])
-                        bounds = result.get("bounds", {})
-                        bounds_center = bounds.get("center", [0, 0, 0])
-                        asset_type = result.get("type", "unknown")
-                        child_count = result.get("child_count", 0)
-                        calc_mode = result.get("calculation_mode", "auto")
-                        
-                        transform_text = (
-                            f"🔍 Asset Transform: {usd_path}\n"
-                            f"• Type: {asset_type} ({child_count} children)\n"
-                            f"• Position: [{pos[0]:.2f}, {pos[1]:.2f}, {pos[2]:.2f}]\n"
-                            f"• Bounds Center: [{bounds_center[0]:.2f}, {bounds_center[1]:.2f}, {bounds_center[2]:.2f}]\n"
-                            f"• Calculation Mode: {calc_mode}\n"
-                            f"• Source: worldviewer"
-                        )
-                        
-                        # Add bounds info if available
-                        if bounds.get("min") and bounds.get("max"):
-                            bounds_min = bounds["min"]
-                            bounds_max = bounds["max"]
-                            size = [bounds_max[i] - bounds_min[i] for i in range(3)]
-                            transform_text += (
-                                f"\n• Bounds Size: [{size[0]:.2f}, {size[1]:.2f}, {size[2]:.2f}]"
-                                f"\n• Bounds Min: [{bounds_min[0]:.2f}, {bounds_min[1]:.2f}, {bounds_min[2]:.2f}]"
-                                f"\n• Bounds Max: [{bounds_max[0]:.2f}, {bounds_max[1]:.2f}, {bounds_max[2]:.2f}]"
-                            )
-                        
-                        return [TextContent(type="text", text=transform_text)]
-                    else:
-                        error_msg = result.get('error', 'Unknown error')
-                        return [TextContent(type="text", text=f"❌ Failed to get asset transform: {error_msg}")]
-                else:
-                    return [TextContent(type="text", text=f"❌ HTTP Error {response.status_code}: {response.text}")]
-                    
-        except httpx.TimeoutException:
+        except aiohttp.ServerTimeoutError:
             return [TextContent(type="text", text="❌ Request timed out - Isaac Sim may be busy")]
         except Exception as e:
             return [TextContent(type="text", text=f"❌ Connection error: {str(e)}")]
@@ -837,9 +707,11 @@ class WorldViewerMCP:
         
         try:
             if format_type == "prom":
-                response = await self._make_request("GET", "/metrics.prom")
+                await self._initialize_client()
+                response = await self.client.get("/metrics.prom")
             else:
-                response = await self._make_request("GET", "/metrics")
+                await self._initialize_client()
+                response = await self.client.get("/metrics")
             
             # Handle Prometheus format special response
             if format_type == "prom" and "_raw_text" in response:
@@ -864,7 +736,8 @@ class WorldViewerMCP:
     async def _metrics_prometheus(self, args: Dict[str, Any]) -> List[TextContent]:
         """Get WorldViewer metrics in Prometheus format."""
         try:
-            response = await self._make_request("GET", "/metrics.prom")
+            await self._initialize_client()
+            response = await self.client.get("/metrics.prom")
             
             # For Prometheus format, check for _raw_text field first (special response format)
             if "_raw_text" in response:
@@ -902,9 +775,8 @@ async def main():
                 ),
             )
     finally:
-        # Cleanup HTTP client on shutdown
-        if mcp_server._http_client and not mcp_server._http_client.is_closed:
-            await mcp_server._http_client.aclose()
+        # Cleanup unified auth client on shutdown
+        await mcp_server.client.close()
 
 
 if __name__ == "__main__":

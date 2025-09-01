@@ -9,17 +9,14 @@ Interfaces with the Agent WorldBuilder Extension HTTP API running on localhost:8
 import asyncio
 import json
 import logging
-from typing import Any, Dict, List, Optional, Union
-import hashlib
-import hmac
-import time
+from typing import Any, Dict, List
 from mcp.server import Server
 from mcp.server.models import InitializationOptions
 from mcp.server.stdio import stdio_server
 from mcp.server.lowlevel import NotificationOptions
-from mcp.types import Resource, Tool, TextContent, ImageContent, EmbeddedResource
+from mcp.types import Tool
 import mcp.types as types
-import httpx
+import aiohttp
 import sys
 import os
 
@@ -35,15 +32,15 @@ except ImportError:
     # Fallback if shared config not available
     config = None
 
+# Import unified auth client
+from mcp_base_client import MCPBaseClient
+
 # Import Pydantic compatibility utilities
 try:
     from pydantic_compat import (
         create_compatible_position_schema,
         create_compatible_color_schema,
         create_compatible_scale_schema,
-        validate_position,
-        validate_color,
-        validate_scale,
         PYDANTIC_VERSION
     )
     HAS_COMPAT = True
@@ -105,84 +102,17 @@ class WorldBuilderMCP:
             self.retry_attempts = 3
             self.retry_backoff = 0.5
         
-        # Authentication configuration
-        self.auth_token = os.getenv("AGENT_WORLDBUILDER_AUTH_TOKEN") or os.getenv("AGENT_EXT_AUTH_TOKEN")
-        self.hmac_secret = os.getenv("AGENT_WORLDBUILDER_HMAC_SECRET") or os.getenv("AGENT_EXT_HMAC_SECRET")
-            
         self.server = Server("worldbuilder")
         
-        # HTTP client with connection pooling for performance
-        self.client = httpx.AsyncClient(
-            headers={
-                'Content-Type': 'application/json',
-                'User-Agent': 'Isaac-WorldBuilder-MCP/1.0'
-            },
-            limits=httpx.Limits(
-                max_connections=10,             # Max concurrent connections
-                max_keepalive_connections=5     # Keep-alive pool size
-            ),
-            timeout=httpx.Timeout(self._get_timeout('standard'))
-        )
+        # Initialize unified auth client
+        self.client = MCPBaseClient("WORLDBUILDER", self.base_url)
         
         self._setup_tools()
     
-    def _get_auth_headers(self, method: str, endpoint: str) -> Dict[str, str]:
-        """Generate authentication headers for requests"""
-        headers = {}
-        
-        # Check if auth is disabled for troubleshooting
-        auth_disabled = os.getenv('AGENT_EXT_AUTH_ENABLED', '1').lower() in ('0', 'false', 'no', 'off')
-        if auth_disabled:
-            return headers
-        
-        # Add Bearer token if available
-        if self.auth_token:
-            headers["Authorization"] = f"Bearer {self.auth_token}"
-        
-        # Add HMAC signature if secret is available
-        if self.hmac_secret:
-            timestamp = str(time.time())
-            # Extract path from full URL for message
-            if endpoint.startswith(self.base_url):
-                path = endpoint[len(self.base_url):]
-            else:
-                path = endpoint
-            message = f"{method.upper()}|{path}|{timestamp}".encode('utf-8')
-            signature = hmac.new(
-                self.hmac_secret.encode('utf-8'), 
-                message, 
-                hashlib.sha256
-            ).hexdigest()
-            
-            headers.update({
-                "X-Timestamp": timestamp,
-                "X-Signature": signature
-            })
-        
-        return headers
-    
-    async def _make_request(self, method: str, endpoint: str, **kwargs) -> httpx.Response:
-        """Make authenticated HTTP request"""
-        # Ensure endpoint has leading slash
-        if not endpoint.startswith('/'):
-            endpoint = '/' + endpoint
-        
-        # Get auth headers
-        auth_headers = self._get_auth_headers(method, endpoint)
-        
-        # Merge auth headers with any existing headers
-        existing_headers = kwargs.get('headers', {})
-        headers = {**existing_headers, **auth_headers}
-        kwargs['headers'] = headers
-        
-        # Make the request
-        full_url = f"{self.base_url}{endpoint}"
-        if method.upper() == 'GET':
-            return await self.client.get(full_url, **kwargs)
-        elif method.upper() == 'POST':
-            return await self.client.post(full_url, **kwargs)
-        else:
-            raise ValueError(f"Unsupported HTTP method: {method}")
+    async def _initialize_client(self):
+        """Initialize the unified auth client"""
+        if not self.client._initialized:
+            await self.client.initialize()
     
     def _get_timeout(self, operation_type: str = 'standard') -> float:
         """Get timeout for operation type using configuration."""
@@ -192,14 +122,14 @@ class WorldBuilderMCP:
             # Fallback timeouts
             return {'simple': 5.0, 'standard': 10.0, 'complex': 15.0}.get(operation_type, 10.0)
     
-    def __del__(self):
-        """Clean up HTTP client on destruction."""
-        if hasattr(self, 'client'):
-            try:
-                asyncio.create_task(self.client.aclose())
-            except RuntimeError:
-                # Event loop might be closed already
-                pass
+    async def __aenter__(self):
+        """Async context manager entry"""
+        await self._initialize_client()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit"""
+        await self.client.close()
         
     def _setup_tools(self):
         """Register all MCP tools for Isaac Sim worldbuilding."""
@@ -709,7 +639,7 @@ class WorldBuilderMCP:
                         text=f"❌ Unknown tool: {name}"
                     )]
                     
-            except httpx.RequestError as e:
+            except aiohttp.ClientError as e:
                 logger.error(f"Connection error calling tool {name}: {e}")
                 return [types.TextContent(
                     type="text",
@@ -734,32 +664,25 @@ class WorldBuilderMCP:
                 "scale": args.get("scale", [1.0, 1.0, 1.0])
             }
             
-            response = await self._make_request(
-                "POST", 
+            await self._initialize_client()
+            result = await self.client.post(
                 "/add_element",
                 json=payload,
                 timeout=self._get_timeout('standard')
             )
             
-            if response.status_code == 200:
-                result = response.json()
-                if result.get("success"):
+            if result.get("success"):
                     return [types.TextContent(
                         type="text",
                         text=f"✅ Created {args['element_type']} '{args['name']}' at {args['position']}"
                     )]
-                else:
-                    return [types.TextContent(
-                        type="text",
-                        text=f"❌ Failed to create element: {result.get('error', 'Unknown error')}"
-                    )]
             else:
                 return [types.TextContent(
                     type="text",
-                    text=f"❌ HTTP Error {response.status_code}: {response.text}"
+                    text=f"❌ Failed to create element: {result.get('error', 'Unknown error')}"
                 )]
                 
-        except httpx.RequestError as e:
+        except aiohttp.ClientError as e:
             return [types.TextContent(
                 type="text",
                 text=f"❌ Connection error: {str(e)}. Is Isaac Sim running with the WorldBuilder Extension?"
@@ -774,31 +697,25 @@ class WorldBuilderMCP:
                 "parent_path": args.get("parent_path", "/World")
             }
             
-            response = await self.client.post(
-                f"{self.base_url}/create_batch",
+            await self._initialize_client()
+            result = await self.client.post(
+                "/create_batch",
                 json=payload,
                 timeout=self._get_timeout('complex')
             )
             
-            if response.status_code == 200:
-                result = response.json()
-                if result.get("success"):
+            if result.get("success"):
                     return [types.TextContent(
                         type="text",
                         text=f"✅ Created batch '{args['batch_name']}' with {len(args['elements'])} elements"
                     )]
-                else:
-                    return [types.TextContent(
-                        type="text",
-                        text=f"❌ Failed to create batch: {result.get('error', 'Unknown error')}"
-                    )]
             else:
                 return [types.TextContent(
                     type="text",
-                    text=f"❌ HTTP Error {response.status_code}: {response.text}"
+                    text=f"❌ Failed to create batch: {result.get('error', 'Unknown error')}"
                 )]
                 
-        except httpx.RequestError as e:
+        except aiohttp.ClientError as e:
             return [types.TextContent(
                 type="text",
                 text=f"❌ Connection error: {str(e)}"
@@ -809,31 +726,25 @@ class WorldBuilderMCP:
         try:
             payload = {"element_path": args["usd_path"]}
             
-            response = await self.client.post(
-                f"{self.base_url}/remove_element",
+            await self._initialize_client()
+            result = await self.client.post(
+                "/remove_element",
                 json=payload,
                 timeout=10
             )
             
-            if response.status_code == 200:
-                result = response.json()
-                if result.get("success"):
+            if result.get("success"):
                     return [types.TextContent(
                         type="text",
                         text=f"✅ Removed element: {args['usd_path']}"
                     )]
-                else:
-                    return [types.TextContent(
-                        type="text",
-                        text=f"❌ Failed to remove element: {result.get('error', 'Unknown error')}"
-                    )]
             else:
                 return [types.TextContent(
                     type="text",
-                    text=f"❌ HTTP Error {response.status_code}: {response.text}"
+                    text=f"❌ Failed to remove element: {result.get('error', 'Unknown error')}"
                 )]
                 
-        except httpx.RequestError as e:
+        except aiohttp.ClientError as e:
             return [types.TextContent(
                 type="text",
                 text=f"❌ Connection error: {str(e)}"
@@ -850,31 +761,25 @@ class WorldBuilderMCP:
         try:
             payload = {"path": args.get("path", "/World")}
             
-            response = await self.client.post(
-                f"{self.base_url}/clear_path",
+            await self._initialize_client()
+            result = await self.client.post(
+                "/clear_path",
                 json=payload,
                 timeout=10
             )
             
-            if response.status_code == 200:
-                result = response.json()
-                if result.get("success"):
+            if result.get("success"):
                     return [types.TextContent(
                         type="text",
                         text=f"✅ Cleared path: {args.get('path', '/World')}"
                     )]
-                else:
-                    return [types.TextContent(
-                        type="text",
-                        text=f"❌ Failed to clear path: {result.get('error', 'Unknown error')}"
-                    )]
             else:
                 return [types.TextContent(
                     type="text",
-                    text=f"❌ HTTP Error {response.status_code}: {response.text}"
+                    text=f"❌ Failed to clear path: {result.get('error', 'Unknown error')}"
                 )]
                 
-        except httpx.RequestError as e:
+        except aiohttp.ClientError as e:
             return [types.TextContent(
                 type="text",
                 text=f"❌ Connection error: {str(e)}"
@@ -898,15 +803,14 @@ class WorldBuilderMCP:
         try:
             payload = {"path": path}
             
-            response = await self.client.post(
-                f"{self.base_url}/clear_path",
+            await self._initialize_client()
+            result = await self.client.post(
+                "/clear_path",
                 json=payload,
                 timeout=10
             )
             
-            if response.status_code == 200:
-                result = response.json()
-                if result.get("success"):
+            if result.get("success"):
                     return [types.TextContent(
                         type="text",
                         text=f"🔧 **Surgical Path Removal Complete**\n\n"
@@ -914,18 +818,13 @@ class WorldBuilderMCP:
                              f"• **Operation:** Targeted USD hierarchy cleanup\n"
                              f"• **Status:** {result.get('message', 'Path cleared successfully')}"
                     )]
-                else:
-                    return [types.TextContent(
-                        type="text",
-                        text=f"❌ Failed to clear path '{path}': {result.get('error', 'Unknown error')}"
-                    )]
             else:
                 return [types.TextContent(
                     type="text",
-                    text=f"❌ HTTP Error {response.status_code}: {response.text}"
+                    text=f"❌ Failed to clear path '{path}': {result.get('error', 'Unknown error')}"
                 )]
                 
-        except httpx.RequestError as e:
+        except aiohttp.ClientError as e:
             return [types.TextContent(
                 type="text",
                 text=f"❌ Connection error: {str(e)}"
@@ -934,29 +833,23 @@ class WorldBuilderMCP:
     async def _get_scene(self, args: Dict[str, Any]) -> List[types.TextContent]:
         """Get complete scene structure."""
         try:
-            response = await self._make_request('GET', '/get_scene', timeout=10)
+            await self._initialize_client()
+            result = await self.client.get('/get_scene', timeout=10)
             
-            if response.status_code == 200:
-                result = response.json()
-                if result.get("success"):
+            if result.get("success"):
                     scene_data = result.get("contents", {})
                     formatted_scene = json.dumps(scene_data, indent=2)
                     return [types.TextContent(
                         type="text",
                         text=f"📊 Scene Structure:\n```json\n{formatted_scene}\n```"
                     )]
-                else:
-                    return [types.TextContent(
-                        type="text",
-                        text=f"❌ Failed to get scene: {result.get('error', 'Unknown error')}"
-                    )]
             else:
                 return [types.TextContent(
                     type="text",
-                    text=f"❌ HTTP Error {response.status_code}: {response.text}"
+                    text=f"❌ Failed to get scene: {result.get('error', 'Unknown error')}"
                 )]
                 
-        except httpx.RequestError as e:
+        except aiohttp.ClientError as e:
             return [types.TextContent(
                 type="text",
                 text=f"❌ Connection error: {str(e)}"
@@ -965,11 +858,10 @@ class WorldBuilderMCP:
     async def _scene_status(self, args: Dict[str, Any]) -> List[types.TextContent]:
         """Get scene health status."""
         try:
-            response = await self._make_request('GET', '/scene_status', timeout=5)
+            await self._initialize_client()
+            result = await self.client.get('/scene_status', timeout=5)
             
-            if response.status_code == 200:
-                result = response.json()
-                if result.get("success"):
+            if result.get("success"):
                     scene = result.get("scene", {})
                     return [types.TextContent(
                         type="text",
@@ -978,18 +870,13 @@ class WorldBuilderMCP:
                              f"• Elements: {scene.get('prim_count', 0)} prims\n" +
                              f"• Assets: {scene.get('asset_count', 0)} assets"
                     )]
-                else:
-                    return [types.TextContent(
-                        type="text",
-                        text=f"❌ Failed to get status: {result.get('error', 'Unknown error')}"
-                    )]
             else:
                 return [types.TextContent(
                     type="text",
-                    text=f"❌ HTTP Error {response.status_code}: {response.text}"
+                    text=f"❌ Failed to get status: {result.get('error', 'Unknown error')}"
                 )]
                 
-        except httpx.RequestError as e:
+        except aiohttp.ClientError as e:
             return [types.TextContent(
                 type="text",
                 text=f"❌ Connection error: {str(e)}"
@@ -998,11 +885,10 @@ class WorldBuilderMCP:
     async def _list_elements(self, args: Dict[str, Any]) -> List[types.TextContent]:
         """Get flat listing of scene elements."""
         try:
-            response = await self._make_request('GET', '/list_elements', timeout=10)
+            await self._initialize_client()
+            result = await self.client.get('/list_elements', timeout=10)
             
-            if response.status_code == 200:
-                result = response.json()
-                if result.get("success"):
+            if result.get("success"):
                     elements = result.get("elements", [])
                     if not elements:
                         return [types.TextContent(
@@ -1023,18 +909,13 @@ class WorldBuilderMCP:
                         type="text",
                         text=f"📋 Scene Elements ({len(elements)} found):\n{element_list}"
                     )]
-                else:
-                    return [types.TextContent(
-                        type="text",
-                        text=f"❌ Failed to list elements: {result.get('error', 'Unknown error')}"
-                    )]
             else:
                 return [types.TextContent(
                     type="text",
-                    text=f"❌ HTTP Error {response.status_code}: {response.text}"
+                    text=f"❌ Failed to list elements: {result.get('error', 'Unknown error')}"
                 )]
                 
-        except httpx.RequestError as e:
+        except aiohttp.ClientError as e:
             return [types.TextContent(
                 type="text",
                 text=f"❌ Connection error: {str(e)}"
@@ -1043,11 +924,10 @@ class WorldBuilderMCP:
     async def _extension_health(self, args: Dict[str, Any]) -> List[types.TextContent]:
         """Check extension health and API status."""
         try:
-            response = await self._make_request('GET', '/health', timeout=self._get_timeout('simple'))
+            await self._initialize_client()
+            result = await self.client.get('/health', timeout=self._get_timeout('simple'))
             
-            if response.status_code == 200:
-                result = response.json()
-                if result.get("success"):
+            if result.get("success"):
                     return [types.TextContent(
                         type="text",
                         text=f"✅ WorldBuilder Health\n" +
@@ -1057,18 +937,13 @@ class WorldBuilderMCP:
                              f"• Timestamp: {result.get('timestamp', 'Unknown')}\n" +
                              f"• Scene Object Count: {result.get('scene_object_count', 0)}"
                     )]
-                else:
-                    return [types.TextContent(
-                        type="text",
-                        text=f"❌ Extension unhealthy: {result.get('error', 'Unknown error')}"
-                    )]
             else:
                 return [types.TextContent(
                     type="text",
-                    text=f"❌ HTTP Error {response.status_code}: {response.text}"
+                    text=f"❌ Extension unhealthy: {result.get('error', 'Unknown error')}"
                 )]
                 
-        except httpx.RequestError as e:
+        except aiohttp.ClientError as e:
             return [types.TextContent(
                 type="text",
                 text=f"❌ Connection error: {str(e)}. Is Isaac Sim running with the WorldBuilder Extension on port 8899?"
@@ -1087,16 +962,15 @@ class WorldBuilderMCP:
                 "scale": args.get("scale", [1, 1, 1])
             }
             
-            # Call Isaac Sim place_asset API
-            response = await self.client.post(
-                f"{self.base_url}/place_asset",
+            # Call Isaac Sim place_asset API via base client
+            await self._initialize_client()
+            result = await self.client.post(
+                "/place_asset",
                 json=payload,
                 timeout=10
             )
             
-            if response.status_code == 200:
-                result = response.json()
-                if result.get("success"):
+            if result.get("success"):
                     return [types.TextContent(
                         type="text",
                         text=f"✅ Asset placed successfully!\n" +
@@ -1106,18 +980,13 @@ class WorldBuilderMCP:
                              f"• Request ID: {result.get('request_id', 'Unknown')}\n" +
                              f"• Status: {result.get('status', 'Unknown')}"
                     )]
-                else:
-                    return [types.TextContent(
-                        type="text",
-                        text=f"❌ Asset placement failed: {result.get('error', 'Unknown error')}"
-                    )]
             else:
                 return [types.TextContent(
                     type="text",
-                    text=f"❌ HTTP Error {response.status_code}: {response.text}"
+                    text=f"❌ Asset placement failed: {result.get('error', 'Unknown error')}"
                 )]
                 
-        except httpx.RequestError as e:
+        except aiohttp.ClientError as e:
             return [types.TextContent(
                 type="text",
                 text=f"❌ Connection error: {str(e)}. Is Isaac Sim running with the WorldBuilder Extension on port 8899?"
@@ -1139,44 +1008,38 @@ class WorldBuilderMCP:
             if "scale" in args:
                 payload["scale"] = args["scale"]
             
-            # Call Isaac Sim transform_asset API
-            response = await self.client.post(
-                f"{self.base_url}/transform_asset",
+            # Call Isaac Sim transform_asset API via base client
+            await self._initialize_client()
+            result = await self.client.post(
+                "/transform_asset",
                 json=payload,
                 timeout=10
             )
             
-            if response.status_code == 200:
-                result = response.json()
-                if result.get("success"):
-                    transform_info = []
-                    if result.get("position"):
-                        transform_info.append(f"• Position: {result['position']}")
-                    if result.get("rotation"):
-                        transform_info.append(f"• Rotation: {result['rotation']}")
-                    if result.get("scale"):
-                        transform_info.append(f"• Scale: {result['scale']}")
-                    
-                    return [types.TextContent(
-                        type="text",
-                        text=f"✅ Asset transformed successfully!\n" +
-                             f"• Path: {result.get('prim_path', 'Unknown')}\n" +
-                             f"• Request ID: {result.get('request_id', 'Unknown')}\n" +
-                             f"• Status: {result.get('status', 'Unknown')}\n" +
-                             ("\n".join(transform_info) if transform_info else "")
-                    )]
-                else:
-                    return [types.TextContent(
-                        type="text",
-                        text=f"❌ Asset transformation failed: {result.get('error', 'Unknown error')}"
-                    )]
+            if result.get("success"):
+                transform_info = []
+                if result.get("position"):
+                    transform_info.append(f"• Position: {result['position']}")
+                if result.get("rotation"):
+                    transform_info.append(f"• Rotation: {result['rotation']}")
+                if result.get("scale"):
+                    transform_info.append(f"• Scale: {result['scale']}")
+                
+                return [types.TextContent(
+                    type="text",
+                    text=f"✅ Asset transformed successfully!\n" +
+                         f"• Path: {result.get('prim_path', 'Unknown')}\n" +
+                         f"• Request ID: {result.get('request_id', 'Unknown')}\n" +
+                         f"• Status: {result.get('status', 'Unknown')}\n" +
+                         ("\n".join(transform_info) if transform_info else "")
+                )]
             else:
                 return [types.TextContent(
                     type="text",
-                    text=f"❌ HTTP Error {response.status_code}: {response.text}"
+                    text=f"❌ Asset transformation failed: {result.get('error', 'Unknown error')}"
                 )]
                 
-        except httpx.RequestError as e:
+        except aiohttp.ClientError as e:
             return [types.TextContent(
                 type="text",
                 text=f"❌ Connection error: {str(e)}. Is Isaac Sim running with the WorldBuilder Extension on port 8899?"
@@ -1189,11 +1052,10 @@ class WorldBuilderMCP:
             if not batch_name:
                 return [types.TextContent(type="text", text="❌ Error: batch_name is required")]
             
-            response = await self.client.get(f"{self.base_url}/batch_info", params={'batch_name': batch_name})
+            await self._initialize_client()
+            result = await self.client.get("/batch_info", params={'batch_name': batch_name})
             
-            if response.status_code == 200:
-                result = response.json()
-                if result.get('success'):
+            if result.get('success'):
                     element_count = result.get('element_count', 0)
                     elements = result.get('elements', [])
                     
@@ -1215,12 +1077,10 @@ class WorldBuilderMCP:
                              f"• Batch Name: {result.get('batch_name', batch_name)}\n\n" +
                              f"**Elements:**\n{element_text}"
                     )]
-                else:
-                    return [types.TextContent(type="text", text=f"❌ Failed to get batch info: {result.get('error', 'Unknown error')}")]
             else:
-                return [types.TextContent(type="text", text=f"❌ HTTP Error {response.status_code}: {response.text}")]
+                return [types.TextContent(type="text", text=f"❌ Failed to get batch info: {result.get('error', 'Unknown error')}")]
                 
-        except httpx.RequestError as e:
+        except aiohttp.ClientError as e:
             return [types.TextContent(type="text", text=f"❌ Connection error: {str(e)}. Is Isaac Sim running?")]
     
     async def _clear_batch(self, args: Dict[str, Any]) -> List[types.TextContent]:
@@ -1235,11 +1095,10 @@ class WorldBuilderMCP:
             if not confirm:
                 return [types.TextContent(type="text", text="❌ Error: confirm=true required for destructive operation")]
             
-            response = await self.client.post(f"{self.base_url}/clear_batch", json={'batch_name': batch_name, 'confirm': confirm})
+            await self._initialize_client()
+            result = await self.client.post("/clear_batch", json={'batch_name': batch_name, 'confirm': confirm})
             
-            if response.status_code == 200:
-                result = response.json()
-                if result.get('success'):
+            if result.get('success'):
                     cleared_count = result.get('cleared_count', 0)
                     return [types.TextContent(
                         type="text",
@@ -1247,22 +1106,19 @@ class WorldBuilderMCP:
                              f"• Batch: {batch_name}\n" +
                              f"• Elements Removed: {cleared_count}"
                     )]
-                else:
-                    return [types.TextContent(type="text", text=f"❌ Failed to clear batch: {result.get('error', 'Unknown error')}")]
             else:
-                return [types.TextContent(type="text", text=f"❌ HTTP Error {response.status_code}: {response.text}")]
+                return [types.TextContent(type="text", text=f"❌ Failed to clear batch: {result.get('error', 'Unknown error')}")]
                 
-        except httpx.RequestError as e:
+        except aiohttp.ClientError as e:
             return [types.TextContent(type="text", text=f"❌ Connection error: {str(e)}. Is Isaac Sim running?")]
     
     async def _request_status(self, args: Dict[str, Any]) -> List[types.TextContent]:
         """Get status of ongoing operations and request queue."""
         try:
-            response = await self.client.get(f"{self.base_url}/request_status")
+            await self._initialize_client()
+            result = await self.client.get("/request_status")
             
-            if response.status_code == 200:
-                result = response.json()
-                if result.get('success'):
+            if result.get('success'):
                     status_data = result.get('status', {})
                     queue_info = status_data.get('queue_info', {})
                     return [types.TextContent(
@@ -1274,12 +1130,10 @@ class WorldBuilderMCP:
                              f"• Failed: {queue_info.get('failed', 0)}\n" +
                              f"• System Status: {status_data.get('system_status', 'Unknown')}"
                     )]
-                else:
-                    return [types.TextContent(type="text", text=f"❌ Failed to get request status: {result.get('error', 'Unknown error')}")]
             else:
-                return [types.TextContent(type="text", text=f"❌ HTTP Error {response.status_code}: {response.text}")]
+                return [types.TextContent(type="text", text=f"❌ Failed to get request status: {result.get('error', 'Unknown error')}")]
                 
-        except httpx.RequestError as e:
+        except aiohttp.ClientError as e:
             return [types.TextContent(type="text", text=f"❌ Connection error: {str(e)}. Is Isaac Sim running?")]
     
     async def _get_metrics(self, args: Dict[str, Any]) -> List[types.TextContent]:
@@ -1288,36 +1142,37 @@ class WorldBuilderMCP:
             format_type = args.get('format', 'json')
             
             endpoint = "/metrics.prom" if format_type == "prom" else "/metrics"
-            response = await self.client.get(f"{self.base_url}{endpoint}")
+            await self._initialize_client()
+            result = await self.client.get(endpoint)
             
-            if response.status_code == 200:
-                if format_type == "prom":
-                    # Return raw Prometheus text format
-                    return [types.TextContent(type="text", text=f"✅ **WorldBuilder Metrics (Prometheus)**\n```\n{response.text}\n```")]
+            if format_type == "prom":
+                # Handle raw text fallback or structured text
+                if '_raw_text' in result:
+                    prom_text = result['_raw_text']
                 else:
-                    result = response.json()
-                    if result.get('success'):
-                        metrics = result.get('metrics', {})
-                        api_metrics = metrics.get('api', {})
-                        scene_metrics = metrics.get('scene', {})
-                        return [types.TextContent(
-                            type="text",
-                            text=f"✅ **WorldBuilder Metrics**\n" +
-                                 f"• **API Stats:**\n" +
-                                 f"  - Requests: {api_metrics.get('requests_received', 0)}\n" +
-                                 f"  - Successful: {api_metrics.get('successful_requests', 0)}\n" +
-                                 f"  - Failed: {api_metrics.get('failed_requests', 0)}\n" +
-                                 f"  - Uptime: {api_metrics.get('uptime_seconds', 0):.1f}s\n" +
-                                 f"• **Scene Stats:**\n" +
-                                 f"  - Elements: {scene_metrics.get('element_count', 0)}\n" +
-                                 f"  - Batches: {scene_metrics.get('batch_count', 0)}"
-                        )]
-                    else:
-                        return [types.TextContent(type="text", text=f"❌ Failed to get metrics: {result.get('error', 'Unknown error')}")]
+                    prom_text = result.get('prometheus_metrics') or result.get('raw_response') or result.get('text', str(result))
+                return [types.TextContent(type="text", text=f"✅ **WorldBuilder Metrics (Prometheus)**\n```\n{prom_text}\n```")]
             else:
-                return [types.TextContent(type="text", text=f"❌ HTTP Error {response.status_code}: {response.text}")]
+                if result.get('success'):
+                    metrics = result.get('metrics', {})
+                    api_metrics = metrics.get('api', {})
+                    scene_metrics = metrics.get('scene', {})
+                    return [types.TextContent(
+                        type="text",
+                        text=f"✅ **WorldBuilder Metrics**\n" +
+                             f"• **API Stats:**\n" +
+                             f"  - Requests: {api_metrics.get('requests_received', 0)}\n" +
+                             f"  - Successful: {api_metrics.get('successful_requests', 0)}\n" +
+                             f"  - Failed: {api_metrics.get('failed_requests', 0)}\n" +
+                             f"  - Uptime: {api_metrics.get('uptime_seconds', 0):.1f}s\n" +
+                             f"• **Scene Stats:**\n" +
+                             f"  - Elements: {scene_metrics.get('element_count', 0)}\n" +
+                             f"  - Batches: {scene_metrics.get('batch_count', 0)}"
+                    )]
+                else:
+                    return [types.TextContent(type="text", text=f"❌ Failed to get metrics: {result.get('error', 'Unknown error')}")]
                 
-        except httpx.RequestError as e:
+        except aiohttp.ClientError as e:
             return [types.TextContent(type="text", text=f"❌ Connection error: {str(e)}. Is Isaac Sim running?")]
     
     async def _query_objects_by_type(self, args: Dict[str, Any]) -> List[types.TextContent]:
@@ -1327,54 +1182,48 @@ class WorldBuilderMCP:
             if not object_type:
                 return [types.TextContent(type="text", text="❌ Error: type parameter is required")]
             
+            await self._initialize_client()
             params = {'type': object_type}
-            response = await self.client.get(
-                f"{self.base_url}/query/objects_by_type",
+            result = await self.client.get(
+                "/query/objects_by_type",
                 params=params,
                 timeout=self._get_timeout('simple')
             )
             
-            if response.status_code == 200:
-                result = response.json()
-                if result.get('success'):
-                    objects = result.get('objects', [])
-                    count = result.get('count', 0)
-                    
-                    if count == 0:
-                        return [types.TextContent(
-                            type="text",
-                            text=f"✅ **No objects found**\n• Type: {object_type}\n• Consider checking spelling or try broader categories like 'furniture', 'primitive', 'lighting'"
-                        )]
-                    
-                    # Format object list
-                    object_list = []
-                    for obj in objects[:10]:  # Limit to first 10 for readability
-                        pos = obj.get('position', [0, 0, 0])
-                        object_list.append(
-                            f"  - **{obj.get('name', 'Unknown')}** ({obj.get('type', 'Unknown')})\n" +
-                            f"    Path: `{obj.get('path', 'Unknown')}`\n" +
-                            f"    Position: [{pos[0]:.1f}, {pos[1]:.1f}, {pos[2]:.1f}]"
-                        )
-                    
-                    more_text = f"\n\n*Showing {min(10, count)} of {count} objects*" if count > 10 else ""
-                    
+            if result.get('success'):
+                objects = result.get('objects', [])
+                count = result.get('count', 0)
+                
+                if count == 0:
                     return [types.TextContent(
                         type="text",
-                        text=f"✅ **Found {count} objects of type '{object_type}'**\n\n" +
-                             "\n\n".join(object_list) + more_text
+                        text=f"✅ **No objects found**\n• Type: {object_type}\n• Consider checking spelling or try broader categories like 'furniture', 'primitive', 'lighting'"
                     )]
-                else:
-                    return [types.TextContent(
-                        type="text",
-                        text=f"❌ Query failed: {result.get('error', 'Unknown error')}"
-                    )]
+                
+                # Format object list
+                object_list = []
+                for obj in objects[:10]:  # Limit to first 10 for readability
+                    pos = obj.get('position', [0, 0, 0])
+                    object_list.append(
+                        f"  - **{obj.get('name', 'Unknown')}** ({obj.get('type', 'Unknown')})\n" +
+                        f"    Path: `{obj.get('path', 'Unknown')}`\n" +
+                        f"    Position: [{pos[0]:.1f}, {pos[1]:.1f}, {pos[2]:.1f}]"
+                    )
+                
+                more_text = f"\n\n*Showing {min(10, count)} of {count} objects*" if count > 10 else ""
+                
+                return [types.TextContent(
+                    type="text",
+                    text=f"✅ **Found {count} objects of type '{object_type}'**\n\n" +
+                         "\n\n".join(object_list) + more_text
+                )]
             else:
                 return [types.TextContent(
                     type="text",
-                    text=f"❌ HTTP Error {response.status_code}: {response.text}"
+                    text=f"❌ Query failed: {result.get('error', 'Unknown error')}"
                 )]
                 
-        except httpx.RequestError as e:
+        except aiohttp.ClientError as e:
             return [types.TextContent(
                 type="text",
                 text=f"❌ Connection error: {str(e)}. Is Isaac Sim running with WorldBuilder extension?"
@@ -1396,55 +1245,49 @@ class WorldBuilderMCP:
                 'min': ','.join(map(str, min_bounds)),
                 'max': ','.join(map(str, max_bounds))
             }
-            response = await self.client.get(
-                f"{self.base_url}/query/objects_in_bounds",
+            await self._initialize_client()
+            result = await self.client.get(
+                "/query/objects_in_bounds",
                 params=params,
                 timeout=self._get_timeout('simple')
             )
             
-            if response.status_code == 200:
-                result = response.json()
-                if result.get('success'):
-                    objects = result.get('objects', [])
-                    count = result.get('count', 0)
-                    bounds = result.get('bounds', {})
-                    
-                    if count == 0:
-                        return [types.TextContent(
-                            type="text",
-                            text=f"✅ **No objects found in bounds**\n• Min: [{min_bounds[0]}, {min_bounds[1]}, {min_bounds[2]}]\n• Max: [{max_bounds[0]}, {max_bounds[1]}, {max_bounds[2]}]"
-                        )]
-                    
-                    # Format object list
-                    object_list = []
-                    for obj in objects[:10]:  # Limit to first 10
-                        pos = obj.get('position', [0, 0, 0])
-                        object_list.append(
-                            f"  - **{obj.get('name', 'Unknown')}** ({obj.get('type', 'Unknown')})\n" +
-                            f"    Position: [{pos[0]:.1f}, {pos[1]:.1f}, {pos[2]:.1f}]"
-                        )
-                    
-                    more_text = f"\n\n*Showing {min(10, count)} of {count} objects*" if count > 10 else ""
-                    
+            if result.get('success'):
+                objects = result.get('objects', [])
+                count = result.get('count', 0)
+                bounds = result.get('bounds', {})
+                
+                if count == 0:
                     return [types.TextContent(
                         type="text",
-                        text=f"✅ **Found {count} objects in bounds**\n" +
-                             f"• Min: [{min_bounds[0]}, {min_bounds[1]}, {min_bounds[2]}]\n" +
-                             f"• Max: [{max_bounds[0]}, {max_bounds[1]}, {max_bounds[2]}]\n\n" +
-                             "\n\n".join(object_list) + more_text
+                        text=f"✅ **No objects found in bounds**\n• Min: [{min_bounds[0]}, {min_bounds[1]}, {min_bounds[2]}]\n• Max: [{max_bounds[0]}, {max_bounds[1]}, {max_bounds[2]}]"
                     )]
-                else:
-                    return [types.TextContent(
-                        type="text",
-                        text=f"❌ Query failed: {result.get('error', 'Unknown error')}"
-                    )]
+                
+                # Format object list
+                object_list = []
+                for obj in objects[:10]:  # Limit to first 10
+                    pos = obj.get('position', [0, 0, 0])
+                    object_list.append(
+                        f"  - **{obj.get('name', 'Unknown')}** ({obj.get('type', 'Unknown')})\n" +
+                        f"    Position: [{pos[0]:.1f}, {pos[1]:.1f}, {pos[2]:.1f}]"
+                    )
+                
+                more_text = f"\n\n*Showing {min(10, count)} of {count} objects*" if count > 10 else ""
+                
+                return [types.TextContent(
+                    type="text",
+                    text=f"✅ **Found {count} objects in bounds**\n" +
+                         f"• Min: [{min_bounds[0]}, {min_bounds[1]}, {min_bounds[2]}]\n" +
+                         f"• Max: [{max_bounds[0]}, {max_bounds[1]}, {max_bounds[2]}]\n\n" +
+                         "\n\n".join(object_list) + more_text
+                )]
             else:
                 return [types.TextContent(
                     type="text",
-                    text=f"❌ HTTP Error {response.status_code}: {response.text}"
+                    text=f"❌ Query failed: {result.get('error', 'Unknown error')}"
                 )]
                 
-        except httpx.RequestError as e:
+        except aiohttp.ClientError as e:
             return [types.TextContent(
                 type="text",
                 text=f"❌ Connection error: {str(e)}. Is Isaac Sim running with WorldBuilder extension?"
@@ -1466,58 +1309,52 @@ class WorldBuilderMCP:
                 'point': ','.join(map(str, point)),
                 'radius': radius
             }
-            response = await self.client.get(
-                f"{self.base_url}/query/objects_near_point",
+            await self._initialize_client()
+            result = await self.client.get(
+                "/query/objects_near_point",
                 params=params,
                 timeout=self._get_timeout('simple')
             )
             
-            if response.status_code == 200:
-                result = response.json()
-                if result.get('success'):
-                    objects = result.get('objects', [])
-                    count = result.get('count', 0)
-                    query_point = result.get('query_point', point)
-                    query_radius = result.get('radius', radius)
-                    
-                    if count == 0:
-                        return [types.TextContent(
-                            type="text",
-                            text=f"✅ **No objects found near point**\n• Point: [{point[0]}, {point[1]}, {point[2]}]\n• Radius: {radius} units"
-                        )]
-                    
-                    # Format object list (sorted by distance)
-                    object_list = []
-                    for obj in objects[:10]:  # Limit to first 10
-                        pos = obj.get('position', [0, 0, 0])
-                        distance = obj.get('distance_from_point', 0)
-                        object_list.append(
-                            f"  - **{obj.get('name', 'Unknown')}** ({obj.get('type', 'Unknown')})\n" +
-                            f"    Distance: {distance:.1f} units\n" +
-                            f"    Position: [{pos[0]:.1f}, {pos[1]:.1f}, {pos[2]:.1f}]"
-                        )
-                    
-                    more_text = f"\n\n*Showing {min(10, count)} of {count} objects (sorted by distance)*" if count > 10 else ""
-                    
+            if result.get('success'):
+                objects = result.get('objects', [])
+                count = result.get('count', 0)
+                query_point = result.get('query_point', point)
+                query_radius = result.get('radius', radius)
+                
+                if count == 0:
                     return [types.TextContent(
                         type="text",
-                        text=f"✅ **Found {count} objects near point**\n" +
-                             f"• Point: [{point[0]}, {point[1]}, {point[2]}]\n" +
-                             f"• Radius: {radius} units\n\n" +
-                             "\n\n".join(object_list) + more_text
+                        text=f"✅ **No objects found near point**\n• Point: [{point[0]}, {point[1]}, {point[2]}]\n• Radius: {radius} units"
                     )]
-                else:
-                    return [types.TextContent(
-                        type="text",
-                        text=f"❌ Query failed: {result.get('error', 'Unknown error')}"
-                    )]
+                
+                # Format object list (sorted by distance)
+                object_list = []
+                for obj in objects[:10]:  # Limit to first 10
+                    pos = obj.get('position', [0, 0, 0])
+                    distance = obj.get('distance_from_point', 0)
+                    object_list.append(
+                        f"  - **{obj.get('name', 'Unknown')}** ({obj.get('type', 'Unknown')})\n" +
+                        f"    Distance: {distance:.1f} units\n" +
+                        f"    Position: [{pos[0]:.1f}, {pos[1]:.1f}, {pos[2]:.1f}]"
+                    )
+                
+                more_text = f"\n\n*Showing {min(10, count)} of {count} objects (sorted by distance)*" if count > 10 else ""
+                
+                return [types.TextContent(
+                    type="text",
+                    text=f"✅ **Found {count} objects near point**\n" +
+                         f"• Point: [{point[0]}, {point[1]}, {point[2]}]\n" +
+                         f"• Radius: {radius} units\n\n" +
+                         "\n\n".join(object_list) + more_text
+                )]
             else:
                 return [types.TextContent(
                     type="text",
-                    text=f"❌ HTTP Error {response.status_code}: {response.text}"
+                    text=f"❌ Query failed: {result.get('error', 'Unknown error')}"
                 )]
                 
-        except httpx.RequestError as e:
+        except aiohttp.ClientError as e:
             return [types.TextContent(
                 type="text",
                 text=f"❌ Connection error: {str(e)}. Is Isaac Sim running with WorldBuilder extension?"
@@ -1535,46 +1372,40 @@ class WorldBuilderMCP:
                 return [types.TextContent(type="text", text="❌ Error: objects must be a non-empty list")]
             
             payload = {"objects": objects}
-            response = await self.client.post(
-                f"{self.base_url}/transform/calculate_bounds",
+            await self._initialize_client()
+            result = await self.client.post(
+                "/transform/calculate_bounds",
                 json=payload,
                 timeout=self._get_timeout('standard')
             )
             
-            if response.status_code == 200:
-                result = response.json()
-                if result.get('success'):
-                    bounds = result.get('bounds', {})
-                    count = result.get('object_count', 0)
-                    
-                    min_coords = bounds.get('min', [0, 0, 0])
-                    max_coords = bounds.get('max', [0, 0, 0])
-                    center = bounds.get('center', [0, 0, 0])
-                    size = bounds.get('size', [0, 0, 0])
-                    volume = result.get('volume', 0.0)
-                    
-                    return [types.TextContent(
-                        type="text",
-                        text=f"✅ **Calculated combined bounds for {count} objects**\n\n" +
-                             f"• **Min bounds:** [{min_coords[0]:.2f}, {min_coords[1]:.2f}, {min_coords[2]:.2f}]\n" +
-                             f"• **Max bounds:** [{max_coords[0]:.2f}, {max_coords[1]:.2f}, {max_coords[2]:.2f}]\n" +
-                             f"• **Center:** [{center[0]:.2f}, {center[1]:.2f}, {center[2]:.2f}]\n" +
-                             f"• **Size (W×H×D):** {size[0]:.2f} × {size[1]:.2f} × {size[2]:.2f}\n" +
-                             f"• **Volume:** {volume:.2f} cubic units\n\n" +
-                             f"*Combined bounding box encompasses all {count} objects*"
-                    )]
-                else:
-                    return [types.TextContent(
-                        type="text",
-                        text=f"❌ Bounds calculation failed: {result.get('error', 'Unknown error')}"
-                    )]
+            if result.get('success'):
+                bounds = result.get('bounds', {})
+                count = result.get('object_count', 0)
+                
+                min_coords = bounds.get('min', [0, 0, 0])
+                max_coords = bounds.get('max', [0, 0, 0])
+                center = bounds.get('center', [0, 0, 0])
+                size = bounds.get('size', [0, 0, 0])
+                volume = result.get('volume', 0.0)
+                
+                return [types.TextContent(
+                    type="text",
+                    text=f"✅ **Calculated combined bounds for {count} objects**\n\n" +
+                         f"• **Min bounds:** [{min_coords[0]:.2f}, {min_coords[1]:.2f}, {min_coords[2]:.2f}]\n" +
+                         f"• **Max bounds:** [{max_coords[0]:.2f}, {max_coords[1]:.2f}, {max_coords[2]:.2f}]\n" +
+                         f"• **Center:** [{center[0]:.2f}, {center[1]:.2f}, {center[2]:.2f}]\n" +
+                         f"• **Size (W×H×D):** {size[0]:.2f} × {size[1]:.2f} × {size[2]:.2f}\n" +
+                         f"• **Volume:** {volume:.2f} cubic units\n\n" +
+                         f"*Combined bounding box encompasses all {count} objects*"
+                )]
             else:
                 return [types.TextContent(
                     type="text",
-                    text=f"❌ HTTP Error {response.status_code}: {response.text}"
+                    text=f"❌ Bounds calculation failed: {result.get('error', 'Unknown error')}"
                 )]
                 
-        except httpx.RequestError as e:
+        except aiohttp.ClientError as e:
             return [types.TextContent(
                 type="text",
                 text=f"❌ Connection error: {str(e)}. Is Isaac Sim running with WorldBuilder extension?"
@@ -1596,55 +1427,49 @@ class WorldBuilderMCP:
                 "position": position,
                 "search_radius": search_radius
             }
-            response = await self.client.post(
-                f"{self.base_url}/transform/find_ground_level",
+            await self._initialize_client()
+            result = await self.client.post(
+                "/transform/find_ground_level",
                 json=payload,
                 timeout=self._get_timeout('standard')
             )
             
-            if response.status_code == 200:
-                result = response.json()
-                if result.get('success'):
-                    ground_y = result.get('ground_level', 0.0)
-                    method = result.get('detection_method', 'unknown')
-                    confidence = result.get('confidence', 0.0)
-                    reference_objects = result.get('reference_objects', [])
-                    
-                    method_desc = {
-                        'consensus': 'Consensus from nearby objects',
-                        'lowest_object': 'Lowest nearby object',
-                        'surface_detection': 'Surface detection',
-                        'default': 'Default ground level (no objects found)'
-                    }.get(method, method)
-                    
-                    reference_text = ""
-                    if reference_objects:
-                        ref_list = [f"  - {obj}" for obj in reference_objects[:5]]
-                        more_ref = f"\n  - *...and {len(reference_objects) - 5} more*" if len(reference_objects) > 5 else ""
-                        reference_text = f"\n\n**Reference objects:**\n" + "\n".join(ref_list) + more_ref
-                    
-                    return [types.TextContent(
-                        type="text",
-                        text=f"✅ **Ground level detected**\n\n" +
-                             f"• **Position:** [{position[0]}, {position[1]}, {position[2]}]\n" +
-                             f"• **Ground level (Y):** {ground_y:.2f}\n" +
-                             f"• **Detection method:** {method_desc}\n" +
-                             f"• **Confidence:** {confidence:.1%}\n" +
-                             f"• **Search radius:** {search_radius} units" +
-                             reference_text
-                    )]
-                else:
-                    return [types.TextContent(
-                        type="text",
-                        text=f"❌ Ground level detection failed: {result.get('error', 'Unknown error')}"
-                    )]
+            if result.get('success'):
+                ground_y = result.get('ground_level', 0.0)
+                method = result.get('detection_method', 'unknown')
+                confidence = result.get('confidence', 0.0)
+                reference_objects = result.get('reference_objects', [])
+                
+                method_desc = {
+                    'consensus': 'Consensus from nearby objects',
+                    'lowest_object': 'Lowest nearby object',
+                    'surface_detection': 'Surface detection',
+                    'default': 'Default ground level (no objects found)'
+                }.get(method, method)
+                
+                reference_text = ""
+                if reference_objects:
+                    ref_list = [f"  - {obj}" for obj in reference_objects[:5]]
+                    more_ref = f"\n  - *...and {len(reference_objects) - 5} more*" if len(reference_objects) > 5 else ""
+                    reference_text = f"\n\n**Reference objects:**\n" + "\n".join(ref_list) + more_ref
+                
+                return [types.TextContent(
+                    type="text",
+                    text=f"✅ **Ground level detected**\n\n" +
+                         f"• **Position:** [{position[0]}, {position[1]}, {position[2]}]\n" +
+                         f"• **Ground level (Y):** {ground_y:.2f}\n" +
+                         f"• **Detection method:** {method_desc}\n" +
+                         f"• **Confidence:** {confidence:.1%}\n" +
+                         f"• **Search radius:** {search_radius} units" +
+                         reference_text
+                )]
             else:
                 return [types.TextContent(
                     type="text",
-                    text=f"❌ HTTP Error {response.status_code}: {response.text}"
+                    text=f"❌ Ground level detection failed: {result.get('error', 'Unknown error')}"
                 )]
                 
-        except httpx.RequestError as e:
+        except aiohttp.ClientError as e:
             return [types.TextContent(
                 type="text",
                 text=f"❌ Connection error: {str(e)}. Is Isaac Sim running with WorldBuilder extension?"
@@ -1675,70 +1500,64 @@ class WorldBuilderMCP:
             if spacing is not None:
                 payload["spacing"] = spacing
             
-            response = await self.client.post(
-                f"{self.base_url}/transform/align_objects",
+            await self._initialize_client()
+            result = await self.client.post(
+                "/transform/align_objects",
                 json=payload,
                 timeout=self._get_timeout('standard')
             )
             
-            if response.status_code == 200:
-                result = response.json()
-                if result.get('success'):
-                    aligned_count = result.get('aligned_count', 0)
-                    axis_used = result.get('axis', axis)
-                    alignment_used = result.get('alignment', alignment)
-                    spacing_used = result.get('spacing')
-                    transformations = result.get('transformations', [])
+            if result.get('success'):
+                aligned_count = result.get('aligned_count', 0)
+                axis_used = result.get('axis', axis)
+                alignment_used = result.get('alignment', alignment)
+                spacing_used = result.get('spacing')
+                transformations = result.get('transformations', [])
+                
+                axis_names = {'x': 'X (left-right)', 'y': 'Y (up-down)', 'z': 'Z (forward-back)'}
+                axis_display = axis_names.get(axis_used, axis_used)
+                
+                alignment_names = {
+                    'min': 'minimum (left/bottom/front)',
+                    'max': 'maximum (right/top/back)', 
+                    'center': 'center (middle)'
+                }
+                alignment_display = alignment_names.get(alignment_used, alignment_used)
+                
+                spacing_text = ""
+                if spacing_used is not None:
+                    spacing_text = f"\n• **Spacing:** {spacing_used} units between objects"
+                
+                # Show transformation details
+                transform_details = ""
+                if transformations:
+                    details = []
+                    for t in transformations[:5]:  # Limit to first 5
+                        old_pos = t.get('old_position', [0, 0, 0])
+                        new_pos = t.get('new_position', [0, 0, 0])
+                        details.append(
+                            f"  - **{t.get('object', 'Unknown')}**\n" +
+                            f"    From: [{old_pos[0]:.2f}, {old_pos[1]:.2f}, {old_pos[2]:.2f}]\n" +
+                            f"    To: [{new_pos[0]:.2f}, {new_pos[1]:.2f}, {new_pos[2]:.2f}]"
+                        )
                     
-                    axis_names = {'x': 'X (left-right)', 'y': 'Y (up-down)', 'z': 'Z (forward-back)'}
-                    axis_display = axis_names.get(axis_used, axis_used)
-                    
-                    alignment_names = {
-                        'min': 'minimum (left/bottom/front)',
-                        'max': 'maximum (right/top/back)', 
-                        'center': 'center (middle)'
-                    }
-                    alignment_display = alignment_names.get(alignment_used, alignment_used)
-                    
-                    spacing_text = ""
-                    if spacing_used is not None:
-                        spacing_text = f"\n• **Spacing:** {spacing_used} units between objects"
-                    
-                    # Show transformation details
-                    transform_details = ""
-                    if transformations:
-                        details = []
-                        for t in transformations[:5]:  # Limit to first 5
-                            old_pos = t.get('old_position', [0, 0, 0])
-                            new_pos = t.get('new_position', [0, 0, 0])
-                            details.append(
-                                f"  - **{t.get('object', 'Unknown')}**\n" +
-                                f"    From: [{old_pos[0]:.2f}, {old_pos[1]:.2f}, {old_pos[2]:.2f}]\n" +
-                                f"    To: [{new_pos[0]:.2f}, {new_pos[1]:.2f}, {new_pos[2]:.2f}]"
-                            )
-                        
-                        more_details = f"\n\n*Showing 5 of {len(transformations)} transformations*" if len(transformations) > 5 else ""
-                        transform_details = f"\n\n**Object movements:**\n" + "\n\n".join(details) + more_details
-                    
-                    return [types.TextContent(
-                        type="text",
-                        text=f"✅ **Aligned {aligned_count} objects successfully**\n\n" +
-                             f"• **Axis:** {axis_display}\n" +
-                             f"• **Alignment:** {alignment_display}" +
-                             spacing_text + transform_details
-                    )]
-                else:
-                    return [types.TextContent(
-                        type="text",
-                        text=f"❌ Object alignment failed: {result.get('error', 'Unknown error')}"
-                    )]
+                    more_details = f"\n\n*Showing 5 of {len(transformations)} transformations*" if len(transformations) > 5 else ""
+                    transform_details = f"\n\n**Object movements:**\n" + "\n\n".join(details) + more_details
+                
+                return [types.TextContent(
+                    type="text",
+                    text=f"✅ **Aligned {aligned_count} objects successfully**\n\n" +
+                         f"• **Axis:** {axis_display}\n" +
+                         f"• **Alignment:** {alignment_display}" +
+                         spacing_text + transform_details
+                )]
             else:
                 return [types.TextContent(
                     type="text",
-                    text=f"❌ HTTP Error {response.status_code}: {response.text}"
+                    text=f"❌ Object alignment failed: {result.get('error', 'Unknown error')}"
                 )]
                 
-        except httpx.RequestError as e:
+        except aiohttp.ClientError as e:
             return [types.TextContent(
                 type="text",
                 text=f"❌ Connection error: {str(e)}. Is Isaac Sim running with WorldBuilder extension?"
@@ -1748,56 +1567,37 @@ class WorldBuilderMCP:
         """Get performance metrics and statistics from WorldBuilder extension."""
         try:
             format_type = args.get('format', 'json')
+            endpoint = "/metrics.prom" if format_type == "prom" else "/metrics"
+            await self._initialize_client()
+            result = await self.client.get(endpoint, timeout=self._get_timeout('fast'))
             
-            if format_type == 'json':
-                endpoint = 'metrics'
-            elif format_type == 'prom':
-                endpoint = 'metrics.prom'
-            else:
-                return [types.TextContent(
-                    type="text", 
-                    text="❌ Error: format must be 'json' or 'prom'"
-                )]
-            
-            response = await self.client.get(
-                f"{self.base_url}/{endpoint}",
-                timeout=self._get_timeout('fast')
-            )
-            
-            if response.status_code == 200:
-                if format_type == 'json':
-                    result = response.json()
-                    if result.get('success'):
-                        metrics = result.get('metrics', {})
-                        
-                        # Format metrics for display
-                        return [types.TextContent(
-                            type="text",
-                            text=f"✅ **WorldBuilder Metrics**\n\n" +
-                                 f"• **Requests Received:** {metrics.get('requests_received', 0)}\n" +
-                                 f"• **Errors:** {metrics.get('errors', 0)}\n" +
-                                 f"• **Elements Created:** {metrics.get('elements_created', 0)}\n" +
-                                 f"• **Batches Created:** {metrics.get('batches_created', 0)}\n" +
-                                 f"• **Assets Placed:** {metrics.get('assets_placed', 0)}\n" +
-                                 f"• **Objects Queried:** {metrics.get('objects_queried', 0)}\n" +
-                                 f"• **Transformations Applied:** {metrics.get('transformations_applied', 0)}\n" +
-                                 f"• **Server Uptime:** {metrics.get('uptime_seconds', 0):.1f}s"
-                        )]
-                    else:
-                        return [types.TextContent(type="text", text=f"❌ Failed: {result.get('error', 'Unknown error')}")]
-                else:  # prometheus
-                    # For Prometheus format, return raw text
-                    return [types.TextContent(
-                        type="text",
-                        text=f"✅ **Prometheus Metrics Retrieved**\n\n```\n{response.text}\n```"
-                    )]
-            else:
+            if format_type == 'prom':
+                # Return raw Prometheus text format (support multiple possible keys)
+                prom_text = result.get('_raw_text') or result.get('prometheus_metrics') or result.get('raw_response') or result.get('text', str(result))
                 return [types.TextContent(
                     type="text",
-                    text=f"❌ HTTP Error {response.status_code}: {response.text}"
+                    text=f"✅ **Prometheus Metrics Retrieved**\n\n```\n{prom_text}\n```"
                 )]
-                
-        except httpx.RequestError as e:
+            else:
+                if result.get('success'):
+                    metrics = result.get('metrics', {})
+                    return [types.TextContent(
+                        type="text",
+                        text=(
+                            "✅ **WorldBuilder Metrics**\n\n"
+                            f"• **Requests Received:** {metrics.get('requests_received', 0)}\n"
+                            f"• **Errors:** {metrics.get('errors', 0)}\n"
+                            f"• **Elements Created:** {metrics.get('elements_created', 0)}\n"
+                            f"• **Batches Created:** {metrics.get('batches_created', 0)}\n"
+                            f"• **Assets Placed:** {metrics.get('assets_placed', 0)}\n"
+                            f"• **Objects Queried:** {metrics.get('objects_queried', 0)}\n"
+                            f"• **Transformations Applied:** {metrics.get('transformations_applied', 0)}\n"
+                            f"• **Server Uptime:** {metrics.get('uptime_seconds', 0):.1f}s"
+                        )
+                    )]
+                else:
+                    return [types.TextContent(type="text", text=f"❌ Failed: {result.get('error', 'Unknown error')}")]
+        except aiohttp.ClientError as e:
             return [types.TextContent(
                 type="text",
                 text=f"❌ Connection error: {str(e)}. Is Isaac Sim running with WorldBuilder extension?"
@@ -1806,23 +1606,14 @@ class WorldBuilderMCP:
     async def _metrics_prometheus(self, args: Dict[str, Any]) -> List[types.TextContent]:
         """Get WorldBuilder metrics in Prometheus format for monitoring systems."""
         try:
-            response = await self.client.get(
-                f"{self.base_url}/metrics.prom",
-                timeout=self._get_timeout('fast')
-            )
-            
-            if response.status_code == 200:
-                return [types.TextContent(
-                    type="text",
-                    text=f"✅ **Prometheus Metrics Retrieved**\n\n```\n{response.text}\n```"
-                )]
-            else:
-                return [types.TextContent(
-                    type="text",
-                    text=f"❌ HTTP Error {response.status_code}: {response.text}"
-                )]
-                
-        except httpx.RequestError as e:
+            await self._initialize_client()
+            result = await self.client.get("/metrics.prom", timeout=self._get_timeout('fast'))
+            prom_text = result.get('_raw_text') or result.get('prometheus_metrics') or result.get('raw_response') or result.get('text', str(result))
+            return [types.TextContent(
+                type="text",
+                text=f"✅ **Prometheus Metrics Retrieved**\n\n```\n{prom_text}\n```"
+            )]
+        except aiohttp.ClientError as e:
             return [types.TextContent(
                 type="text",
                 text=f"❌ Connection error: {str(e)}. Is Isaac Sim running with WorldBuilder extension?"
@@ -1852,7 +1643,7 @@ async def main():
             )
     finally:
         # Clean up HTTP client
-        await mcp_server.client.aclose()
+        await mcp_server.client.close()
 
 if __name__ == "__main__":
     asyncio.run(main())

@@ -11,7 +11,7 @@ from typing import Dict, Any, Optional
 import aiohttp
 from urllib.parse import urljoin
 
-from .auth_negotiator import AuthNegotiator
+from auth_negotiator import AuthNegotiator
 
 logger = logging.getLogger(__name__)
 
@@ -175,43 +175,3 @@ class MCPBaseClient:
             "realm": config.realm,
             "has_credentials": bool(config.hmac_secret and config.auth_token)
         }
-
-
-# Example usage in an MCP server
-class WorldBuilderClient(MCPBaseClient):
-    """Specialized client for WorldBuilder extension."""
-    
-    def __init__(self, base_url: str = "http://localhost:8899"):
-        super().__init__("WORLDBUILDER", base_url)
-    
-    async def create_element(self, element_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Create an element in the scene."""
-        return await self.post('/api/elements', json=element_data)
-    
-    async def get_scene(self) -> Dict[str, Any]:
-        """Get the current scene state."""
-        return await self.get('/api/scene')
-    
-    async def list_elements(self) -> Dict[str, Any]:
-        """List all elements in the scene."""
-        return await self.get('/api/elements')
-
-
-# Factory functions for common clients
-async def create_worldbuilder_client(base_url: str = "http://localhost:8899") -> WorldBuilderClient:
-    """Create and initialize WorldBuilder client."""
-    client = WorldBuilderClient(base_url)
-    await client.initialize()
-    return client
-
-async def create_worldviewer_client(base_url: str = "http://localhost:8900") -> MCPBaseClient:
-    """Create and initialize WorldViewer client."""
-    client = MCPBaseClient("WORLDVIEWER", base_url)
-    await client.initialize()
-    return client
-
-async def create_worldrecorder_client(base_url: str = "http://localhost:8892") -> MCPBaseClient:
-    """Create and initialize WorldRecorder client."""
-    client = MCPBaseClient("WORLDRECORDER", base_url)
-    await client.initialize()
-    return client

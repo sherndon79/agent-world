@@ -7,22 +7,25 @@ for video recording and frame capture in Isaac Sim.
 """
 
 import asyncio
-import json
 import sys
 import os
 from typing import Any, Dict, List, Optional
 from datetime import datetime
-import hashlib
-import hmac
-import time
 
-import httpx
+import aiohttp
+
+# Add shared modules to path
+shared_path = os.path.join(os.path.dirname(__file__), '..', '..', 'shared')
+if shared_path not in sys.path:
+    sys.path.insert(0, shared_path)
+
+# Import unified auth client
+from mcp_base_client import MCPBaseClient
 from mcp.server import Server
 from mcp.server.models import InitializationOptions
 from mcp.server.stdio import stdio_server
 from mcp.server.lowlevel import NotificationOptions
-from mcp.types import Resource, Tool, TextContent, ImageContent, EmbeddedResource
-import mcp.types as types
+from mcp.types import Tool, TextContent
 
 
 class WorldRecorderResponseFormatter:
@@ -135,13 +138,8 @@ class WorldRecorderMCP:
         self.base_url = env_base or base_url or "http://localhost:8892"
         self.formatter = WorldRecorderResponseFormatter()
         
-        # Authentication configuration
-        self.auth_token = os.getenv("AGENT_WORLDRECORDER_AUTH_TOKEN") or os.getenv("AGENT_EXT_AUTH_TOKEN")
-        self.hmac_secret = os.getenv("AGENT_WORLDRECORDER_HMAC_SECRET") or os.getenv("AGENT_EXT_HMAC_SECRET")
-        
-        # HTTP client configuration
-        self._client_lock = asyncio.Lock()
-        self._http_client: Optional[httpx.AsyncClient] = None
+        # Initialize unified auth client
+        self.client = MCPBaseClient("WORLDRECORDER", self.base_url)
         
         # Timeouts configuration
         self.timeouts = {
@@ -160,62 +158,26 @@ class WorldRecorderMCP:
         # Setup tools
         self._setup_tools()
     
-    async def _get_http_client(self) -> httpx.AsyncClient:
-        """Get or create HTTP client with connection pooling"""
-        async with self._client_lock:
-            if self._http_client is None:
-                limits = httpx.Limits(
-                    max_keepalive_connections=5,
-                    max_connections=10,
-                    keepalive_expiry=30.0
-                )
-                self._http_client = httpx.AsyncClient(
-                    base_url=self.base_url,
-                    limits=limits,
-                    follow_redirects=True
-                )
-        return self._http_client
+    async def _initialize_client(self):
+        """Initialize the unified auth client"""
+        if not self.client._initialized:
+            await self.client.initialize()
     
-    async def _close_http_client(self):
-        """Close HTTP client and cleanup connections"""
-        async with self._client_lock:
-            if self._http_client:
-                await self._http_client.aclose()
-                self._http_client = None
+    async def __aenter__(self):
+        """Async context manager entry"""
+        await self._initialize_client()
+        return self
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit"""
+        await self.client.close()
+    
     
     def _get_timeout(self, operation: str) -> float:
         """Get timeout for specific operation"""
         return self.timeouts.get(operation, self.timeouts['standard'])
     
-    def _get_auth_headers(self, method: str, endpoint: str) -> Dict[str, str]:
-        """Generate authentication headers for requests"""
-        headers = {}
-        
-        # Check if auth is disabled for troubleshooting
-        auth_disabled = os.getenv('AGENT_EXT_AUTH_ENABLED', '1').lower() in ('0', 'false', 'no', 'off')
-        if auth_disabled:
-            return headers
-        
-        # Add Bearer token if available
-        if self.auth_token:
-            headers["Authorization"] = f"Bearer {self.auth_token}"
-        
-        # Add HMAC signature if secret is available
-        if self.hmac_secret:
-            timestamp = str(time.time())
-            message = f"{method.upper()}|{endpoint}|{timestamp}".encode('utf-8')
-            signature = hmac.new(
-                self.hmac_secret.encode('utf-8'), 
-                message, 
-                hashlib.sha256
-            ).hexdigest()
-            
-            headers.update({
-                "X-Timestamp": timestamp,
-                "X-Signature": signature
-            })
-        
-        return headers
+    # (Auth headers handled by MCPBaseClient)
     
     async def _make_request(
         self, 
@@ -224,50 +186,22 @@ class WorldRecorderMCP:
         data: Optional[Dict] = None,
         timeout_key: str = 'standard'
     ) -> Dict:
-        """Make HTTP request with retry logic and proper error handling"""
-        client = await self._get_http_client()
-        timeout = httpx.Timeout(self._get_timeout(timeout_key))
-        
-        # Generate authentication headers
-        auth_headers = self._get_auth_headers(method, endpoint)
-        
-        for attempt in range(self.retry_attempts):
-            try:
-                if method.upper() == 'GET':
-                    response = await client.get(endpoint, headers=auth_headers, timeout=timeout)
-                elif method.upper() == 'POST':
-                    response = await client.post(endpoint, headers=auth_headers, json=data, timeout=timeout)
-                else:
-                    raise ValueError(f"Unsupported HTTP method: {method}")
+        """Make HTTP request using unified auth client"""
+        try:
+            await self._initialize_client()
+            
+            if method.upper() == 'GET':
+                return await self.client.get(endpoint)
+            elif method.upper() == 'POST':
+                return await self.client.post(endpoint, json=data)
+            else:
+                raise ValueError(f"Unsupported HTTP method: {method}")
                 
-                response.raise_for_status()
-                
-                # Handle different content types
-                content_type = response.headers.get('content-type', '').lower()
-                if 'application/json' in content_type:
-                    return response.json()
-                else:
-                    return {"response": response.text, "status_code": response.status_code}
-            
-            except httpx.ConnectError as e:
-                if attempt == self.retry_attempts - 1:
-                    raise httpx.ConnectError(f"Could not connect to WorldRecorder extension at {self.base_url}. "
-                                           f"Ensure Isaac Sim is running and WorldRecorder extension is enabled.")
-                await asyncio.sleep(0.5 * (attempt + 1))
-            
-            except httpx.TimeoutException as e:
-                if attempt == self.retry_attempts - 1:
-                    raise httpx.TimeoutException(f"Request timed out after {timeout.read}s")
-                await asyncio.sleep(1.0 * (attempt + 1))
-            
-            except httpx.HTTPStatusError as e:
-                # Don't retry on client errors (4xx)
-                if 400 <= e.response.status_code < 500:
-                    raise
-                # Retry on server errors (5xx)
-                if attempt == self.retry_attempts - 1:
-                    raise
-                await asyncio.sleep(1.0 * (attempt + 1))
+        except aiohttp.ClientError as e:
+            raise aiohttp.ClientError(f"Could not connect to WorldRecorder extension at {self.base_url}. "
+                                    f"Ensure Isaac Sim is running and WorldRecorder extension is enabled.")
+        except Exception as e:
+            raise Exception(f"Request failed: {str(e)}")
     
     def _setup_tools(self):
         """Register all MCP tools"""
@@ -465,7 +399,7 @@ class WorldRecorderMCP:
             else:
                 return [TextContent(type="text", text=f"❌ {response.get('error', 'Unknown error')}")]
         
-        except httpx.RequestError as e:
+        except aiohttp.ClientError as e:
             return [TextContent(
                 type="text",
                 text=f"❌ Connection error: {str(e)}"
@@ -492,7 +426,7 @@ class WorldRecorderMCP:
                 text=self.formatter.format_success("start_video", response, **arguments)
             )]
         
-        except httpx.RequestError as e:
+        except aiohttp.ClientError as e:
             return [TextContent(
                 type="text",
                 text=self.formatter.format_error("start_video", str(e))
@@ -512,7 +446,7 @@ class WorldRecorderMCP:
                 text=self.formatter.format_success("stop_video", response)
             )]
         
-        except httpx.RequestError as e:
+        except aiohttp.ClientError as e:
             return [TextContent(
                 type="text",
                 text=self.formatter.format_error("stop_video", str(e))
@@ -539,7 +473,7 @@ class WorldRecorderMCP:
                 text=self.formatter.format_success("capture_frame", response, **arguments)
             )]
         
-        except httpx.RequestError as e:
+        except aiohttp.ClientError as e:
             return [TextContent(
                 type="text",
                 text=self.formatter.format_error("capture_frame", str(e))
@@ -565,7 +499,7 @@ class WorldRecorderMCP:
             else:
                 return [TextContent(type="text", text=f"❌ {response.get('error', 'Unknown error')}")]
         
-        except httpx.RequestError as e:
+        except aiohttp.ClientError as e:
             return [TextContent(
                 type="text",
                 text=self.formatter.format_error("get_status", str(e))
@@ -599,7 +533,7 @@ class WorldRecorderMCP:
                 text=metrics_text
             )]
         
-        except httpx.RequestError as e:
+        except aiohttp.ClientError as e:
             return [TextContent(
                 type="text",
                 text=self.formatter.format_error("get_metrics", str(e))
@@ -622,7 +556,7 @@ class WorldRecorderMCP:
         async def cleanup():
             """Cleanup resources and close connections."""
             try:
-                await self._close_http_client()
+                await self.client.close()
             except Exception as e:
                 print(f"Error during cleanup: {e}", file=sys.stderr)
         

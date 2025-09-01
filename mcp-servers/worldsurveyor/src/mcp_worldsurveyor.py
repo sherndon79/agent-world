@@ -21,15 +21,22 @@ import json
 import logging
 import os
 import sys
-from datetime import datetime
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List
 
-import httpx
+import aiohttp
 from mcp.server import Server
+
+# Add shared modules to path
+shared_path = os.path.join(os.path.dirname(__file__), '..', '..', 'shared')
+if shared_path not in sys.path:
+    sys.path.insert(0, shared_path)
+
+# Import unified auth client
+from mcp_base_client import MCPBaseClient
 from mcp.server.models import InitializationOptions
 from mcp.server.stdio import stdio_server
 from mcp.server.lowlevel import NotificationOptions
-from mcp.types import Resource, Tool, TextContent, ImageContent, EmbeddedResource
+from mcp.types import Tool
 import mcp.types as types
 
 
@@ -70,13 +77,27 @@ class WorldSurveyorMCP:
         self.base_url = base_url.rstrip('/')
         self.server = Server("worldsurveyor")
         
-        # HTTP client for API calls
-        self.client = httpx.AsyncClient(timeout=30.0)
+        # Initialize unified auth client
+        self.client = MCPBaseClient("WORLDSURVEYOR", self.base_url)
         
         # Register tools
         self._register_tools()
         
         logger.info(f"WorldSurveyor MCP initialized with base_url: {self.base_url}")
+    
+    async def _initialize_client(self):
+        """Initialize the unified auth client"""
+        if not self.client._initialized:
+            await self.client.initialize()
+    
+    async def __aenter__(self):
+        """Async context manager entry"""
+        await self._initialize_client()
+        return self
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit"""
+        await self.client.close()
     
     def _register_tools(self):
         """Register MCP tools for WorldSurveyor functionality."""
@@ -624,12 +645,8 @@ class WorldSurveyorMCP:
     async def _create_waypoint(self, args: Dict[str, Any]) -> List[types.TextContent]:
         """Create a new waypoint."""
         try:
-            response = await self.client.post(
-                f"{self.base_url}/waypoints/create",
-                json=args,
-                timeout=10.0
-            )
-            result = response.json()
+            await self._initialize_client()
+            result = await self.client.post("/waypoints/create", json=args)
             
             if result.get('success'):
                 waypoint_id = result.get('waypoint_id', 'unknown')
@@ -652,7 +669,7 @@ class WorldSurveyorMCP:
                     text=f"❌ Failed to create waypoint: {result.get('error', 'Unknown error')}"
                 )]
                 
-        except httpx.RequestError as e:
+        except aiohttp.ClientError as e:
             return [types.TextContent(
                 type="text",
                 text=f"❌ Connection error: {str(e)}"
@@ -670,12 +687,8 @@ class WorldSurveyorMCP:
             if 'waypoint_type' in args:
                 params['waypoint_type'] = args['waypoint_type']
             
-            response = await self.client.get(
-                f"{self.base_url}/waypoints/list",
-                params=params,
-                timeout=10.0
-            )
-            result = response.json()
+            await self._initialize_client()
+            result = await self.client.get("/waypoints/list", params=params)
             
             if result.get('success'):
                 waypoints = result.get('waypoints', [])
@@ -721,7 +734,7 @@ class WorldSurveyorMCP:
                     text=f"❌ Failed to list waypoints: {result.get('error', 'Unknown error')}"
                 )]
                 
-        except httpx.RequestError as e:
+        except aiohttp.ClientError as e:
             return [types.TextContent(
                 type="text",
                 text=f"❌ Connection error: {str(e)}"
@@ -735,11 +748,8 @@ class WorldSurveyorMCP:
     async def _health_check(self, args: Dict[str, Any]) -> List[types.TextContent]:
         """Check WorldSurveyor health status."""
         try:
-            response = await self.client.get(
-                f"{self.base_url}/health",
-                timeout=10.0
-            )
-            result = response.json()
+            await self._initialize_client()
+            result = await self.client.get("/health")
             
             if result.get('success'):
                 service = result.get('service', 'Unknown')
@@ -781,12 +791,8 @@ class WorldSurveyorMCP:
             visible = args['visible']
             
             payload = {"visible": visible}
-            response = await self.client.post(
-                f"{self.base_url}/markers/visible",
-                json=payload,
-                timeout=10.0
-            )
-            result = response.json()
+            await self._initialize_client()
+            result = await self.client.post("/markers/visible", json=payload)
             
             if result.get('success'):
                 status = "shown" if visible else "hidden"
@@ -805,7 +811,7 @@ class WorldSurveyorMCP:
                     text=f"❌ Failed to set marker visibility: {result.get('error', 'Unknown error')}"
                 )]
                 
-        except httpx.RequestError as e:
+        except aiohttp.ClientError as e:
             return [types.TextContent(
                 type="text",
                 text=f"❌ Connection error: {str(e)}"
@@ -819,11 +825,8 @@ class WorldSurveyorMCP:
     async def _debug_status(self, args: Dict[str, Any]) -> List[types.TextContent]:
         """Get debug draw system status and marker information."""
         try:
-            response = await self.client.get(
-                f"{self.base_url}/markers/debug",
-                timeout=10.0
-            )
-            result = response.json()
+            await self._initialize_client()
+            result = await self.client.get("/markers/debug")
             
             if result.get('success'):
                 debug_status = result.get('debug_status', {})
@@ -862,7 +865,7 @@ class WorldSurveyorMCP:
                     text=f"❌ Failed to get debug status: {result.get('error', 'Unknown error')}"
                 )]
                 
-        except httpx.RequestError as e:
+        except aiohttp.ClientError as e:
             return [types.TextContent(
                 type="text",
                 text=f"❌ Connection error: {str(e)}"
@@ -883,12 +886,12 @@ class WorldSurveyorMCP:
                     text="❌ Error: waypoint_id is required"
                 )]
             
-            response = await self.client.post(
-                f"{self.base_url}/waypoints/update",
+            await self._initialize_client()
+            result = await self.client.post("/waypoints/update",
                 json=args,
                 timeout=10.0
             )
-            result = response.json()
+            # Response already parsed by MCPBaseClient
             
             if result.get('success'):
                 waypoint = result.get('waypoint', {})
@@ -907,7 +910,7 @@ class WorldSurveyorMCP:
                     text=f"❌ Error updating waypoint: {result.get('error', 'Unknown error')}"
                 )]
                 
-        except httpx.RequestError as e:
+        except aiohttp.ClientError as e:
             return [types.TextContent(
                 type="text",
                 text=f"❌ Connection error: {str(e)}"
@@ -931,12 +934,12 @@ class WorldSurveyorMCP:
                          "This action cannot be undone!"
                 )]
             
-            response = await self.client.post(
-                f"{self.base_url}/waypoints/clear",
+            await self._initialize_client()
+            result = await self.client.post("/waypoints/clear",
                 json={"confirm": True},
                 timeout=10.0
             )
-            result = response.json()
+            # Response already parsed by MCPBaseClient
             
             if result.get('success'):
                 cleared_count = result.get('cleared_count', 0)
@@ -970,12 +973,12 @@ class WorldSurveyorMCP:
                     text="❌ Error: waypoint_id is required"
                 )]
             
-            response = await self.client.post(
-                f"{self.base_url}/waypoints/remove",
+            result = await self.client.post(
+                "/waypoints/remove",
                 json={"waypoint_id": waypoint_id},
                 timeout=10.0
             )
-            result = response.json()
+            # Response already parsed by MCPBaseClient
             
             if result.get('success'):
                 return [types.TextContent(
@@ -1015,12 +1018,12 @@ class WorldSurveyorMCP:
                     text="❌ Error: visible parameter is required"
                 )]
             
-            response = await self.client.post(
-                f"{self.base_url}/markers/individual",
+            result = await self.client.post(
+                "/markers/individual",
                 json={"waypoint_id": waypoint_id, "visible": visible},
                 timeout=10.0
             )
-            result = response.json()
+            # Response already parsed by MCPBaseClient
             
             if result.get('success'):
                 status = "shown" if visible else "hidden"
@@ -1037,7 +1040,7 @@ class WorldSurveyorMCP:
                     text=f"❌ Failed to set marker visibility: {result.get('error', 'Unknown error')}"
                 )]
                 
-        except httpx.RequestError as e:
+        except aiohttp.ClientError as e:
             return [types.TextContent(
                 type="text",
                 text=f"❌ Connection error: {str(e)}"
@@ -1065,12 +1068,12 @@ class WorldSurveyorMCP:
                     text="❌ Error: at least one waypoint ID must be provided"
                 )]
             
-            response = await self.client.post(
-                f"{self.base_url}/markers/selective",
+            result = await self.client.post(
+                "/markers/selective",
                 json={"visible_waypoint_ids": visible_waypoint_ids},
                 timeout=10.0
             )
-            result = response.json()
+            # Response already parsed by MCPBaseClient
             
             if result.get('success'):
                 return [types.TextContent(
@@ -1102,12 +1105,12 @@ class WorldSurveyorMCP:
             if format_type == 'prom':
                 params['format'] = 'prom'
             
-            response = await self.client.get(
-                f"{self.base_url}/metrics",
+            result = await self.client.get(
+                "/metrics",
                 params=params,
                 timeout=10.0
             )
-            result = response.json()
+            # Response already parsed by MCPBaseClient
             
             if result.get('success'):
                 metrics = result.get('metrics', {})
@@ -1175,12 +1178,12 @@ class WorldSurveyorMCP:
                     text="❌ Error: Group name is required"
                 )]
             
-            response = await self.client.post(
-                f"{self.base_url}/groups/create",
+            result = await self.client.post(
+                "/groups/create",
                 json=args,
                 timeout=10.0
             )
-            result = response.json()
+            # Response already parsed by MCPBaseClient
             
             if result.get('success'):
                 group_id = result.get('group_id', 'unknown')
@@ -1215,12 +1218,12 @@ class WorldSurveyorMCP:
             if 'parent_group_id' in args:
                 params['parent_group_id'] = args['parent_group_id']
             
-            response = await self.client.get(
-                f"{self.base_url}/groups/list",
+            result = await self.client.get(
+                "/groups/list",
                 params=params,
                 timeout=10.0
             )
-            result = response.json()
+            # Response already parsed by MCPBaseClient
             
             if result.get('success'):
                 groups = result.get('groups', [])
@@ -1270,12 +1273,12 @@ class WorldSurveyorMCP:
             if not group_id:
                 return [types.TextContent(type="text", text="❌ Error: group_id required")]
             
-            response = await self.client.get(
-                f"{self.base_url}/groups/get",
+            result = await self.client.get(
+                "/groups/get",
                 params={'group_id': group_id},
                 timeout=10.0
             )
-            result = response.json()
+            # Response already parsed by MCPBaseClient
             
             if result.get('success'):
                 group = result.get('group', {})
@@ -1311,11 +1314,11 @@ class WorldSurveyorMCP:
     async def _get_group_hierarchy(self, args: Dict[str, Any]) -> List[types.TextContent]:
         """Get complete group hierarchy as nested structure."""
         try:
-            response = await self.client.get(
-                f"{self.base_url}/groups/hierarchy",
+            result = await self.client.get(
+                "/groups/hierarchy",
                 timeout=10.0
             )
-            result = response.json()
+            # Response already parsed by MCPBaseClient
             
             if result.get('success'):
                 hierarchy = result.get('hierarchy', [])
@@ -1376,12 +1379,12 @@ class WorldSurveyorMCP:
             
             cascade = args.get('cascade', False)
             
-            response = await self.client.post(
-                f"{self.base_url}/groups/remove",
+            result = await self.client.post(
+                "/groups/remove",
                 json={"group_id": group_id, "cascade": cascade},
                 timeout=10.0
             )
-            result = response.json()
+            # Response already parsed by MCPBaseClient
             
             if result.get('success'):
                 cascade_text = " and all child groups" if cascade else ""
@@ -1422,12 +1425,12 @@ class WorldSurveyorMCP:
                     text="❌ Error: At least one group ID is required"
                 )]
             
-            response = await self.client.post(
-                f"{self.base_url}/groups/add_waypoint",
+            result = await self.client.post(
+                "/groups/add_waypoint",
                 json={"waypoint_id": waypoint_id, "group_ids": group_ids},
                 timeout=10.0
             )
-            result = response.json()
+            # Response already parsed by MCPBaseClient
             
             if result.get('success'):
                 added_count = result.get('added_to_groups', 0)
@@ -1468,12 +1471,12 @@ class WorldSurveyorMCP:
                     text="❌ Error: At least one group ID is required"
                 )]
             
-            response = await self.client.post(
-                f"{self.base_url}/groups/remove_waypoint",
+            result = await self.client.post(
+                "/groups/remove_waypoint",
                 json={"waypoint_id": waypoint_id, "group_ids": group_ids},
                 timeout=10.0
             )
-            result = response.json()
+            # Response already parsed by MCPBaseClient
             
             if result.get('success'):
                 removed_count = result.get('removed_from_groups', 0)
@@ -1507,12 +1510,12 @@ class WorldSurveyorMCP:
                     text="❌ Error: Waypoint ID is required"
                 )]
             
-            response = await self.client.get(
-                f"{self.base_url}/groups/of_waypoint",
+            result = await self.client.get(
+                "/groups/of_waypoint",
                 params={"waypoint_id": waypoint_id},
                 timeout=10.0
             )
-            result = response.json()
+            # Response already parsed by MCPBaseClient
             
             if result.get('success'):
                 groups = result.get('groups', [])
@@ -1563,12 +1566,12 @@ class WorldSurveyorMCP:
             
             include_nested = args.get('include_nested', False)
             
-            response = await self.client.get(
-                f"{self.base_url}/groups/waypoints",
+            result = await self.client.get(
+                "/groups/waypoints",
                 params={"group_id": group_id, "include_nested": include_nested},
                 timeout=10.0
             )
-            result = response.json()
+            # Response already parsed by MCPBaseClient
             
             if result.get('success'):
                 waypoints = result.get('waypoints', [])
@@ -1618,12 +1621,12 @@ class WorldSurveyorMCP:
         try:
             include_groups = args.get('include_groups', True)
             
-            response = await self.client.get(
-                f"{self.base_url}/waypoints/export",
+            result = await self.client.get(
+                "/waypoints/export",
                 params={"include_groups": include_groups},
                 timeout=15.0
             )
-            result = response.json()
+            # Response already parsed by MCPBaseClient
             
             if result.get('success'):
                 export_data = result.get('export_data', {})
@@ -1668,12 +1671,12 @@ class WorldSurveyorMCP:
             
             merge_mode = args.get('merge_mode', 'replace')
             
-            response = await self.client.post(
-                f"{self.base_url}/waypoints/import",
+            result = await self.client.post(
+                "/waypoints/import",
                 json={"import_data": import_data, "merge_mode": merge_mode},
                 timeout=30.0  # Longer timeout for import operations
             )
-            result = response.json()
+            # Response already parsed by MCPBaseClient
             
             if result.get('success'):
                 imported_waypoints = result.get('imported_waypoints', 0)
@@ -1713,12 +1716,12 @@ class WorldSurveyorMCP:
                     text="❌ Error: waypoint_id is required"
                 )]
             
-            response = await self.client.post(
-                f"{self.base_url}/waypoints/goto",
+            result = await self.client.post(
+                "/waypoints/goto",
                 json={"waypoint_id": waypoint_id},
                 timeout=10.0
             )
-            result = response.json()
+            # Response already parsed by MCPBaseClient
             
             if result.get('success'):
                 return [types.TextContent(
@@ -1742,11 +1745,11 @@ class WorldSurveyorMCP:
     async def _health(self, args: Dict[str, Any]) -> List[types.TextContent]:
         """Check WorldSurveyor health."""
         try:
-            response = await self.client.get(
-                f"{self.base_url}/health",
+            result = await self.client.get(
+                "/health",
                 timeout=5.0
             )
-            result = response.json()
+            # Response already parsed by MCPBaseClient
             
             if result.get('success'):
                 return [types.TextContent(
@@ -1773,11 +1776,11 @@ class WorldSurveyorMCP:
     async def _metrics(self, args: Dict[str, Any]) -> List[types.TextContent]:
         """Get metrics in JSON format."""
         try:
-            response = await self.client.get(
-                f"{self.base_url}/metrics",
+            result = await self.client.get(
+                "/metrics",
                 timeout=5.0
             )
-            result = response.json()
+            # Response already parsed by MCPBaseClient
             
             if result.get('success'):
                 import json
@@ -1801,14 +1804,15 @@ class WorldSurveyorMCP:
     async def _metrics_prometheus(self, args: Dict[str, Any]) -> List[types.TextContent]:
         """Get metrics in Prometheus format."""
         try:
-            response = await self.client.get(
-                f"{self.base_url}/metrics.prom",
-                timeout=5.0
-            )
+            await self._initialize_client()
+            result = await self.client.get("/metrics.prom")
             
-            # For Prometheus format, response is plain text
-            if response.status_code == 200:
-                metrics_text = response.text
+            # For Prometheus format, check for _raw_text field or text data
+            if result.get('success'):
+                if '_raw_text' in result:
+                    metrics_text = result['_raw_text']
+                else:
+                    metrics_text = result.get('text', str(result))
                 return [types.TextContent(
                     type="text",
                     text=f"📊 **WorldSurveyor Prometheus Metrics**\n\n```\n{metrics_text}\n```"
@@ -1816,7 +1820,7 @@ class WorldSurveyorMCP:
             else:
                 return [types.TextContent(
                     type="text",
-                    text=f"❌ Failed to get Prometheus metrics: HTTP {response.status_code}"
+                    text=f"❌ Failed to get Prometheus metrics: {result.get('error', 'Unknown error')}"
                 )]
                 
         except Exception as e:
@@ -1842,6 +1846,9 @@ async def main():
     
     # Run the server
     try:
+        # Initialize the unified auth client
+        await mcp_server._initialize_client()
+        
         async with stdio_server() as (read_stream, write_stream):
             await mcp_server.server.run(
                 read_stream,
@@ -1856,11 +1863,8 @@ async def main():
                 ),
             )
     finally:
-        # Ensure HTTP client is closed
-        try:
-            await mcp_server.client.aclose()
-        except Exception:
-            pass
+        # Clean up unified client
+        await mcp_server.client.close()
 
 
 if __name__ == "__main__":
