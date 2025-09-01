@@ -43,23 +43,27 @@ def main() -> int:
     services = [
         {
             'name': 'worldsurveyor',
+            'service': 'worldsurveyor',
             'mcp_file': mcp_root / 'worldsurveyor' / 'src' / 'mcp_worldsurveyor.py',
             'openapi_url': build_openapi_url('WORLDSURVEYOR_API_URL', 'http://localhost:8891'),
         },
         {
             'name': 'worldbuilder',
+            'service': 'worldbuilder',
             'mcp_file': mcp_root / 'worldbuilder' / 'src' / 'mcp_agent_worldbuilder.py',
             'openapi_url': build_openapi_url('WORLDBUILDER_API_URL', 'http://localhost:8899'),
         },
         {
             'name': 'worldviewer',
+            'service': 'worldviewer',
             'mcp_file': mcp_root / 'worldviewer' / 'src' / 'mcp_agent_worldviewer.py',
             'openapi_url': build_openapi_url('WORLDVIEWER_API_URL', 'http://localhost:8900'),
         },
         {
             'name': 'worldrecorder',
-            'mcp_file': mcp_root / 'worldrecorder-server' / 'src' / 'mcp_agent_worldrecorder.py',
-            'openapi_url': build_openapi_url('WORLDRECORDER_API_URL', 'http://localhost:8901'),
+            'service': 'worldrecorder',
+            'mcp_file': mcp_root / 'worldrecorder' / 'src' / 'mcp_agent_worldrecorder.py',
+            'openapi_url': build_openapi_url('WORLDRECORDER_API_URL', 'http://localhost:8892'),
         },
     ]
 
@@ -72,7 +76,7 @@ def main() -> int:
         if not mcp_file.exists():
             print(f"[{name}] SKIP: MCP file not found: {mcp_file}")
             continue
-        cmd = [sys.executable, str(checker), '--mcp-file', str(mcp_file), '--openapi-url', openapi_url]
+        cmd = [sys.executable, str(checker), '--mcp-file', str(mcp_file), '--openapi-url', openapi_url, '--service', svc.get('service', name)]
         if args.fail_on_extra_openapi:
             cmd.append('--fail-on-extra-openapi')
         print(f"[{name}] Checking {mcp_file} vs {openapi_url}")

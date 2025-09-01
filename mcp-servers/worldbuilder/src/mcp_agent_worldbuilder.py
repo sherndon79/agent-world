@@ -1567,9 +1567,11 @@ class WorldBuilderMCP:
         """Get performance metrics and statistics from WorldBuilder extension."""
         try:
             format_type = args.get('format', 'json')
-            endpoint = "/metrics.prom" if format_type == "prom" else "/metrics"
             await self._initialize_client()
-            result = await self.client.get(endpoint, timeout=self._get_timeout('fast'))
+            if format_type == 'prom':
+                result = await self.client.get("/metrics.prom", timeout=self._get_timeout('fast'))
+            else:
+                result = await self.client.get("/metrics", timeout=self._get_timeout('fast'))
             
             if format_type == 'prom':
                 # Return raw Prometheus text format (support multiple possible keys)

@@ -221,6 +221,15 @@ class WorldRecorderMCP:
                     }
                 ),
                 Tool(
+                    name="worldrecorder_metrics_prometheus",
+                    description="Get WorldRecorder metrics in Prometheus format for monitoring systems",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {},
+                        "required": []
+                    }
+                ),
+                Tool(
                     name="worldrecorder_start_video",
                     description="Start continuous video recording in Isaac Sim viewport",
                     inputSchema={
@@ -272,6 +281,44 @@ class WorldRecorderMCP:
                             }
                         },
                         "required": ["output_path", "duration_sec"]
+                    }
+                ),
+                Tool(
+                    name="worldrecorder_start_recording",
+                    description="Start recording via recording/* API (alias of video/start)",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "output_path": {"type": "string", "description": "Output file path"},
+                            "fps": {"type": "number", "default": 30, "minimum": 1, "maximum": 120},
+                            "duration_sec": {"type": "number", "minimum": 0.1, "maximum": 86400},
+                            "width": {"type": "integer", "minimum": 64, "maximum": 7680},
+                            "height": {"type": "integer", "minimum": 64, "maximum": 4320},
+                            "file_type": {"type": "string", "enum": [".mp4", ".avi", ".mov"], "default": ".mp4"},
+                            "session_id": {"type": "string"},
+                            "show_progress": {"type": "boolean", "default": False}
+                        },
+                        "required": ["output_path", "duration_sec"]
+                    }
+                ),
+                Tool(
+                    name="worldrecorder_stop_recording",
+                    description="Stop recording via recording/* API (alias of video/stop)",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "session_id": {"type": "string", "description": "Optional session id"}
+                        },
+                        "required": []
+                    }
+                ),
+                Tool(
+                    name="worldrecorder_recording_status",
+                    description="Get recording status via recording/* API",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {},
+                        "required": []
                     }
                 ),
                 Tool(
@@ -370,6 +417,14 @@ class WorldRecorderMCP:
                     return await self._get_status(arguments)
                 elif name == "worldrecorder_get_metrics":
                     return await self._get_metrics(arguments)
+                elif name == "worldrecorder_metrics_prometheus":
+                    return await self._metrics_prometheus(arguments)
+                elif name == "worldrecorder_start_recording":
+                    return await self._start_recording(arguments)
+                elif name == "worldrecorder_stop_recording":
+                    return await self._stop_recording(arguments)
+                elif name == "worldrecorder_recording_status":
+                    return await self._recording_status(arguments)
                 else:
                     return [TextContent(
                         type="text",
@@ -543,6 +598,56 @@ class WorldRecorderMCP:
                 type="text",
                 text=self.formatter.format_error("get_metrics", f"Unexpected error: {str(e)}")
             )]
+
+    async def _metrics_prometheus(self, arguments: Dict[str, Any]) -> List[TextContent]:
+        """Get WorldRecorder metrics in Prometheus format"""
+        try:
+            response = await self._make_request("GET", "/metrics.prom")
+            # Response is raw text; if dict, stringify
+            if isinstance(response, dict) and 'prometheus_metrics' in response:
+                prom_text = response.get('prometheus_metrics')
+            elif isinstance(response, dict) and '_raw_text' in response:
+                prom_text = response.get('_raw_text')
+            else:
+                prom_text = str(response)
+            return [TextContent(type="text", text=f"📊 **WorldRecorder Prometheus Metrics**\n\n```\n{prom_text}\n```")]
+        except aiohttp.ClientError as e:
+            return [TextContent(type="text", text=self.formatter.format_error("get_metrics", str(e)))]
+        except Exception as e:
+            return [TextContent(type="text", text=self.formatter.format_error("get_metrics", f"Unexpected error: {str(e)}"))]
+
+    async def _start_recording(self, arguments: Dict[str, Any]) -> List[TextContent]:
+        """Start recording via recording/* API"""
+        try:
+            response = await self._make_request("POST", "/recording/start", arguments, "video_start")
+            return [TextContent(type="text", text=self.formatter.format_success("start_video", response, **arguments))]
+        except aiohttp.ClientError as e:
+            return [TextContent(type="text", text=self.formatter.format_error("start_video", str(e)))]
+        except Exception as e:
+            return [TextContent(type="text", text=self.formatter.format_error("start_video", f"Unexpected error: {str(e)}"))]
+
+    async def _stop_recording(self, arguments: Dict[str, Any]) -> List[TextContent]:
+        """Stop recording via recording/* API"""
+        try:
+            response = await self._make_request("POST", "/recording/stop", arguments, "video_stop")
+            return [TextContent(type="text", text=self.formatter.format_success("stop_video", response))]
+        except aiohttp.ClientError as e:
+            return [TextContent(type="text", text=self.formatter.format_error("stop_video", str(e)))]
+        except Exception as e:
+            return [TextContent(type="text", text=self.formatter.format_error("stop_video", f"Unexpected error: {str(e)}"))]
+
+    async def _recording_status(self, arguments: Dict[str, Any]) -> List[TextContent]:
+        """Get recording status via recording/* API"""
+        try:
+            response = await self._make_request("GET", "/recording/status")
+            if response.get('success'):
+                return [TextContent(type="text", text=self.formatter.format_success("get_status", response))]
+            else:
+                return [TextContent(type="text", text=f"❌ {response.get('error', 'Unknown error')}")]
+        except aiohttp.ClientError as e:
+            return [TextContent(type="text", text=self.formatter.format_error("get_status", str(e)))]
+        except Exception as e:
+            return [TextContent(type="text", text=self.formatter.format_error("get_status", f"Unexpected error: {str(e)}"))]
     
     async def run(self):
         """Run the MCP server"""

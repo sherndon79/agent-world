@@ -24,7 +24,12 @@ import json
 import re
 import sys
 from pathlib import Path
-from typing import Set, Tuple
+from typing import Set
+import os
+import time
+import hashlib
+import hmac
+from urllib.parse import urlparse
 
 
 FSTRING_ENDPOINT_RE = re.compile(r"\{self\.base_url\}/([A-Za-z0-9_.\-/]+)")
@@ -72,13 +77,55 @@ def load_openapi_paths(openapi_json: dict) -> Set[str]:
     return {p.lstrip('/') for p in paths.keys()}
 
 
-def fetch_openapi(url: str) -> dict:
+def load_dotenv(dotenv_path: Path) -> None:
+    """Load .env file into environment if present (simple parser)."""
+    if not dotenv_path.exists():
+        return
+    for line in dotenv_path.read_text(encoding='utf-8').splitlines():
+        line = line.strip()
+        if not line or line.startswith('#'):
+            continue
+        if '=' in line:
+            key, val = line.split('=', 1)
+            key = key.strip()
+            val = val.strip().strip('"').strip("'")
+            os.environ.setdefault(key, val)
+
+
+def build_auth_headers(service: str, method: str, full_url: str) -> dict:
+    """Build HMAC auth headers for fetching OpenAPI using the same scheme as extensions."""
+    # Service-specific first, then global
+    svc = service.upper()
+    token = os.getenv(f'AGENT_{svc}_AUTH_TOKEN') or os.getenv('AGENT_EXT_AUTH_TOKEN')
+    secret = os.getenv(f'AGENT_{svc}_HMAC_SECRET') or os.getenv('AGENT_EXT_HMAC_SECRET')
+    if not secret:
+        return {}
+    ts = str(time.time())
+    path = urlparse(full_url).path
+    msg = f"{method.upper()}|{path}|{ts}".encode('utf-8')
+    sig = hmac.new(secret.encode('utf-8'), msg, hashlib.sha256).hexdigest()
+    headers = {
+        'X-Timestamp': ts,
+        'X-Signature': sig,
+    }
+    if token:
+        headers['Authorization'] = f'Bearer {token}'
+    return headers
+
+
+def fetch_openapi(url: str, service: str | None) -> dict:
     try:
         import requests  # type: ignore
     except Exception as e:
         print(f"ERROR: requests is required to fetch OpenAPI: {e}", file=sys.stderr)
         sys.exit(2)
+    # First try without auth to mirror MCP negotiator pattern
     resp = requests.get(url, timeout=10)
+    if resp.status_code == 401 and service:
+        # Load .env from repo root for convenience, then retry with HMAC headers
+        load_dotenv(Path(__file__).resolve().parents[2] / '.env')
+        headers = build_auth_headers(service, 'GET', url)
+        resp = requests.get(url, timeout=10, headers=headers)
     resp.raise_for_status()
     return resp.json()
 
@@ -88,6 +135,7 @@ def main() -> int:
     ap.add_argument('--mcp-file', required=True, help='Path to MCP server Python file to analyze')
     ap.add_argument('--openapi-url', help='URL to /openapi.json')
     ap.add_argument('--openapi-file', help='Path to a local openapi.json file')
+    ap.add_argument('--service', choices=['worldbuilder', 'worldviewer', 'worldsurveyor', 'worldrecorder'], help='Service name for auth headers')
     ap.add_argument('--fail-on-extra-openapi', action='store_true', help='Fail if OpenAPI has endpoints unused by MCP')
     args = ap.parse_args()
 
@@ -106,7 +154,7 @@ def main() -> int:
     if args.openapi_file:
         openapi_json = json.loads(Path(args.openapi_file).read_text(encoding='utf-8'))
     else:
-        openapi_json = fetch_openapi(args.openapi_url)
+        openapi_json = fetch_openapi(args.openapi_url, args.service)
 
     openapi_paths = load_openapi_paths(openapi_json)
 
