@@ -862,14 +862,30 @@ class WorldBuilderMCP:
             result = await self.client.get('/scene_status', timeout=5)
             
             if result.get("success"):
-                    scene = result.get("scene", {})
-                    return [types.TextContent(
-                        type="text",
-                        text=f"📊 Scene Status:\n" +
-                             f"• Stage: {'Active' if scene.get('has_stage') else 'None'}\n" +
-                             f"• Elements: {scene.get('prim_count', 0)} prims\n" +
-                             f"• Assets: {scene.get('asset_count', 0)} assets"
-                    )]
+                # Support both legacy { scene: { ... } } and flat fields
+                scene = result.get("scene") or result
+                # Elements
+                prim_count = scene.get('prim_count')
+                if prim_count is None:
+                    prim_count = scene.get('total_prims', 0)
+                # Assets (may not be provided by all versions)
+                asset_count = scene.get('asset_count', 0)
+                # Stage/health inference
+                has_stage = scene.get('has_stage')
+                if has_stage is None:
+                    # Infer active stage from presence of prims or active batches
+                    has_stage = bool(prim_count) or bool(scene.get('active_batches', 0))
+                stage_text = 'Active' if has_stage else 'None'
+                
+                return [types.TextContent(
+                    type="text",
+                    text=(
+                        "📊 Scene Status:\n"
+                        f"• Stage: {stage_text}\n"
+                        f"• Elements: {prim_count} prims\n"
+                        f"• Assets: {asset_count} assets"
+                    )
+                )]
             else:
                 return [types.TextContent(
                     type="text",

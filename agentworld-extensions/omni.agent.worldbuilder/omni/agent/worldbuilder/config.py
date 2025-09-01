@@ -6,6 +6,7 @@ eliminating code duplication while maintaining identical functionality and inter
 """
 
 import sys
+import logging
 from pathlib import Path
 
 # Import the unified config system from agentworld-extensions root
@@ -21,7 +22,7 @@ try:
     from agent_world_config import WorldExtensionConfig
     CONFIG_AVAILABLE = True
 except ImportError as e:
-    print(f"Warning: Could not import unified config system: {e}")
+    logging.getLogger(__name__).warning(f"Could not import unified config system: {e}")
     CONFIG_AVAILABLE = False
 
 
@@ -102,7 +103,7 @@ class WorldBuilderConfig(WorldExtensionConfig if CONFIG_AVAILABLE else object):
         else:
             # Fallback to basic config if unified system unavailable
             self._config = self.DEFAULTS.copy()
-            print("Warning: Using fallback configuration (unified system unavailable)")
+            logging.getLogger(__name__).warning("Using fallback configuration (unified system unavailable)")
     
     # Backward compatibility methods for existing WorldBuilder code
     def get(self, key: str, default=None):

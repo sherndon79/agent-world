@@ -348,6 +348,7 @@ def create_worldrecorder_config() -> WorldExtensionConfig:
 if __name__ == "__main__":
     # CLI utility for configuration testing
     import sys
+    logging.basicConfig(level=logging.INFO)
     
     if len(sys.argv) > 1:
         extension_name = sys.argv[1]
@@ -362,13 +363,13 @@ if __name__ == "__main__":
         
         if extension_name in factory_map:
             config = factory_map[extension_name]()
-            print(f"\n{extension_name} Configuration:")
+            logger.info(f"{extension_name} Configuration:")
             for key, value in config.get_all().items():
-                print(f"  {key}: {value}")
+                logger.info(f"  {key}: {value}")
         else:
-            print(f"Unknown extension: {extension_name}")
-            print(f"Available: {list(factory_map.keys())}")
+            logger.error(f"Unknown extension: {extension_name}")
+            logger.info(f"Available: {list(factory_map.keys())}")
     else:
-        print("Agent World Extensions Configuration")
-        print("Usage: python agent_world_config.py <extension_name>")
-        print("Extensions: worldbuilder, worldviewer, worldsurveyor, worldrecorder")
+        logger.info("Agent World Extensions Configuration")
+        logger.info("Usage: python agent_world_config.py <extension_name>")
+        logger.info("Extensions: worldbuilder, worldviewer, worldsurveyor, worldrecorder")

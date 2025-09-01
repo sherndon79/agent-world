@@ -9,6 +9,7 @@ for video recording and frame capture in Isaac Sim.
 import asyncio
 import sys
 import os
+import logging
 from typing import Any, Dict, List, Optional
 from datetime import datetime
 
@@ -663,7 +664,7 @@ class WorldRecorderMCP:
             try:
                 await self.client.close()
             except Exception as e:
-                print(f"Error during cleanup: {e}", file=sys.stderr)
+                logging.getLogger(__name__).error(f"Error during cleanup: {e}")
         
         try:
             # Initialize and run server
@@ -681,9 +682,9 @@ class WorldRecorderMCP:
                     )
                 )
         except KeyboardInterrupt:
-            print("Server interrupted, shutting down...", file=sys.stderr)
+            logging.getLogger(__name__).info("Server interrupted, shutting down...")
         except Exception as e:
-            print(f"Server error: {e}", file=sys.stderr)
+            logging.getLogger(__name__).error(f"Server error: {e}")
         finally:
             await cleanup()
 

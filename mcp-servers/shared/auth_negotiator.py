@@ -13,9 +13,13 @@ import logging
 from typing import Optional, Dict, Tuple, Any
 from dataclasses import dataclass
 import aiohttp
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse, urlunparse, urlencode
 
 logger = logging.getLogger(__name__)
+
+# Debug is opt-in via environment variables:
+#   AGENT_MCP_HTTP_DEBUG=1 to enable
+#   AGENT_MCP_HTTP_DEBUG_FILE=/path/to/file to set log path
 
 @dataclass
 class AuthConfig:
@@ -180,22 +184,58 @@ class AuthNegotiator:
             self.auth_config.hmac_secret,
             self.auth_config.auth_token
         )
-        
-        return {
+
+        headers = {
             'X-Timestamp': timestamp,
             'X-Signature': signature
         }
+        # Add bearer if available
+        if self.auth_config.auth_token:
+            headers['Authorization'] = f"Bearer {self.auth_config.auth_token}"
+
+        # Optional debug logging without leaking secrets
+        dbg = os.getenv('AGENT_MCP_HTTP_DEBUG', '').lower() in ('1','true','yes','on')
+        if dbg:
+            try:
+                # Log at INFO to ensure visibility even with INFO root level
+                # Redact secrets
+                safe_headers = dict(headers)
+                if 'Authorization' in safe_headers:
+                    tok = safe_headers['Authorization']
+                    if len(tok) > 16:
+                        safe_headers['Authorization'] = tok[:16] + '...'
+                    else:
+                        safe_headers['Authorization'] = '***redacted***'
+                if 'X-Signature' in safe_headers:
+                    sig = safe_headers['X-Signature']
+                    safe_headers['X-Signature'] = (sig[:8] + '...') if isinstance(sig, str) else '***'
+                # Compute sign base for visibility (no secrets)
+                parsed = urlparse(url)
+                path_with_query = parsed.path + (f"?{parsed.query}" if parsed.query else "")
+                sign_base = f"{method.upper()}|{path_with_query}|{timestamp}"
+                logger.info(f"{self.service_name}: HTTP auth signing base={sign_base} headers={safe_headers}")
+
+                # Also write to a debug file if requested (or default to /tmp)
+                debug_file = os.getenv('AGENT_MCP_HTTP_DEBUG_FILE') or '/tmp/mcp_http_debug.log'
+                try:
+                    with open(debug_file, 'a', encoding='utf-8') as f:
+                        f.write(f"{self.service_name} {time.strftime('%Y-%m-%d %H:%M:%S')} signing={sign_base} headers={safe_headers}\n")
+                except Exception:
+                    pass
+            except Exception:
+                pass
+
+        return headers
     
-    def _create_hmac_signature(self, method: str, url: str, timestamp: str, 
-                              secret: str, token: str) -> str:
-        """Create HMAC-SHA256 signature for request using Isaac Sim format."""
-        # Isaac Sim expects: "METHOD|PATH|TIMESTAMP" format
-        # Extract path from full URL
-        from urllib.parse import urlparse
-        parsed_url = urlparse(url)
-        path = parsed_url.path
-        
-        string_to_sign = f"{method.upper()}|{path}|{timestamp}"
+    def _create_hmac_signature(self, method: str, url: str, timestamp: str,
+                               secret: str, token: str) -> str:
+        """Create HMAC-SHA256 signature for request.
+
+        Server computes the signature over METHOD|PATH|TIMESTAMP where PATH includes the query string if present.
+        """
+        parsed = urlparse(url)
+        path_with_query = parsed.path + (f"?{parsed.query}" if parsed.query else "")
+        string_to_sign = f"{method.upper()}|{path_with_query}|{timestamp}"
         
         signature = hmac.new(
             secret.encode('utf-8'),
@@ -205,8 +245,8 @@ class AuthNegotiator:
         
         return signature
     
-    async def authenticated_request(self, method: str, endpoint: str, 
-                                  **kwargs) -> aiohttp.ClientResponse:
+    async def authenticated_request(self, method: str, endpoint: str,
+                                   **kwargs) -> aiohttp.ClientResponse:
         """
         Make an authenticated HTTP request.
         
@@ -222,6 +262,13 @@ class AuthNegotiator:
             await self.negotiate_auth()
         
         url = urljoin(self.base_url, endpoint)
+        # Include query parameters in URL for signature computation
+        params = kwargs.get('params')
+        if params:
+            # Ensure deterministic ordering for signature
+            query = urlencode(params, doseq=True)
+            parsed = urlparse(url)
+            url = urlunparse(parsed._replace(query=query))
         body = kwargs.get('json', {})
         body_str = json.dumps(body) if body else ""
         
@@ -231,7 +278,11 @@ class AuthNegotiator:
         headers.update(auth_headers)
         kwargs['headers'] = headers
         
-        # Make request
+        # If we inlined params into the URL for signing, remove 'params' to avoid duplication
+        if 'params' in kwargs and params:
+            kwargs.pop('params')
+
+        # Make request with fully constructed URL
         return await self._session.request(method, url, **kwargs)
 
 

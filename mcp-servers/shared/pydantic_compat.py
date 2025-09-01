@@ -243,13 +243,14 @@ PYDANTIC_VERSION = detect_pydantic_version()
 IS_ISAAC_SIM_ENVIRONMENT = PYDANTIC_VERSION == 1
 
 if __name__ == "__main__":
-    # Test the detection
-    print(f"Detected Pydantic version: {PYDANTIC_VERSION}")
-    print(f"Isaac Sim environment: {IS_ISAAC_SIM_ENVIRONMENT}")
+    import logging
+    logging.basicConfig(level=logging.INFO)
+    logging.info(f"Detected Pydantic version: {PYDANTIC_VERSION}")
+    logging.info(f"Isaac Sim environment: {IS_ISAAC_SIM_ENVIRONMENT}")
     
     # Test schema generation
     pos_schema = create_compatible_position_schema()
-    print(f"Position schema: {pos_schema}")
+    logging.info(f"Position schema: {pos_schema}")
     
     color_schema = create_compatible_color_schema()
-    print(f"Color schema: {color_schema}")
+    logging.info(f"Color schema: {color_schema}")

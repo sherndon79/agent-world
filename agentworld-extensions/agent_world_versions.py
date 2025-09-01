@@ -16,11 +16,13 @@ Usage:
 
 import json
 import os
+import logging
 from pathlib import Path
 from typing import Dict, Optional, Any
 
 # Cache for version config to avoid repeated file reads
 _version_config_cache: Optional[Dict[str, Any]] = None
+logger = logging.getLogger(__name__)
 _config_file_path = Path(__file__).parent / "agent-world-versions.json"
 
 
@@ -39,7 +41,7 @@ def _load_version_config() -> Dict[str, Any]:
                 "suite_version": "1.0.0-alpha",
                 "extensions": {}
             }
-            print(f"Warning: Could not load version config ({e}), using defaults")
+            logger.warning(f"Could not load version config ({e}), using defaults")
     
     return _version_config_cache
 
@@ -150,18 +152,18 @@ def worldrecorder_version() -> str:
 if __name__ == "__main__":
     # CLI utility for version checking
     import sys
+    logging.basicConfig(level=logging.INFO)
     
     if len(sys.argv) > 1:
         extension = sys.argv[1]
-        print(f"{extension}: {get_version(extension)}")
-        print(f"Service: {get_service_name(extension)}")
+        logger.info(f"{extension}: {get_version(extension)}")
+        logger.info(f"Service: {get_service_name(extension)}")
     else:
-        print("Agent World Extensions Version Info:")
-        print(f"Suite Version: {get_suite_version()}")
-        print()
+        logger.info("Agent World Extensions Version Info:")
+        logger.info(f"Suite Version: {get_suite_version()}")
         
         for name, info in get_all_extension_info().items():
-            print(f"{name}:")
-            print(f"  Version: {info['version']}")
-            print(f"  API Version: {info['api_version']}")
-            print(f"  Service: {info['service_name']}")
+            logger.info(f"{name}:")
+            logger.info(f"  Version: {info['version']}")
+            logger.info(f"  API Version: {info['api_version']}")
+            logger.info(f"  Service: {info['service_name']}")

@@ -502,12 +502,14 @@ class ExampleExtensionHTTPHandler(WorldHTTPHandler):
 
 if __name__ == "__main__":
     # Test the unified HTTP handler
-    print("Agent World Extensions Unified HTTP Handler")
-    print(f"Version management available: {VERSION_AVAILABLE}")
-    print(f"HTTP config loaded: {bool(HTTP_CONFIG)}")
+    logging.basicConfig(level=logging.INFO)
+    logger.info("Agent World Extensions Unified HTTP Handler")
+    logger.info(f"Version management available: {VERSION_AVAILABLE}")
+    logger.info(f"HTTP config loaded: {bool(HTTP_CONFIG)}")
     
     if HTTP_CONFIG:
-        print("\\nHTTP Configuration:")
+        logger.info("HTTP Configuration:")
         for section, config in HTTP_CONFIG.items():
             if not section.startswith('_'):
-                print(f"  {section}: {len(config) if isinstance(config, dict) else config}")
+                val = len(config) if isinstance(config, dict) else config
+                logger.info(f"  {section}: {val}")

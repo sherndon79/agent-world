@@ -13,6 +13,7 @@ from http.server import ThreadingHTTPServer
 from typing import Optional, Dict, Any
 from pathlib import Path
 import sys
+import logging
 
 # Import unified metrics system
 try:
@@ -27,7 +28,7 @@ try:
     from agent_world_metrics import setup_worldviewer_metrics
     METRICS_AVAILABLE = True
 except ImportError as e:
-    print(f"Warning: Could not import unified metrics system: {e}")
+    logging.getLogger(__name__).warning(f"Could not import unified metrics system: {e}")
     METRICS_AVAILABLE = False
 
 from .config import get_config

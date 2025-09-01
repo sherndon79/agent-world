@@ -1568,7 +1568,7 @@ class WorldSurveyorMCP:
             
             result = await self.client.get(
                 "/groups/waypoints",
-                params={"group_id": group_id, "include_nested": include_nested},
+                params={"group_id": group_id, "include_nested": str(include_nested).lower()},
                 timeout=10.0
             )
             # Response already parsed by MCPBaseClient
@@ -1623,7 +1623,7 @@ class WorldSurveyorMCP:
             
             result = await self.client.get(
                 "/waypoints/export",
-                params={"include_groups": include_groups},
+                params={"include_groups": str(include_groups).lower()},
                 timeout=15.0
             )
             # Response already parsed by MCPBaseClient

@@ -417,7 +417,8 @@ class MetricsHandlerMixin:
 
 if __name__ == "__main__":
     # Test the metrics system
-    print("Agent World Extensions Metrics System")
+    logging.basicConfig(level=logging.INFO)
+    logger.info("Agent World Extensions Metrics System")
     
     # Test each extension's metrics setup
     extensions = [
@@ -428,7 +429,7 @@ if __name__ == "__main__":
     ]
     
     for name, setup_func in extensions:
-        print(f"\\n{name} metrics:")
+        logger.info(f"{name} metrics:")
         metrics = setup_func()
         metrics.start_server()
         
@@ -438,7 +439,7 @@ if __name__ == "__main__":
         
         # Show JSON output
         json_result = metrics.get_json_metrics()
-        print(f"  Requests: {json_result['metrics']['requests_received']}")
-        print(f"  Uptime: {json_result['metrics']['uptime_seconds']:.2f}s")
-        print(f"  Counters: {len(metrics._custom_counters)}")
-        print(f"  Gauges: {len(metrics._custom_gauges)}")
+        logger.info(f"  Requests: {json_result['metrics']['requests_received']}")
+        logger.info(f"  Uptime: {json_result['metrics']['uptime_seconds']:.2f}s")
+        logger.info(f"  Counters: {len(metrics._custom_counters)}")
+        logger.info(f"  Gauges: {len(metrics._custom_gauges)}")
