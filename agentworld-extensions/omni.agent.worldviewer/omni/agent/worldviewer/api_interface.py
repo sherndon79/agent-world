@@ -32,6 +32,7 @@ except ImportError as e:
     METRICS_AVAILABLE = False
 
 from .config import get_config
+from agent_world_logging import setup_logging
 from .http_handler import WorldViewerHTTPHandler
 from .security import SecurityManager
 
@@ -42,6 +43,7 @@ class HTTPAPIInterface:
     """HTTP API interface for WorldViewer communication."""
     
     def __init__(self, port: Optional[int] = None):
+        setup_logging('worldviewer')
         self._config = get_config()
         self._port = port or self._config.server_port or 8900
         self._server = None

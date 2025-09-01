@@ -32,6 +32,7 @@ except ImportError as e:
     METRICS_AVAILABLE = False
 
 from .config import get_config
+from agent_world_logging import setup_logging
 from .http_handler import WorldSurveyorHTTPHandler
 from .waypoint_manager import WaypointManager
 from .security import SecurityManager
@@ -43,6 +44,7 @@ class HTTPAPIInterface:
     """HTTP API interface for WorldSurveyor communication."""
     
     def __init__(self, waypoint_manager: WaypointManager, port: Optional[int] = None):
+        setup_logging('worldsurveyor')
         self._config = get_config()
         self.waypoint_manager = waypoint_manager
         self._port = port or self._config.server_port

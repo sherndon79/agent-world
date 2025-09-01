@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional
 from datetime import datetime
 
 import aiohttp
+from logging_setup import setup_logging
 
 # Add shared modules to path
 shared_path = os.path.join(os.path.dirname(__file__), '..', '..', 'shared')
@@ -691,6 +692,7 @@ class WorldRecorderMCP:
 
 async def main():
     """Main entry point"""
+    setup_logging('worldrecorder')
     import argparse
     
     parser = argparse.ArgumentParser(description="MCP Server for Isaac Sim WorldRecorder Extension")

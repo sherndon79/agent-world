@@ -13,6 +13,7 @@ import os
 from typing import Any, Dict, List, Optional
 
 import aiohttp
+from logging_setup import setup_logging
 
 # Add shared modules to path
 shared_path = os.path.join(os.path.dirname(__file__), '..', '..', 'shared')
@@ -756,6 +757,7 @@ class WorldViewerMCP:
     
 async def main():
     """Main entry point for the MCP server."""
+    setup_logging('worldviewer')
     # Initialize MCP server
     mcp_server = WorldViewerMCP()
     

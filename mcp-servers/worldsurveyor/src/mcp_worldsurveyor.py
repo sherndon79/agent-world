@@ -25,6 +25,7 @@ from typing import Any, Dict, List
 
 import aiohttp
 from mcp.server import Server
+from logging_setup import setup_logging
 
 # Add shared modules to path
 shared_path = os.path.join(os.path.dirname(__file__), '..', '..', 'shared')
@@ -1832,6 +1833,7 @@ class WorldSurveyorMCP:
 
 async def main():
     """Main entry point for WorldSurveyor MCP server."""
+    setup_logging('worldsurveyor')
     import os
     
     # Get base URL with standardized env var, fallback to legacy name, then default

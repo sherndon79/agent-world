@@ -30,6 +30,7 @@ except ImportError as e:
     METRICS_AVAILABLE = False
 
 from .config import get_config
+from agent_world_logging import setup_logging
 from .http_handler import WorldBuilderHTTPHandler
 from .scene_builder import SceneBuilder
 from .security import SecurityManager
@@ -41,6 +42,8 @@ class HTTPAPIInterface:
     """HTTP API interface for WorldBuilder communication."""
     
     def __init__(self, port: Optional[int] = None):
+        # Initialize unified logging once
+        setup_logging('worldbuilder')
         self._config = get_config()
         self._port = port or self._config.server_port
         self._server = None

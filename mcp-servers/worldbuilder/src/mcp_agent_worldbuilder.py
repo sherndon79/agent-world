@@ -19,6 +19,7 @@ import mcp.types as types
 import aiohttp
 import sys
 import os
+from logging_setup import setup_logging
 
 # Add shared modules to path
 shared_path = os.path.join(os.path.dirname(__file__), '..', '..', 'shared')
@@ -1639,6 +1640,8 @@ class WorldBuilderMCP:
 
 async def main():
     """Main entry point for the MCP server."""
+    # Unified logging (stderr by default; env-driven options)
+    setup_logging('worldbuilder')
     logger.info("🚀 Starting Isaac Sim WorldBuilder MCP Server")
     
     # Initialize MCP server
