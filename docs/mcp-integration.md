@@ -25,6 +25,8 @@ Each MCP server:
 - Supports both synchronous and asynchronous operations
 - Includes comprehensive help text and examples
 
+Authentication: MCP servers use a shared MCPBaseClient with automatic 401-challenge negotiation. When auth is enabled (.env AGENT_EXT_AUTH_ENABLED=1), the client retries with HMAC (X-Timestamp/X-Signature) and optional Authorization: Bearer <token> using AGENT_EXT_* or per-service AGENT_<SERVICE>_* variables.
+
 ## Installation
 
 ### Prerequisites
@@ -74,28 +76,28 @@ Add to your MCP client configuration (e.g., Claude Desktop):
       "command": "python",
       "args": ["/path/to/mcp-servers/worldbuilder/src/mcp_agent_worldbuilder.py"],
       "env": {
-        "WORLDBUILDER_BASE_URL": "http://localhost:8899"
+        "AGENT_WORLDBUILDER_BASE_URL": "http://localhost:8899"
       }
     },
     "worldviewer": {
       "command": "python",
       "args": ["/path/to/mcp-servers/worldviewer/src/mcp_agent_worldviewer.py"], 
       "env": {
-        "WORLDVIEWER_BASE_URL": "http://localhost:8900"
+        "AGENT_WORLDVIEWER_BASE_URL": "http://localhost:8900"
       }
     },
     "worldsurveyor": {
       "command": "python",
       "args": ["/path/to/mcp-servers/worldsurveyor/src/mcp_worldsurveyor.py"],
       "env": {
-        "WORLDSURVEYOR_BASE_URL": "http://localhost:8891"
+        "AGENT_WORLDSURVEYOR_BASE_URL": "http://localhost:8891"
       }
     },
     "worldrecorder": {
       "command": "python", 
-      "args": ["/path/to/mcp-servers/worldrecorder-server/src/mcp_agent_worldrecorder.py"],
+      "args": ["/path/to/mcp-servers/worldrecorder/src/mcp_agent_worldrecorder.py"],
       "env": {
-        "WORLDRECORDER_BASE_URL": "http://localhost:8892"
+        "AGENT_WORLDRECORDER_BASE_URL": "http://localhost:8892"
       }
     },
     "screenshot": {
@@ -133,6 +135,9 @@ Add to your MCP client configuration (e.g., Claude Desktop):
 #### Utilities
 - `worldbuilder_scene_status` - Health and statistics
 - `worldbuilder_get_metrics` - Performance metrics
+- `worldbuilder_metrics_prometheus` - Prometheus metrics
+
+Note: Metrics endpoints are available as HTTP GET `/metrics` and `/metrics.prom`.
 
 ### WorldViewer Tools
 
@@ -150,6 +155,7 @@ Add to your MCP client configuration (e.g., Claude Desktop):
 - `worldviewer_get_camera_status` - Current camera position/orientation
 - `worldviewer_extension_health` - Extension health status
 - `worldviewer_get_metrics` - Performance metrics
+- `worldviewer_metrics_prometheus` - Prometheus metrics
 
 ### WorldSurveyor Tools
 
@@ -174,18 +180,24 @@ Add to your MCP client configuration (e.g., Claude Desktop):
 - `worldsurveyor_goto_waypoint` - Navigate to waypoints
 - `worldsurveyor_export_waypoints` - Backup waypoint data
 - `worldsurveyor_import_waypoints` - Restore waypoint collections
+ 
+#### Monitoring
+- `worldsurveyor_get_metrics` - Performance metrics
+- `worldsurveyor_metrics_prometheus` - Prometheus metrics
 
 ### WorldRecorder Tools
 
 #### Capture Operations
 - `worldrecorder_capture_frame` - Take screenshots
-- `worldrecorder_start_recording` - Begin video recording
-- `worldrecorder_stop_recording` - End video recording
+- `worldrecorder_start_recording` - Begin video recording (alias of /video/start)
+- `worldrecorder_stop_recording` - End video recording (alias of /video/stop)
+  (aliases also available as `worldrecorder_start_video` and `worldrecorder_stop_video`)
 
 #### Status & Control  
 - `worldrecorder_get_status` - Recording status and statistics
 - `worldrecorder_health` - Extension health check
 - `worldrecorder_get_metrics` - Performance metrics
+- `worldrecorder_metrics_prometheus` - Prometheus metrics
 
 ## Usage Examples
 

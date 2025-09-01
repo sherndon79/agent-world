@@ -92,6 +92,7 @@ Build and manipulate 3D scenes programmatically in Isaac Sim. WorldBuilder provi
 
 **GET** `/health` - Extension health status
 **GET** `/metrics` - Performance and usage metrics
+**GET** `/metrics.prom` - Prometheus-format metrics for monitoring systems
 **GET** `/openapi.json` - Complete API specification
 
 ## Configuration

@@ -302,6 +302,11 @@ WorldSurveyor provides comprehensive MCP tools:
 - `worldsurveyor_goto_waypoint` - Navigation
 - `worldsurveyor_set_markers_visible` - Visibility control
 - `worldsurveyor_export_waypoints` - Data export
+ 
+### Monitoring
+
+- `GET /metrics` and `GET /metrics.prom` – Performance metrics (Prometheus support)
+- MCP tools: `worldsurveyor_get_metrics`, `worldsurveyor_metrics_prometheus`
 
 ## Advanced Features
 

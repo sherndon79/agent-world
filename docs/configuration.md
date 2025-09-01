@@ -133,6 +133,8 @@ export AGENT_WORLDRECORDER_HMAC_SECRET=...
 
 The installer writes a `.env` file at the repo root with generated secrets and the launcher sources it automatically.
 
+MCP servers automatically negotiate authentication using a 401-challenge: the initial unauthenticated request receives a 401, then the client retries with HMAC (X-Timestamp/X-Signature) and optional Authorization: Bearer <token> derived from the variables above (global AGENT_EXT_* or per‑service AGENT_<SERVICE>_* overrides).
+
 
 ### Boolean Values
 Environment variables support flexible boolean parsing:

@@ -71,6 +71,17 @@ Capture screenshots and record videos from Isaac Sim viewports. WorldRecorder en
 **GET** `/video/status` - Current recording status and statistics
 **GET** `/health` - Extension health and encoder availability  
 **GET** `/metrics` - Performance metrics and hardware status
+**GET** `/metrics.prom` - Prometheus-format metrics for monitoring systems
+
+### Recording Aliases
+
+The API also exposes recording aliases equivalent to `/video/*` endpoints:
+
+**POST** `/recording/start` – start recording (alias of `/video/start`)
+
+**POST** `/recording/stop` – stop recording (alias of `/video/stop`)
+
+**GET** `/recording/status` – recording status (alias of `/video/status`)
 
 ### Debug and Diagnostics
 
@@ -275,6 +286,8 @@ WorldRecorder provides MCP tools for AI agents:
 - `worldrecorder_stop_recording` - End recording
 - `worldrecorder_get_status` - Monitor recording state
 - `worldrecorder_health` - System health check
+- `worldrecorder_get_metrics` - Performance metrics
+- `worldrecorder_metrics_prometheus` - Prometheus metrics
 
 ## Advanced Features
 
@@ -308,7 +321,7 @@ recording_config = {
     'container': 'mp4'
 }
 
-response = requests.post('http://localhost:8892/start_recording', json=recording_config)
+response = requests.post('http://localhost:8892/recording/start', json=recording_config)
 ```
 
 ### Performance Monitoring
