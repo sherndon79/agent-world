@@ -41,6 +41,24 @@ class _JSONFormatter(logging.Formatter):
         return json.dumps(payload, ensure_ascii=False)
 
 
+class _MinLevelFilter(logging.Filter):
+    def __init__(self, min_level: int):
+        super().__init__()
+        self.min_level = min_level
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return record.levelno >= self.min_level
+
+
+class _MaxLevelFilter(logging.Filter):
+    def __init__(self, max_level: int):
+        super().__init__()
+        self.max_level = max_level
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return record.levelno <= self.max_level
+
+
 def _get_level(default: str = 'INFO') -> int:
     level = os.getenv('AGENT_LOG_LEVEL', default).upper()
     return getattr(logging, level, logging.INFO)
@@ -63,10 +81,18 @@ def setup_logging(service: str, level: Optional[str] = None, json_format: Option
 
     service_filter = _ServiceFilter(service)
 
-    sh = logging.StreamHandler(stream=sys.stderr)
-    sh.setFormatter(formatter)
-    sh.addFilter(service_filter)
-    root.addHandler(sh)
+    # Split streams: INFO/DEBUG -> stdout, WARNING/ERROR -> stderr
+    stdout_handler = logging.StreamHandler(stream=sys.stdout)
+    stdout_handler.setFormatter(formatter)
+    stdout_handler.addFilter(service_filter)
+    stdout_handler.addFilter(_MaxLevelFilter(logging.INFO))
+    root.addHandler(stdout_handler)
+
+    stderr_handler = logging.StreamHandler(stream=sys.stderr)
+    stderr_handler.setFormatter(formatter)
+    stderr_handler.addFilter(service_filter)
+    stderr_handler.addFilter(_MinLevelFilter(logging.WARNING))
+    root.addHandler(stderr_handler)
 
     if os.getenv('AGENT_LOG_TO_JOURNAL', '').lower() in ('1','true','yes','on'):
         try:
@@ -102,4 +128,3 @@ def get_logger(name: Optional[str] = None, **context) -> logging.LoggerAdapter:
     if 'service' not in context:
         context['service'] = ''
     return logging.LoggerAdapter(base, context)
-
