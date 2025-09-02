@@ -60,9 +60,9 @@ Replace `path/to/agent-world` with your actual installation path:
 
 Choose the appropriate Python command for your setup:
 
-**Option A: Use Virtual Environment (Recommended)**
+**Option A: Use Unified Virtual Environment (Recommended)**
 ```json
-"command": "/path/to/agent-world/mcp-servers/worldbuilder/venv/bin/python"
+"command": "/path/to/agent-world/mcp-servers/venv/bin/python"
 ```
 
 **Option B: Use System Python**  
@@ -74,6 +74,8 @@ Choose the appropriate Python command for your setup:
 ```json  
 "command": "/path/to/conda/envs/agent-world/bin/python"
 ```
+
+Note: Agent World now uses a single unified virtual environment for all MCP servers, located at `mcp-servers/venv/`, which simplifies installation and reduces disk usage.
 
 ## Available MCP Tools
 

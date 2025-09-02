@@ -30,21 +30,26 @@ function New-Hex($bytes=32) {
 }
 
 function Remove-McpVenvs {
-  Write-Host "==> Removing MCP server virtual environments..." -ForegroundColor Yellow
+  Write-Host "==> Removing unified MCP server virtual environment..." -ForegroundColor Yellow
   $mcpDir = Join-Path (Split-Path $PSScriptRoot -Parent) "mcp-servers"
+  $venvPath = Join-Path $mcpDir "venv"
   
+  if (Test-Path $venvPath) {
+    Write-Host "Removing unified MCP venv..."
+    Remove-Item -Path $venvPath -Recurse -Force
+    Write-Host "✓ Unified MCP venv removed" -ForegroundColor Green
+  }
+  
+  # Also clean up any old individual venvs
   Get-ChildItem -Path $mcpDir -Directory | ForEach-Object {
-    $serverName = $_.Name
-    $venvPath = Join-Path $_.FullName "venv"
-    
-    if (Test-Path $venvPath) {
-      Write-Host "Removing $serverName venv..."
-      Remove-Item -Path $venvPath -Recurse -Force
-      Write-Host "✓ $serverName venv removed" -ForegroundColor Green
+    $oldVenvPath = Join-Path $_.FullName "venv"
+    if (Test-Path $oldVenvPath) {
+      Write-Host "Removing old individual venv at $oldVenvPath..."
+      Remove-Item -Path $oldVenvPath -Recurse -Force
     }
   }
   
-  Write-Host "==> MCP virtual environments cleanup complete!" -ForegroundColor Green
+  Write-Host "==> MCP virtual environment cleanup complete!" -ForegroundColor Green
 }
 
 function Remove-ExtensionSymlinks {
@@ -220,34 +225,25 @@ if (Read-Choice "Enable API authentication and generate secrets now?" $true) {
   Write-Host "Wrote secrets to: $envPath"
 }
 
-# Create MCP virtual environments
-if (Read-Choice "Create Python virtual environments for MCP servers?" $true) {
-  Write-Host "==> Setting up MCP server virtual environments..."
+# Create unified MCP virtual environment
+if (Read-Choice "Create Python virtual environment for MCP servers?" $true) {
+  Write-Host "==> Setting up unified MCP server virtual environment..."
   $mcpDir = Join-Path (Split-Path $PSScriptRoot -Parent) "mcp-servers"
+  $venvPath = Join-Path $mcpDir "venv"
   
-  Get-ChildItem -Path $mcpDir -Directory | Where-Object {
-    Test-Path (Join-Path $_.FullName "pyproject.toml")
-  } | ForEach-Object {
-    $serverName = $_.Name
-    $venvPath = Join-Path $_.FullName "venv"
-    
-    Write-Host "Creating venv for $serverName..."
-    
-    # Create virtual environment
-    python -m venv $venvPath
-    
-    # Upgrade pip and install build tools  
-    & "$venvPath\Scripts\pip.exe" install --upgrade pip setuptools wheel
-    
-    # Install package in development mode with dependencies
-    Push-Location $_.FullName
-    & "$venvPath\Scripts\pip.exe" install -e .
-    Pop-Location
-    
-    Write-Host "✓ $serverName venv created successfully"
-  }
+  # Create single virtual environment for all MCP servers
+  python -m venv $venvPath
   
-  Write-Host "==> MCP virtual environments setup complete!"
+  # Upgrade pip and install build tools
+  & "$venvPath\Scripts\pip.exe" install --upgrade pip setuptools wheel
+  
+  # Install unified package with all dependencies
+  Push-Location $mcpDir
+  & "$venvPath\Scripts\pip.exe" install -e .
+  Pop-Location
+  
+  Write-Host "✓ Unified MCP venv created successfully at $venvPath" -ForegroundColor Green
+  Write-Host "==> MCP virtual environment setup complete!"
 }
 
 # Link extensions into extsUser via Junctions

@@ -2,26 +2,32 @@
   "mcpServers": {
     "worldbuilder-server": {
       "type": "stdio",
-      "command": "python",
+      "command": "mcp-servers/venv/bin/python",
       "args": ["mcp-servers/worldbuilder/src/mcp_agent_worldbuilder.py"],
       "env": {}
     },
     "worldviewer-server": {
       "type": "stdio",
-      "command": "python",
+      "command": "mcp-servers/venv/bin/python",
       "args": ["mcp-servers/worldviewer/src/mcp_agent_worldviewer.py"],
       "env": {}
     },
     "worldsurveyor-server": {
       "type": "stdio",
-      "command": "python",
+      "command": "mcp-servers/venv/bin/python",
       "args": ["mcp-servers/worldsurveyor/src/mcp_agent_worldsurveyor.py"],
       "env": {}
     },
     "worldrecorder-server": {
       "type": "stdio",
-      "command": "python",
+      "command": "mcp-servers/venv/bin/python",
       "args": ["mcp-servers/worldrecorder/src/mcp_agent_worldrecorder.py"],
+      "env": {}
+    },
+    "screenshot-server": {
+      "type": "stdio",
+      "command": "mcp-servers/venv/bin/python",
+      "args": ["mcp-servers/desktop-screenshot/src/mcp_screenshot_server.py"],
       "env": {}
     }
   }

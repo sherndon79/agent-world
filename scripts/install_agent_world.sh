@@ -129,50 +129,48 @@ EOF
 
 create_mcp_venvs() {
   local mcp_dir="$ROOT_DIR/mcp-servers"
-  echo "==> Setting up MCP server virtual environments..."
+  local venv_path="$mcp_dir/venv"
   
-  for server_dir in "$mcp_dir"/*; do
-    if [[ -d "$server_dir" && -f "$server_dir/pyproject.toml" ]]; then
-      local server_name=$(basename "$server_dir")
-      local venv_path="$server_dir/venv"
-      
-      echo "Creating venv for $server_name..."
-      
-      # Create virtual environment
-      python3 -m venv "$venv_path"
-      
-      # Upgrade pip and install build tools
-      "$venv_path/bin/pip" install --upgrade pip setuptools wheel
-      
-      # Install package in development mode with dependencies
-      cd "$server_dir"
-      "$venv_path/bin/pip" install -e .
-      
-      echo "✓ $server_name venv created successfully"
-    fi
-  done
+  echo "==> Setting up unified MCP server virtual environment..."
   
-  echo "==> MCP virtual environments setup complete!"
+  # Create single virtual environment for all MCP servers
+  python3 -m venv "$venv_path"
+  
+  # Upgrade pip and install build tools
+  "$venv_path/bin/pip" install --upgrade pip setuptools wheel
+  
+  # Install unified package with all dependencies
+  cd "$mcp_dir"
+  "$venv_path/bin/pip" install -e .
+  
+  echo "✓ Unified MCP venv created successfully at $venv_path"
+  echo "==> MCP virtual environment setup complete!"
 }
 
 cleanup_mcp_venvs() {
   local mcp_dir="$ROOT_DIR/mcp-servers"
-  echo "==> Removing MCP server virtual environments..."
+  local venv_path="$mcp_dir/venv"
   
+  echo "==> Removing unified MCP server virtual environment..."
+  
+  if [[ -d "$venv_path" ]]; then
+    echo "Removing unified MCP venv..."
+    rm -rf "$venv_path"
+    echo "✓ Unified MCP venv removed"
+  fi
+  
+  # Also clean up any old individual venvs
   for server_dir in "$mcp_dir"/*; do
     if [[ -d "$server_dir" ]]; then
-      local server_name=$(basename "$server_dir")
-      local venv_path="$server_dir/venv"
-      
-      if [[ -d "$venv_path" ]]; then
-        echo "Removing $server_name venv..."
-        rm -rf "$venv_path"
-        echo "✓ $server_name venv removed"
+      local old_venv_path="$server_dir/venv"
+      if [[ -d "$old_venv_path" ]]; then
+        echo "Removing old individual venv at $old_venv_path..."
+        rm -rf "$old_venv_path"
       fi
     fi
   done
   
-  echo "==> MCP virtual environments cleanup complete!"
+  echo "==> MCP virtual environment cleanup complete!"
 }
 
 cleanup_extension_symlinks() {
