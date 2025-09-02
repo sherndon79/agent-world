@@ -297,12 +297,6 @@ class AgentWorldRecorderExtension(omni.ext.IExt):
                         self._recording_status_label = ui.Label("Recording: Idle")
                         self._api_requests_label = ui.Label("Requests: 0 | Errors: 0")
                 
-                # Configuration section
-                with ui.CollapsableFrame("Configuration", collapsed=True, height=0):
-                    with ui.VStack(spacing=1):
-                        ui.Label("API Port:", style={"font_size": 11})
-                        self._port_field = ui.IntField(value=self._config.server_port, height=18)
-                        ui.Label("(Restart extension to apply port changes)", style={"font_size": 10, "color": 0x888888})
 
     def _update_ui_stats(self):
         """Update UI with current statistics."""

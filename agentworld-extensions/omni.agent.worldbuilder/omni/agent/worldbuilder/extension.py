@@ -288,12 +288,6 @@ class AgentWorldBuilderExtension(omni.ext.IExt):
                         self._scene_elements_label = ui.Label("Scene Elements: 0")
                         self._api_requests_label = ui.Label("Requests: 0 | Errors: 0")
                 
-                # Configuration section
-                with ui.CollapsableFrame("Configuration", collapsed=True, height=0):
-                    with ui.VStack(spacing=1):
-                        ui.Label("API Port:", style={"font_size": 11})
-                        self._port_field = ui.IntField(value=self._config.server_port, height=18)
-                        ui.Label("(Restart extension to apply port changes)", style={"font_size": 10, "color": 0x888888})
                 
                 # Manual controls
                 with ui.CollapsableFrame("Manual Controls", collapsed=True, height=0):
