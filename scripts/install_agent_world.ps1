@@ -171,7 +171,7 @@ Write-Host "==> Agent World Installer (Windows)" -ForegroundColor Cyan
 if (-not $IsaacDir) {
   $hasIsaac = Read-Choice "Is Isaac Sim already installed locally?" $true
   if ($hasIsaac) {
-    $default = "$HOME/agent-world-prod/isaac-sim-host-$Version"
+    $default = "isaac-sim-host-$Version"
     $IsaacDir = Read-Host "Enter Isaac Sim host path [$default]"
     if (-not $IsaacDir) { $IsaacDir = $default }
   } else {

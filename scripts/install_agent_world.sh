@@ -287,7 +287,7 @@ main() {
   local have_isaac; prompt_yn "Is Isaac Sim already installed locally?" y && have_isaac=1 || have_isaac=0
   local isaac_dir
   if [[ "$have_isaac" -eq 1 ]]; then
-    local default="${HOME}/agent-world-prod/isaac-sim-host-${DEFAULT_VERSION}"
+    local default="isaac-sim-host-${DEFAULT_VERSION}"
     read -r -p "Enter Isaac Sim host path [$default]: " isaac_dir || true
     isaac_dir=${isaac_dir:-$default}
     [[ -d "$isaac_dir" ]] || { echo "Not found: $isaac_dir" >&2; exit 1; }
