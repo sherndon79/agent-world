@@ -675,11 +675,25 @@ class WorldBuilderMCP:
                 text=f"❌ Connection error: {str(e)}. Is Isaac Sim running with the WorldBuilder Extension?"
             )]
     
+    def _sanitize_usd_name(self, name: str) -> str:
+        """Sanitize name for USD path compatibility by replacing invalid characters."""
+        import re
+        # Replace spaces and other problematic characters with underscores
+        sanitized = re.sub(r'[^a-zA-Z0-9_\-]', '_', name)
+        # Ensure it doesn't start with a number
+        if sanitized and sanitized[0].isdigit():
+            sanitized = f"_{sanitized}"
+        return sanitized
+    
     async def _create_batch(self, args: Dict[str, Any]) -> List[types.TextContent]:
         """Create hierarchical batch of objects."""
         try:
+            # Sanitize batch name for USD path compatibility
+            original_name = args["batch_name"]
+            sanitized_name = self._sanitize_usd_name(original_name)
+            
             payload = {
-                "batch_name": args["batch_name"],
+                "batch_name": sanitized_name,
                 "elements": args["elements"],
                 "parent_path": args.get("parent_path", "/World")
             }
@@ -692,9 +706,16 @@ class WorldBuilderMCP:
             )
             
             if result.get("success"):
+                    # Show sanitization notice if name was changed
+                    if original_name != sanitized_name:
+                        message = f"✅ Created batch '{sanitized_name}' with {len(args['elements'])} elements\n" \
+                                f"📝 Note: Batch name sanitized from '{original_name}' for USD compatibility"
+                    else:
+                        message = f"✅ Created batch '{sanitized_name}' with {len(args['elements'])} elements"
+                    
                     return [types.TextContent(
                         type="text",
-                        text=f"✅ Created batch '{args['batch_name']}' with {len(args['elements'])} elements"
+                        text=message
                     )]
             else:
                 return [types.TextContent(
