@@ -83,8 +83,8 @@ class WorldViewerConfig(WorldExtensionConfig if CONFIG_AVAILABLE else object):
         # Integration with other extensions
         'worldbuilder_port': 8899,
         'worldbuilder_host': 'localhost',
-        'worldselector_port': 8891,
-        'worldselector_host': 'localhost',
+        'worldsurveyor_port': 8891,
+        'worldsurveyor_host': 'localhost',
         'worldmind_port': 8892,
         'worldmind_host': 'localhost',
         
@@ -236,12 +236,12 @@ class WorldViewerConfig(WorldExtensionConfig if CONFIG_AVAILABLE else object):
         return self.get('worldbuilder_host', 'localhost')
     
     @property
-    def worldselector_port(self) -> int:
-        return self.get('worldselector_port', 8891)
+    def worldsurveyor_port(self) -> int:
+        return self.get('worldsurveyor_port', 8891)
     
     @property
-    def worldselector_host(self) -> str:
-        return self.get('worldselector_host', 'localhost')
+    def worldsurveyor_host(self) -> str:
+        return self.get('worldsurveyor_host', 'localhost')
     
     @property
     def worldmind_port(self) -> int:

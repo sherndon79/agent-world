@@ -3,7 +3,7 @@ Agent WorldViewer Extension
 
 Camera control and viewport management extension for Isaac Sim.
 Provides HTTP API for AI-powered camera positioning and management.
-Implements coordinated shutdown and thread validation patterns from WorldSelector.
+Implements coordinated shutdown and thread validation patterns.
 """
 
 import logging

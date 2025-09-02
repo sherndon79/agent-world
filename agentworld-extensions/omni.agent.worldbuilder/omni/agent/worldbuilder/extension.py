@@ -2,7 +2,7 @@
 Agent WorldBuilder Extension - Main Extension Class
 
 Isaac Sim extension for automated worldbuilding with HTTP API and batch asset management.
-Implements coordinated shutdown and thread validation patterns from WorldSelector.
+Implements coordinated shutdown and thread validation patterns.
 """
 
 import logging

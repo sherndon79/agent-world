@@ -124,6 +124,6 @@ All camera operations are queued and processed on the main thread to prevent USD
 - omni.ui  
 - omni.kit.viewport.utility
 
-## Relationship to WorldSelector
+## Relationship to WorldSurveyor
 
-WorldViewer handles camera movement and viewport control, while WorldSelector waypoints serve as camera presets and spatial planning. Use WorldSelector to create and manage camera position waypoints, then use WorldViewer to smoothly animate between them.
+WorldViewer handles camera movement and viewport control, while WorldSurveyor waypoints serve as camera presets and spatial planning. Use WorldSurveyor to create and manage camera position waypoints, then use WorldViewer to smoothly animate between them.

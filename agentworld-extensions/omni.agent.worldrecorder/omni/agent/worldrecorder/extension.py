@@ -2,7 +2,7 @@
 Agent WorldRecorder Extension - Main Extension Class
 
 Isaac Sim extension for video/frame recording with HTTP API.
-Implements coordinated shutdown and thread validation patterns from WorldSelector.
+Implements coordinated shutdown and thread validation patterns.
 """
 
 import logging

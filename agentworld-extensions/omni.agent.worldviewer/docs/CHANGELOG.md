@@ -55,9 +55,9 @@ All notable changes to the Agent WorldViewer extension will be documented in thi
 - Smooth cinematic movement engine with easing
 - Asset query system for scene introspection
 - Thread-safe operations with main thread coordination
-- Integration with WorldSelector waypoints for spatial planning
+- Integration with WorldSurveyor waypoints for spatial planning
 
-### Relationship to WorldSelector
+### Relationship to WorldSurveyor
 - WorldViewer provides camera movement and viewport control
-- WorldSelector waypoints serve as spatial planning and camera presets
+- WorldSurveyor waypoints serve as spatial planning and camera presets
 - Designed to work together for comprehensive scene navigation

@@ -220,7 +220,7 @@ class CameraController:
                                             rotation_quat = transform.ExtractRotationQuat()
                                             import math
                                             
-                                            # Convert quaternion to Euler angles (same method as WorldSelector)
+                                            # Convert quaternion to Euler angles
                                             w, x, y, z = rotation_quat.GetReal(), rotation_quat.GetImaginary()[0], rotation_quat.GetImaginary()[1], rotation_quat.GetImaginary()[2]
                                             
                                             # Roll (x-axis rotation)
