@@ -135,7 +135,10 @@ Config precedence (effective):
 
 ## Requirements
 
-- Isaac Sim 2023.1.1 or later
+- **Isaac Sim 5.0.0** (recommended - developed and tested against this version)
+  - [Linux x86_64 Download](https://download.isaacsim.omniverse.nvidia.com/isaac-sim-standalone-5.0.0-linux-x86_64.zip)
+  - [Windows x86_64 Download](https://download.isaacsim.omniverse.nvidia.com/isaac-sim-standalone-5.0.0-windows-x86_64.zip)
+  - Note: Newer versions may work but are not officially tested
 - Python 3.8+ (provided by Isaac Sim)
 - NVIDIA GPU with graphics drivers
 - Sufficient disk space for recordings (WorldRecorder)

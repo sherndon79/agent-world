@@ -5,19 +5,31 @@ This guide walks through installing and setting up Agent World Extensions in Isa
 ## Prerequisites
 
 ### System Requirements
-- **Isaac Sim**: Version 2023.1.1 or later
+- **Isaac Sim 5.0.0** (recommended - developed and tested against this version)
 - **Operating System**: Windows 10/11 or Ubuntu 20.04/22.04  
 - **GPU**: NVIDIA GPU with graphics drivers 470+ 
 - **Memory**: 16GB+ RAM recommended
 - **Storage**: 5GB+ free space for extensions and recordings
 
 ### Isaac Sim Installation
-Ensure Isaac Sim is properly installed and running:
 
-1. Download Isaac Sim from NVIDIA Developer portal
-2. Complete Isaac Sim installation and initial setup
-3. Verify Isaac Sim launches and can load basic scenes
-4. Note your Isaac Sim installation directory
+The Agent World installer can handle Isaac Sim installation for you:
+
+**Option 1: Automatic Download (Recommended)**
+1. Run the installer script - it will automatically download Isaac Sim 5.0.0
+2. No manual download needed
+
+**Option 2: Pre-download (Faster Installation)**  
+1. Download Isaac Sim 5.0.0 to your Agent World directory:
+   - **Linux**: [isaac-sim-standalone-5.0.0-linux-x86_64.zip](https://download.isaacsim.omniverse.nvidia.com/isaac-sim-standalone-5.0.0-linux-x86_64.zip)
+   - **Windows**: [isaac-sim-standalone-5.0.0-windows-x86_64.zip](https://download.isaacsim.omniverse.nvidia.com/isaac-sim-standalone-5.0.0-windows-x86_64.zip)
+2. Run the installer script - it will auto-detect and extract the zip
+
+**Option 3: Manual Installation**
+1. Extract Isaac Sim manually to your preferred location
+2. Run the installer and provide the path when prompted
+
+*Note: Newer Isaac Sim versions may work but are not officially tested.*
 
 ## Extension Installation
 
