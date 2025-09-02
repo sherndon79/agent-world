@@ -14,15 +14,27 @@ from typing import Any, Dict, List, Optional
 from datetime import datetime
 
 import aiohttp
-from logging_setup import setup_logging
 
 # Add shared modules to path
 shared_path = os.path.join(os.path.dirname(__file__), '..', '..', 'shared')
 if shared_path not in sys.path:
     sys.path.insert(0, shared_path)
 
-# Import unified auth client
+# Import shared modules
+from logging_setup import setup_logging
 from mcp_base_client import MCPBaseClient
+
+# Add agentworld-extensions to path for unified config
+extensions_path = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'agentworld-extensions')
+if os.path.exists(extensions_path) and extensions_path not in sys.path:
+    sys.path.insert(0, extensions_path)
+
+try:
+    from agent_world_config import create_worldrecorder_config
+    config = create_worldrecorder_config()
+except ImportError:
+    # Fallback if unified config not available
+    config = None
 from mcp.server import Server
 from mcp.server.models import InitializationOptions
 from mcp.server.stdio import stdio_server
@@ -101,19 +113,56 @@ class WorldRecorderResponseFormatter:
             if 'file_type' in response:
                 message += f"\n• Format: {response['file_type']}"
         elif operation == 'get_status':
+            # Support both legacy {status: {...}} and new flat schema
             status = response.get('status') or response
             message = "📊 WorldRecorder Status:\n"
-            recording = status.get('recording', False)
-            message += f"• Recording: {'🔴 Active' if recording else '⚪ Stopped'}\n"
+
+            # Determine recording/active state from available fields
+            if 'recording' in status:
+                recording = bool(status.get('recording'))
+                message += f"• Recording: {'🔴 Active' if recording else '⚪ Stopped'}\n"
+            elif 'done' in status:
+                done = bool(status.get('done'))
+                sid = status.get('session_id')
+                recording = bool(sid) and not done
+                message += f"• Recording: {'🔴 Active' if recording else '⚪ Stopped'}\n"
+                message += f"• Done: {done}\n"
             
+            # Common fields across versions
             if status.get('session_id'):
                 message += f"• Session ID: {status['session_id']}\n"
+            if status.get('last_session_id'):
+                message += f"• Last Session ID: {status['last_session_id']}\n"
             if status.get('output_path'):
                 message += f"• Output: {status['output_path']}\n"
-            if status.get('duration'):
-                message += f"• Duration: {status['duration']:.2f}s\n"
-            if status.get('fps'):
+            
+            # Outputs list (new API)
+            outputs = status.get('outputs')
+            if isinstance(outputs, list) and outputs:
+                if len(outputs) == 1:
+                    message += f"• Output: {outputs[0]}\n"
+                else:
+                    message += f"• Outputs ({len(outputs)}):\n"
+                    for p in outputs[:5]:
+                        message += f"  - {p}\n"
+                    if len(outputs) > 5:
+                        message += f"  - ... and {len(outputs) - 5} more\n"
+            
+            # Timing/telemetry if provided
+            if status.get('duration') is not None:
+                try:
+                    message += f"• Duration: {float(status['duration']):.2f}s\n"
+                except Exception:
+                    pass
+            if status.get('fps') is not None:
                 message += f"• FPS: {status['fps']}\n"
+            if status.get('timestamp') is not None:
+                try:
+                    from datetime import datetime
+                    ts = float(status['timestamp'])
+                    message += f"• Timestamp: {datetime.fromtimestamp(ts).isoformat()}\n"
+                except Exception:
+                    message += f"• Timestamp: {status['timestamp']}\n"
         
         return message
     
@@ -548,10 +597,7 @@ class WorldRecorderMCP:
             if response.get('success'):
                 return [TextContent(
                     type="text",
-                    text=f"📹 WorldRecorder Status\n" +
-                         f"• Status: {response.get('status', 'Unknown')}\n" +
-                         f"• Extension: {response.get('extension', 'Unknown')}\n" +
-                         f"• Timestamp: {response.get('timestamp', 'Unknown')}"
+                    text=self.formatter.format_success("get_status", response)
                 )]
             else:
                 return [TextContent(type="text", text=f"❌ {response.get('error', 'Unknown error')}")]

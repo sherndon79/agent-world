@@ -19,18 +19,24 @@ import mcp.types as types
 import aiohttp
 import sys
 import os
-from logging_setup import setup_logging
 
 # Add shared modules to path
 shared_path = os.path.join(os.path.dirname(__file__), '..', '..', 'shared')
 if shared_path not in sys.path:
     sys.path.insert(0, shared_path)
 
+from logging_setup import setup_logging
+
+# Add agentworld-extensions to path for unified config
+extensions_path = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'agentworld-extensions')
+if os.path.exists(extensions_path) and extensions_path not in sys.path:
+    sys.path.insert(0, extensions_path)
+
 try:
-    from worldbuilder_config import get_config
-    config = get_config()
+    from agent_world_config import create_worldbuilder_config
+    config = create_worldbuilder_config()
 except ImportError:
-    # Fallback if shared config not available
+    # Fallback if unified config not available
     config = None
 
 # Import unified auth client
@@ -48,14 +54,9 @@ try:
 except ImportError:
     HAS_COMPAT = False
     PYDANTIC_VERSION = 1
-from pathlib import Path
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger('worldbuilder-mcp')
+# Configure logging with unified system  
+logger = logging.getLogger(__name__)
 
 
 def create_element_schemas():
@@ -95,9 +96,9 @@ class WorldBuilderMCP:
         # Standardized env override
         env_base = os.getenv("AGENT_WORLDBUILDER_BASE_URL") or os.getenv("WORLDBUILDER_API_URL")
         if config:
-            self.base_url = env_base or base_url or config.base_url
-            self.retry_attempts = config.mcp_retry_attempts
-            self.retry_backoff = config.mcp_retry_backoff
+            self.base_url = env_base or base_url or config.get_server_url()
+            self.retry_attempts = config.get('mcp_retry_attempts', 3)
+            self.retry_backoff = config.get('mcp_retry_backoff', 0.5)
         else:
             self.base_url = env_base or base_url or "http://localhost:8899"
             self.retry_attempts = 3
@@ -118,7 +119,8 @@ class WorldBuilderMCP:
     def _get_timeout(self, operation_type: str = 'standard') -> float:
         """Get timeout for operation type using configuration."""
         if config:
-            return config.get_timeout_for_operation(operation_type)
+            timeout_key = f'{operation_type}_timeout'
+            return config.get(timeout_key, {'simple': 5.0, 'standard': 10.0, 'complex': 15.0}.get(operation_type, 10.0))
         else:
             # Fallback timeouts
             return {'simple': 5.0, 'standard': 10.0, 'complex': 15.0}.get(operation_type, 10.0)
@@ -557,22 +559,6 @@ class WorldBuilderMCP:
                     }
                 ),
                 
-                Tool(
-                    name="worldbuilder_get_metrics",
-                    description="Get performance metrics and statistics from WorldBuilder extension",
-                    inputSchema={
-                        "type": "object", 
-                        "properties": {
-                            "format": {
-                                "type": "string",
-                                "enum": ["json", "prom"],
-                                "description": "Output format: json for structured data, prom for Prometheus format",
-                                "default": "json"
-                            }
-                        },
-                        "additionalProperties": False
-                    }
-                ),
                 
                 Tool(
                     name="worldbuilder_metrics_prometheus",

@@ -4,11 +4,17 @@ Lightweight CLI to call Agent World extension HTTP APIs with the same
 auth behavior as MCP servers (HMAC/Bearer via MCPBaseClient).
 
 Usage:
+  # HTTP modes
   python mcpctl.py worldbuilder scene_status
   python mcpctl.py worldbuilder query_objects_near_point --point 5,0,2 --radius 10
   python mcpctl.py worldviewer get_asset_transform --usd-path /World/foo --calculation-mode auto
   python mcpctl.py worldbuilder GET /metrics.prom
   python mcpctl.py worldbuilder POST /add_element --json '{"element_type":"cube","name":"box","position":[0,0,1]}'
+
+  # MCP stdio modes (client-side smoketests)
+  python mcpctl.py mcp list-tools worldrecorder-server
+  python mcpctl.py mcp call-tool worldrecorder-server worldrecorder_recording_status --json '{}'
+  python mcpctl.py mcp smoke flows/worldrecorder_smoke.json
 """
 
 import argparse
@@ -249,4 +255,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

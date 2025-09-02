@@ -13,14 +13,14 @@ import os
 from typing import Any, Dict, List, Optional
 
 import aiohttp
-from logging_setup import setup_logging
 
 # Add shared modules to path
 shared_path = os.path.join(os.path.dirname(__file__), '..', '..', 'shared')
 if shared_path not in sys.path:
     sys.path.insert(0, shared_path)
 
-# Import unified auth client
+# Import shared modules
+from logging_setup import setup_logging
 from mcp_base_client import MCPBaseClient
 from mcp.server import Server
 from mcp.server.models import InitializationOptions
@@ -154,10 +154,16 @@ shared_compat_path = os.path.join(os.path.dirname(__file__), '..', '..', 'shared
 if shared_compat_path not in sys.path:
     sys.path.insert(0, shared_compat_path)
 
+# Add agentworld-extensions to path for unified config
+extensions_path = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'agentworld-extensions')
+if os.path.exists(extensions_path) and extensions_path not in sys.path:
+    sys.path.insert(0, extensions_path)
+
 try:
-    from worldviewer_config import get_config
-    config = get_config()
+    from agent_world_config import create_worldviewer_config
+    config = create_worldviewer_config()
 except ImportError:
+    # Fallback if unified config not available
     config = None
 
 try:
@@ -194,9 +200,9 @@ class WorldViewerMCP:
         # Use configuration if available, otherwise fallback to defaults
         env_base = os.getenv("AGENT_WORLDVIEWER_BASE_URL") or os.getenv("WORLDVIEWER_API_URL")
         if config:
-            self.base_url = env_base or config.base_url
-            self.timeout = config.mcp_timeout
-            self.retry_attempts = config.mcp_retry_attempts
+            self.base_url = env_base or config.get_server_url()
+            self.timeout = config.get('mcp_timeout', 10.0)
+            self.retry_attempts = config.get('mcp_retry_attempts', 3)
         else:
             self.base_url = env_base or "http://localhost:8900"
             self.timeout = 10.0

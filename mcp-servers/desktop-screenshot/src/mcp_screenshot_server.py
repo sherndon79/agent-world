@@ -83,14 +83,10 @@ class ScreenshotMetadata:
         metadata_path = screenshot_path.with_suffix('.json')
         return metadata_path.exists()
 
-# Configure logging
+# Configure logging - screenshot server doesn't use shared modules, keep simple setup
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('mcp_screenshot_server.log'),
-        logging.StreamHandler()
-    ]
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 

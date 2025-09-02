@@ -118,20 +118,29 @@ class WorldExtensionConfig:
         if not self._config_file:
             return
         
-        # Try monolithic config first, then extension-specific config
+        # Try multiple config locations in priority order:
+        # 1. MCP servers directory (for MCP server contexts)
+        # 2. Isaac extensions directory (for Isaac Sim contexts)
+        # 3. Extension-specific config file
         isaac_extension_root = Path(__file__).parent
-        monolithic_config_path = isaac_extension_root / "agent-world-config.json"
-        extension_config_path = self._extension_path / self._config_file if self._extension_path else None
+        mcp_servers_root = isaac_extension_root.parent / "mcp-servers"
+        
+        config_candidates = [
+            mcp_servers_root / "agent-world-config.json",
+            isaac_extension_root / "agent-world-config.json",
+            self._extension_path / self._config_file if self._extension_path else None
+        ]
         
         config_path = None
-        if monolithic_config_path.exists():
-            config_path = monolithic_config_path
-            logger.debug(f"Using monolithic config: {config_path}")
-        elif extension_config_path and extension_config_path.exists():
-            config_path = extension_config_path
-            logger.debug(f"Using extension-specific config: {config_path}")
-        else:
-            logger.debug(f"No config file found (tried {monolithic_config_path} and {extension_config_path})")
+        for candidate_path in config_candidates:
+            if candidate_path and candidate_path.exists():
+                config_path = candidate_path
+                logger.debug(f"Using config: {config_path}")
+                break
+        
+        if not config_path:
+            tried_paths = [str(p) for p in config_candidates if p]
+            logger.debug(f"No config file found (tried {tried_paths})")
             return
         
         try:

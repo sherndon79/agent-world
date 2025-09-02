@@ -38,6 +38,9 @@ scripts/launch_agent_world.ps1
 # Screenshots
 screenshots/
 
+# MCP tools in development
+mcp-servers/tools/mcpctl
+
 # Misc
 *.bak
 *.backup
