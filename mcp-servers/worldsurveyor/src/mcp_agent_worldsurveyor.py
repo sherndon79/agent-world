@@ -25,15 +25,27 @@ from typing import Any, Dict, List
 
 import aiohttp
 from mcp.server import Server
-from logging_setup import setup_logging
 
 # Add shared modules to path
 shared_path = os.path.join(os.path.dirname(__file__), '..', '..', 'shared')
 if shared_path not in sys.path:
     sys.path.insert(0, shared_path)
 
-# Import unified auth client
+# Import shared modules
+from logging_setup import setup_logging
 from mcp_base_client import MCPBaseClient
+
+# Add agentworld-extensions to path for unified config
+extensions_path = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'agentworld-extensions')
+if os.path.exists(extensions_path) and extensions_path not in sys.path:
+    sys.path.insert(0, extensions_path)
+
+try:
+    from agent_world_config import create_worldsurveyor_config
+    config = create_worldsurveyor_config()
+except ImportError:
+    # Fallback if unified config not available
+    config = None
 from mcp.server.models import InitializationOptions
 from mcp.server.stdio import stdio_server
 from mcp.server.lowlevel import NotificationOptions
@@ -41,22 +53,8 @@ from mcp.types import Tool
 import mcp.types as types
 
 
-# Configure logging with environment-based paths
-log_dir = os.getenv('AGENT_WORLD_LOG_DIR', '/tmp')
-log_file = os.path.join(log_dir, 'mcp_worldsurveyor.log')
-
-# Ensure log directory exists
-os.makedirs(log_dir, exist_ok=True)
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.FileHandler(log_file),
-        logging.StreamHandler(sys.stderr)
-    ]
-)
-logger = logging.getLogger("mcp-worldsurveyor")
+# Configure logging with unified system
+logger = logging.getLogger(__name__)
 
 
 class WorldSurveyorMCP:
@@ -1630,9 +1628,9 @@ class WorldSurveyorMCP:
             # Response already parsed by MCPBaseClient
             
             if result.get('success'):
-                export_data = result.get('export_data', {})
-                waypoint_count = result.get('waypoint_count', 0)
-                group_count = result.get('group_count', 0)
+                export_data = result.get('export', {})
+                waypoint_count = len(export_data.get('waypoints', []))
+                group_count = len(export_data.get('groups', []) or [])
                 
                 # Format JSON for display
                 export_json = json.dumps(export_data, indent=2)

@@ -988,7 +988,7 @@
         async function exportWaypoints() {
             const result = await apiCall('export_waypoints?include_groups=true');
             if (result.success) {
-                const dataStr = JSON.stringify(result.export_data, null, 2);
+                const dataStr = JSON.stringify(result.export, null, 2);
                 const dataBlob = new Blob([dataStr], { type: 'application/json' });
                 
                 const link = document.createElement('a');
