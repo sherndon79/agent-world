@@ -115,6 +115,16 @@ class SceneBuilder:
         
         logger.info("🏗️ Scene Builder initialized with queue-based processing")
     
+    def _sanitize_usd_name(self, name: str) -> str:
+        """Sanitize name for USD path compatibility by replacing invalid characters."""
+        import re
+        # Replace spaces and other problematic characters with underscores
+        sanitized = re.sub(r'[^a-zA-Z0-9_\-]', '_', name)
+        # Ensure it doesn't start with a number
+        if sanitized and sanitized[0].isdigit():
+            sanitized = f"_{sanitized}"
+        return sanitized
+    
     def _store_completed_request(self, request_id: str, result: Dict[str, Any]):
         """Store completed request with O(1) automatic eviction."""
         # Automatic eviction when at capacity
@@ -911,8 +921,13 @@ class SceneBuilder:
                     'error': "No USD stage available. Please create or open a stage first."
                 }
             
+            # Sanitize batch name for USD path compatibility
+            sanitized_batch_name = self._sanitize_usd_name(batch_name)
+            if sanitized_batch_name != batch_name:
+                logger.info(f"📝 Sanitized batch name '{batch_name}' → '{sanitized_batch_name}' for USD compatibility")
+            
             # Create batch Xform
-            batch_path = f"/World/{batch_name}"
+            batch_path = f"/World/{sanitized_batch_name}"
             batch_xform = UsdGeom.Xform.Define(stage, batch_path)
             
             # Set batch transform
