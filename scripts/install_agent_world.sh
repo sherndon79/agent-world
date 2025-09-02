@@ -334,7 +334,7 @@ ENV
     echo "Wrote secrets to: $env_path"
   fi
 
-  if prompt_yn "Create Python virtual environments for MCP servers?" y; then
+  if prompt_yn "Create Python virtual environment for MCP servers?" y; then
     create_mcp_venvs
   fi
 
