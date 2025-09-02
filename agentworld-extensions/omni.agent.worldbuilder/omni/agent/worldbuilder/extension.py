@@ -289,43 +289,7 @@ class AgentWorldBuilderExtension(omni.ext.IExt):
                         self._api_requests_label = ui.Label("Requests: 0 | Errors: 0")
                 
                 
-                # Manual controls
-                with ui.CollapsableFrame("Manual Controls", collapsed=True, height=0):
-                    with ui.VStack(spacing=1):
-                        ui.Button("Test Scene Creation", clicked_fn=self._test_scene_creation, height=20)
 
-    def _test_scene_creation(self):
-        """Test scene creation functionality via HTTP API."""
-        try:
-            import requests
-            import json
-            
-            # Test creating a simple cube
-            test_element = {
-                "name": "ui_test_cube",
-                "type": "cube",
-                "position": [0, 2, 0],
-                "color": [1, 0.5, 0]  # Orange
-            }
-            
-            response = requests.post(
-                f"{self._config.get_server_url()}/add_element",
-                headers={"Content-Type": "application/json"},
-                json=test_element,
-                timeout=5
-            )
-            
-            if response.status_code == 200:
-                result = response.json()
-                if result.get('success'):
-                    logger.info(f"✅ Test scene creation successful: {result.get('request_id')}")
-                else:
-                    logger.error(f"❌ Test scene creation failed: {result.get('error')}")
-            else:
-                logger.error(f"❌ HTTP request failed: {response.status_code}")
-                
-        except Exception as e:
-            logger.error(f"❌ Test scene creation error: {e}")
 
     def _update_ui_stats(self):
         """Update UI with current statistics."""
