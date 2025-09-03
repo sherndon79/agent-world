@@ -377,7 +377,13 @@
         <div class="main-layout">
             <!-- Sidebar for Groups -->
             <div class="sidebar">
-                <h3>📁 Groups</h3>
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+                    <h3 style="margin: 0;">📁 Groups</h3>
+                    <label style="display: flex; align-items: center; gap: 5px; font-size: 12px; color: #aaa; cursor: pointer;">
+                        <input type="checkbox" id="includeChildGroupsToggle" checked onchange="onIncludeChildGroupsToggle()" style="transform: scale(0.9);">
+                        Include child groups
+                    </label>
+                </div>
                 <div id="groupsList">
                     <!-- Groups will be populated here -->
                 </div>
@@ -542,7 +548,8 @@
             
             let endpoint;
             if (groupId) {
-                endpoint = `get_group_waypoints?group_id=${groupId}`;
+                const includeNested = document.getElementById('includeChildGroupsToggle').checked;
+                endpoint = `get_group_waypoints?group_id=${groupId}&include_nested=${includeNested}`;
             } else {
                 endpoint = 'list_waypoints';
             }
@@ -697,6 +704,13 @@
         function filterByGroup(groupId, groupName) {
             refreshWaypoints(groupId);
             updateStatus();
+        }
+        
+        function onIncludeChildGroupsToggle() {
+            // If we're currently filtering by a group, refresh to apply the new setting
+            if (currentGroupFilter) {
+                refreshWaypoints(currentGroupFilter);
+            }
         }
         
         function showAllWaypoints() {
