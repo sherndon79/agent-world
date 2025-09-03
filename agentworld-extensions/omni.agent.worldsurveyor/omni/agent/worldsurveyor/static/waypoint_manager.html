@@ -427,6 +427,7 @@
                         <button class="btn btn-warning btn-small" onclick="hideSelectedWaypoints()">🙈 Hide Selected</button>
                         <button class="btn btn-success btn-small" onclick="showSelectedWaypoints()">👁️ Show Selected</button>
                         <button class="btn btn-primary btn-small" onclick="assignSelectedToGroups()">📁 Assign to Groups</button>
+                        <button class="btn btn-danger btn-small" onclick="removeSelectedWaypoints()">🗑️ Remove Selected</button>
                         <span id="selectedCount" style="color: #aaa; font-size: 12px;">0 selected</span>
                     </div>
                 </div>
@@ -1280,6 +1281,47 @@
             }
             
             await updateStatus();
+        }
+        
+        async function removeSelectedWaypoints() {
+            const selectedCheckboxes = document.querySelectorAll('.waypoint-select:checked');
+            
+            if (selectedCheckboxes.length === 0) {
+                alert('Please select waypoints to remove');
+                return;
+            }
+            
+            const waypointIds = Array.from(selectedCheckboxes).map(cb => cb.dataset.waypointId);
+            
+            if (!confirm(`Are you sure you want to remove ${waypointIds.length} selected waypoint(s)? This cannot be undone.`)) {
+                return;
+            }
+            
+            try {
+                const result = await apiCall('remove_selected_waypoints', 'POST', {
+                    waypoint_ids: waypointIds
+                });
+                
+                if (result.success) {
+                    console.log(`Successfully removed ${result.removed_count} out of ${result.requested_count} waypoints`);
+                    
+                    // Show success message
+                    if (result.removed_count === result.requested_count) {
+                        alert(`Successfully removed ${result.removed_count} waypoint(s)`);
+                    } else {
+                        alert(`Removed ${result.removed_count} out of ${result.requested_count} waypoint(s). Some waypoints may have already been deleted.`);
+                    }
+                    
+                    // Refresh the waypoint list to reflect changes
+                    await refreshWaypoints(currentGroupFilter);
+                } else {
+                    console.error('Failed to remove selected waypoints:', result.error);
+                    alert(`Error removing waypoints: ${result.error}`);
+                }
+            } catch (error) {
+                console.error('Error removing selected waypoints:', error);
+                alert('Error removing selected waypoints - check console for details');
+            }
         }
         
         // Modal close on outside click

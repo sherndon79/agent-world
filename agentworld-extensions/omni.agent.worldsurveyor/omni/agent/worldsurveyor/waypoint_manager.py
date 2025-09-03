@@ -127,6 +127,33 @@ class WaypointManager:
                 return True
             return False
     
+    def remove_waypoints(self, waypoint_ids: List[str]) -> int:
+        """Remove multiple waypoints by IDs with thread safety."""
+        with self._lock:
+            removed_count = 0
+            removed_ids = []
+            
+            for waypoint_id in waypoint_ids:
+                # Remove from database
+                removed = self._database.remove_waypoint(waypoint_id)
+                
+                if removed:
+                    removed_count += 1
+                    removed_ids.append(waypoint_id)
+                    
+                    # Remove from in-memory cache
+                    self._waypoints.pop(waypoint_id, None)
+                    
+                    # Remove from marker tracking
+                    self._marker_manager.remove_waypoint_marker(waypoint_id)
+            
+            if removed_count > 0:
+                # Force full refresh to sync debug markers with waypoint data
+                self._marker_manager.refresh_all_markers_batched(self._waypoints)
+                logger.info(f"Removed {removed_count} waypoints: {removed_ids}")
+            
+            return removed_count
+    
     def clear_waypoints(self) -> int:
         """Clear all waypoints with thread safety."""
         with self._lock:

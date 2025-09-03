@@ -112,6 +112,7 @@ class WorldSurveyorHTTPHandler(WorldHTTPHandler):
             'waypoints/list': self._handle_list_waypoints,
             'waypoints/update': self._handle_update_waypoint,
             'waypoints/remove': self._handle_remove_waypoint,
+            'waypoints/remove_selected': self._handle_remove_selected_waypoints,
             'waypoints/clear': self._handle_clear_waypoints,
             'waypoints/export': self._handle_export_waypoints,
             'waypoints/import': self._handle_import_waypoints,
@@ -121,6 +122,7 @@ class WorldSurveyorHTTPHandler(WorldHTTPHandler):
             'list_waypoints': self._handle_list_waypoints,
             'update_waypoint': self._handle_update_waypoint,
             'remove_waypoint': self._handle_remove_waypoint,
+            'remove_selected_waypoints': self._handle_remove_selected_waypoints,
             'clear_all_waypoints': self._handle_clear_waypoints,
             'export_waypoints': self._handle_export_waypoints,
             'import_waypoints': self._handle_import_waypoints,
@@ -228,6 +230,18 @@ class WorldSurveyorHTTPHandler(WorldHTTPHandler):
             return {'success': False, 'error': 'waypoint_id is required'}
         removed = self.api_interface.waypoint_manager.remove_waypoint(waypoint_id)
         return {'success': bool(removed), 'removed': bool(removed)}
+
+    def _handle_remove_selected_waypoints(self, method: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        if method != 'POST':
+            return {'success': False, 'error': 'waypoints/remove_selected requires POST'}
+        waypoint_ids = data.get('waypoint_ids')
+        if not waypoint_ids or not isinstance(waypoint_ids, list):
+            return {'success': False, 'error': 'waypoint_ids is required and must be a list'}
+        if len(waypoint_ids) == 0:
+            return {'success': False, 'error': 'waypoint_ids list cannot be empty'}
+        
+        removed_count = self.api_interface.waypoint_manager.remove_waypoints(waypoint_ids)
+        return {'success': True, 'removed_count': removed_count, 'requested_count': len(waypoint_ids)}
 
     def _handle_clear_waypoints(self, method: str, data: Dict[str, Any]) -> Dict[str, Any]:
         if method != 'POST':
