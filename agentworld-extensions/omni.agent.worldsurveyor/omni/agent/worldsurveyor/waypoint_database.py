@@ -762,11 +762,18 @@ class WaypointDatabase:
                     
                     logger.info(f"Importing waypoint {wp_data.get('name')} with original group_ids: {original_group_ids} -> mapped: {mapped_group_ids}")
                     
+                    # Handle target data - convert null arrays to None
+                    target_data = wp_data.get("target")
+                    if target_data and any(x is not None for x in target_data):
+                        target = tuple(target_data)
+                    else:
+                        target = None
+                    
                     waypoint_id = self.create_waypoint(
                         position=tuple(wp_data["position"]),
                         waypoint_type=wp_data["waypoint_type"],
                         name=wp_data["name"],
-                        target=tuple(wp_data.get("target", (0, 0, 0))),
+                        target=target,
                         metadata=wp_data.get("metadata", {}),
                         group_ids=mapped_group_ids
                     )

@@ -258,10 +258,17 @@ class WorldSurveyorHTTPHandler(WorldHTTPHandler):
         if method != 'POST':
             return {'success': False, 'error': 'waypoints/import requires POST'}
         merge_mode = data.get('merge_mode', 'replace')
-        # Accept either full payload or nested under 'export'
-        payload = data.get('export', data)
+        # Accept payload from import_data (new), export (legacy), or full data (fallback)
+        payload = data.get('import_data') or data.get('export') or data
         stats = self.api_interface.waypoint_manager.import_waypoints(payload, merge_mode)
-        return {'success': True, 'import_stats': stats}
+        
+        # Map database response keys to match JavaScript expectations  
+        return {
+            'success': True, 
+            'imported_waypoints': stats.get('waypoints_imported', 0),
+            'imported_groups': stats.get('groups_imported', 0),
+            'errors': stats.get('errors', 0)
+        }
 
     def _handle_goto_waypoint(self, method: str, data: Dict[str, Any]) -> Dict[str, Any]:
         if method != 'POST':
