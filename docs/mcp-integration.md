@@ -1,6 +1,6 @@
 # MCP Integration Guide
 
-Agent World Extensions provide comprehensive Model Context Protocol (MCP) integration, enabling AI agents to interact with Isaac Sim through standardized MCP tools and resources.
+agenTW∞rld Extensions provide comprehensive Model Context Protocol (MCP) integration, enabling AI agents to interact with Isaac Sim through standardized MCP tools and resources.
 
 ## Overview
 
@@ -32,7 +32,7 @@ Authentication: MCP servers use a shared MCPBaseClient with automatic 401-challe
 ### Prerequisites
 
 #### Quick Setup (Recommended)
-Use the Agent World installer to automatically set up MCP server virtual environments:
+Use the agenTW∞rld installer to automatically set up MCP server virtual environments:
 
 ```bash
 # Linux/macOS

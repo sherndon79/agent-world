@@ -26,7 +26,7 @@ Cross-platform desktop screenshot capture MCP server for AI agents. Provides sys
 ### Prerequisites
 
 #### Quick Setup (Recommended)
-Use the Agent World installer to automatically set up MCP server virtual environments:
+Use the agenTW∞rld installer to automatically set up MCP server virtual environments:
 
 ```bash
 # Linux/macOS
@@ -162,7 +162,7 @@ result = await ss.call_tool("screenshot_isaac_sim", {
 })
 ```
 
-## Integration with Agent World Extensions
+## Integration with agenTW∞rld Extensions
 
 ### Scene Documentation Workflow
 

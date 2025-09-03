@@ -1,10 +1,12 @@
-# Agent World Extensions
+![agenTWOrld](docs/resources/images/agenTW_infinity_rld_cover.png)
+
+# agenTW∞rld Extensions
 
 A suite of Isaac Sim extensions that provide AI agents with comprehensive world interaction capabilities through unified APIs and MCP integration.
 
 ## Overview
 
-Agent World Extensions enable AI agents to build, view, navigate, and record 3D worlds in Isaac Sim through a consistent set of HTTP APIs and Model Context Protocol (MCP) tools. Each extension provides specialized functionality while maintaining a unified architecture for seamless integration.
+agenTW∞rld Extensions enable AI agents to build, view, navigate, and record 3D worlds in Isaac Sim through a consistent set of HTTP APIs and Model Context Protocol (MCP) tools. Each extension provides specialized functionality while maintaining a unified architecture for seamless integration.
 
 ## Extensions
 

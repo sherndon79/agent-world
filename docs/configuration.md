@@ -1,6 +1,6 @@
 # Configuration Guide
 
-Agent World Extensions use a unified configuration system that supports hierarchical configuration loading with environment variable overrides.
+agenTW∞rld Extensions use a unified configuration system that supports hierarchical configuration loading with environment variable overrides.
 
 ## Configuration Hierarchy
 
@@ -19,7 +19,7 @@ The primary configuration file is `agent-world-config.json` in the `agentworld-e
 
 ```json
 {
-  "_comment": "Agent World Extensions Configuration", 
+  "_comment": "agenTW∞rld Extensions Configuration", 
   "_usage": "Hierarchical config loading: Environment > Isaac Sim Settings > JSON > Defaults",
   
   "worldbuilder": {

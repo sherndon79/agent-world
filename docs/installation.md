@@ -1,6 +1,6 @@
 # Installation Guide
 
-This guide walks through installing and setting up Agent World Extensions in Isaac Sim.
+This guide walks through installing and setting up agenTW∞rld Extensions in Isaac Sim.
 
 ## Prerequisites
 
@@ -13,14 +13,14 @@ This guide walks through installing and setting up Agent World Extensions in Isa
 
 ### Isaac Sim Installation
 
-The Agent World installer can handle Isaac Sim installation for you:
+The agenTW∞rld installer can handle Isaac Sim installation for you:
 
 **Option 1: Automatic Download (Recommended)**
 1. Run the installer script - it will automatically download Isaac Sim 5.0.0
 2. No manual download needed
 
 **Option 2: Pre-download (Faster Installation)**  
-1. Download Isaac Sim 5.0.0 to your Agent World directory:
+1. Download Isaac Sim 5.0.0 to your agenTW∞rld directory:
    - **Linux**: [isaac-sim-standalone-5.0.0-linux-x86_64.zip](https://download.isaacsim.omniverse.nvidia.com/isaac-sim-standalone-5.0.0-linux-x86_64.zip)
    - **Windows**: [isaac-sim-standalone-5.0.0-windows-x86_64.zip](https://download.isaacsim.omniverse.nvidia.com/isaac-sim-standalone-5.0.0-windows-x86_64.zip)
 2. Run the installer script - it will auto-detect and extract the zip
@@ -227,7 +227,7 @@ print(f"WorldRecorder: {'✓' if response.status_code == 200 else '✗'}")
 ### Install MCP Servers
 
 #### Quick Setup (Recommended)
-The Agent World installer can automatically set up MCP server virtual environments:
+The agenTW∞rld installer can automatically set up MCP server virtual environments:
 
 ```bash
 # Linux/macOS

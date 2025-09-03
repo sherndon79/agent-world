@@ -1,22 +1,22 @@
 # Claude Code Setup Guide
 
-This guide shows how to configure Agent World extensions for use with Claude Code's MCP integration.
+This guide shows how to configure agenTW∞rld extensions for use with Claude Code's MCP integration.
 
 ## Overview
 
-Agent World provides MCP (Model Context Protocol) servers that allow Claude Code to interact with Isaac Sim extensions for 3D world building, camera control, waypoint management, and recording.
+agenTW∞rld provides MCP (Model Context Protocol) servers that allow Claude Code to interact with Isaac Sim extensions for 3D world building, camera control, waypoint management, and recording.
 
 ## Prerequisites
 
 1. **Isaac Sim** - Version 2023.1.1 or later installed
-2. **Agent World Extensions** - Installed and running in Isaac Sim
+2. **agenTW∞rld Extensions** - Installed and running in Isaac Sim
 3. **Python Virtual Environments** - Created for each MCP server (see installation guide)
 
 ## Claude Code Configuration
 
 ### 1. Create .claude.json
 
-Create a `.claude.json` file in your project directory with the Agent World MCP servers:
+Create a `.claude.json` file in your project directory with the agenTW∞rld MCP servers:
 
 ```json
 {
@@ -75,7 +75,7 @@ Choose the appropriate Python command for your setup:
 "command": "/path/to/conda/envs/agent-world/bin/python"
 ```
 
-Note: Agent World now uses a single unified virtual environment for all MCP servers, located at `mcp-servers/venv/`, which simplifies installation and reduces disk usage.
+Note: agenTW∞rld now uses a single unified virtual environment for all MCP servers, located at `mcp-servers/venv/`, which simplifies installation and reduces disk usage.
 
 ## Available MCP Tools
 
