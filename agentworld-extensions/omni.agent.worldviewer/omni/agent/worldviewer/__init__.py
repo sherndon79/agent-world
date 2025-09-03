@@ -7,7 +7,7 @@ and provides complete camera lifecycle management through RESTful endpoints.
 """
 
 __version__ = "0.1.0"
-__author__ = "Agent World Team"
+__author__ = "agenTW∞rld Team"
 
 # Import and expose the extension class for Isaac Sim
 from .extension import AgentWorldViewerExtension

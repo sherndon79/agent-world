@@ -1,5 +1,5 @@
 {
-  "_comment": "Agent World MCP Servers Configuration",
+  "_comment": "agenTW∞rld MCP Servers Configuration",
   "_usage": "Hierarchical config loading: Environment Variables > Isaac Sim Settings > JSON Config > Defaults",
   "_environment_examples": "WORLDBUILDER_DEBUG_MODE=true, WORLDVIEWER_SERVER_PORT=8901",
   

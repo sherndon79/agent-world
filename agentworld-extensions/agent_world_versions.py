@@ -1,5 +1,5 @@
 """
-Centralized version management for Agent World Extensions.
+Centralized version management for agenTW∞rld Extensions.
 
 Provides consistent versioning across all world* extensions with support for:
 - Default versions with per-extension overrides
@@ -159,7 +159,7 @@ if __name__ == "__main__":
         logger.info(f"{extension}: {get_version(extension)}")
         logger.info(f"Service: {get_service_name(extension)}")
     else:
-        logger.info("Agent World Extensions Version Info:")
+        logger.info("agenTW∞rld Extensions Version Info:")
         logger.info(f"Suite Version: {get_suite_version()}")
         
         for name, info in get_all_extension_info().items():

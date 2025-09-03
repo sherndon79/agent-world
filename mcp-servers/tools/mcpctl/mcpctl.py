@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Lightweight CLI to call Agent World extension HTTP APIs with the same
+Lightweight CLI to call agenTW∞rld extension HTTP APIs with the same
 auth behavior as MCP servers (HMAC/Bearer via MCPBaseClient).
 
 Usage:
@@ -175,7 +175,7 @@ def parse_kv(items) -> Dict[str, str]:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description='Agent World extension HTTP CLI')
+    p = argparse.ArgumentParser(description='agenTW∞rld extension HTTP CLI')
     sub = p.add_subparsers(dest='service', required=True)
 
     # WorldBuilder

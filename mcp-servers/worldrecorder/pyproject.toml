@@ -7,7 +7,7 @@ name = "mcp-worldrecorder"
 version = "0.1.0"
 description = "MCP server for WorldRecorder - World state recording and playback tools"
 authors = [
-    {name = "Agent World Team", email = "team@agentworld.dev"}
+    {name = "agenTW∞rld Team", email = "team@agentworld.dev"}
 ]
 readme = "README.md"
 license = {text = "MIT"}

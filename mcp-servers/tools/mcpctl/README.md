@@ -1,4 +1,4 @@
-# mcpctl — Simple CLI for Agent World Extension APIs
+# mcpctl — Simple CLI for agenTW∞rld Extension APIs
 
 mcpctl is a tiny convenience CLI to call the Isaac Sim extension HTTP APIs
 (WorldBuilder, WorldViewer, WorldSurveyor, WorldRecorder) using the same

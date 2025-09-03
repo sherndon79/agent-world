@@ -5,9 +5,9 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "agent-world-mcp-servers"
 version = "0.1.0"
-description = "Unified MCP servers for Agent World - Isaac Sim extensions integration"
+description = "Unified MCP servers for agenTW∞rld - Isaac Sim extensions integration"
 authors = [
-    {name = "Agent World Contributors", email = "contributors@agentworld.dev"}
+    {name = "agenTW∞rld Contributors", email = "contributors@agentworld.dev"}
 ]
 readme = "README.md"
 license = {text = "MIT"}

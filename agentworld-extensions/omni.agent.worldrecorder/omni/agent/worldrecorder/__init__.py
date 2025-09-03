@@ -6,7 +6,7 @@ Replaces the original PyAV-based worldrecorder with a more reliable Kit-native i
 """
 
 __version__ = "0.1.0"
-__author__ = "Agent World Team"
+__author__ = "agenTW∞rld Team"
 
 # Expose the extension class so Kit can discover it
 from .extension import AgentWorldRecorderExtension

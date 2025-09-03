@@ -1,5 +1,5 @@
 """
-Unified configuration management for Agent World Extensions.
+Unified configuration management for agenTW∞rld Extensions.
 
 Provides consistent configuration loading across all world* extensions with support for:
 - JSON configuration files with comment support
@@ -379,6 +379,6 @@ if __name__ == "__main__":
             logger.error(f"Unknown extension: {extension_name}")
             logger.info(f"Available: {list(factory_map.keys())}")
     else:
-        logger.info("Agent World Extensions Configuration")
+        logger.info("agenTW∞rld Extensions Configuration")
         logger.info("Usage: python agent_world_config.py <extension_name>")
         logger.info("Extensions: worldbuilder, worldviewer, worldsurveyor, worldrecorder")

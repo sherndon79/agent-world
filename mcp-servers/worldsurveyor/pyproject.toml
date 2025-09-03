@@ -7,7 +7,7 @@ name = "mcp-worldsurveyor"
 version = "0.1.0"
 description = "MCP server for WorldSurveyor - Spatial surveying and waypoint management"
 authors = [
-    {name = "Agent World Team", email = "team@agentworld.dev"}
+    {name = "agenTW∞rld Team", email = "team@agentworld.dev"}
 ]
 readme = "README.md"
 license = {text = "MIT"}

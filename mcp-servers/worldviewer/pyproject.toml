@@ -7,7 +7,7 @@ name = "mcp-worldviewer"
 version = "0.1.0"
 description = "MCP server for WorldViewer - World visualization and inspection tools"
 authors = [
-    {name = "Agent World Team", email = "team@agentworld.dev"}
+    {name = "agenTW∞rld Team", email = "team@agentworld.dev"}
 ]
 readme = "README.md"
 license = {text = "MIT"}

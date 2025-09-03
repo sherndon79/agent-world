@@ -7,7 +7,7 @@ name = "mcp-desktop-screenshot"
 version = "0.1.0"
 description = "MCP server for desktop screenshot capture with cross-platform support"
 authors = [
-    {name = "Agent World Team", email = "team@agentworld.dev"}
+    {name = "agenTW∞rld Team", email = "team@agentworld.dev"}
 ]
 readme = "README.md"
 license = {text = "MIT"}

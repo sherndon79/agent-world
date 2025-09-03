@@ -1,5 +1,5 @@
 """
-Unified HTTP request handling for Agent World Extensions.
+Unified HTTP request handling for agenTW∞rld Extensions.
 
 Eliminates code duplication across all World* extensions by providing:
 - Common HTTP server request/response patterns
@@ -503,7 +503,7 @@ class ExampleExtensionHTTPHandler(WorldHTTPHandler):
 if __name__ == "__main__":
     # Test the unified HTTP handler
     logging.basicConfig(level=logging.INFO)
-    logger.info("Agent World Extensions Unified HTTP Handler")
+    logger.info("agenTW∞rld Extensions Unified HTTP Handler")
     logger.info(f"Version management available: {VERSION_AVAILABLE}")
     logger.info(f"HTTP config loaded: {bool(HTTP_CONFIG)}")
     
