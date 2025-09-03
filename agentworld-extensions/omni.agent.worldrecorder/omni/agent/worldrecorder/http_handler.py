@@ -3,8 +3,12 @@ HTTP request handler for Agent WorldRecorder API endpoints.
 """
 
 import time
+import logging
+import shutil
 from typing import Dict, Any, Optional
 from pathlib import Path
+
+# Note: Unified logging is initialized once in api_interface.py
 
 # Import centralized version management
 def _find_and_import_versions():
@@ -56,6 +60,8 @@ try:
 except Exception:
     VERSION_AVAILABLE = False
 
+logger = logging.getLogger(__name__)
+
 
 class WorldRecorderHTTPHandler(WorldHTTPHandler):
     """HTTP handler for world recording via omni.kit.capture.viewport (Kit-native).
@@ -74,13 +80,15 @@ class WorldRecorderHTTPHandler(WorldHTTPHandler):
         return {
             'video/status': self._handle_status,
             'video/start': self._handle_start,
-            'video/stop': self._handle_stop,
+            'video/cancel': self._handle_cancel,
             # Parity aliases with worldrecorder
             'recording/status': self._handle_status,
             'recording/start': self._handle_start,
-            'recording/stop': self._handle_stop,
+            'recording/cancel': self._handle_cancel,
             # Single-frame capture
             'viewport/capture_frame': self._handle_capture_frame,
+            # Cleanup utilities
+            'cleanup/frames': self._handle_cleanup_frames,
         }
 
     # Route handlers
@@ -104,8 +112,11 @@ class WorldRecorderHTTPHandler(WorldHTTPHandler):
                 sid = getattr(self.api_interface, 'current_session_id', None)
                 if sid:
                     sess = self.api_interface.sessions.setdefault(sid, {})
+                    was_done = sess.get('done', False)
                     sess['outputs'] = outputs
                     sess['done'] = done
+                    
+                    # Note: Automatic cleanup now handled by background cleanup monitor thread
             except Exception:
                 pass
             return {
@@ -191,14 +202,26 @@ class WorldRecorderHTTPHandler(WorldHTTPHandler):
             
             # Store session info
             try:
+                cleanup_frames = data.get('cleanup_frames', True)  # Default to True
                 self.api_interface.current_session_id = session_id
                 self.api_interface.sessions[session_id] = {
                     'output_hint': str(out), 
                     'started_at': time.time(),
-                    'capture_mode': 'continuous'
+                    'capture_mode': 'continuous',
+                    'cleanup_frames': cleanup_frames
                 }
             except Exception:
                 pass
+            
+            # Start background cleanup monitor if cleanup is enabled
+            if cleanup_frames:
+                import threading
+                cleanup_thread = threading.Thread(
+                    target=self._background_cleanup_monitor,
+                    args=(session_id, str(out)),
+                    daemon=True
+                )
+                cleanup_thread.start()
             
             # Build response
             response = {
@@ -216,7 +239,7 @@ class WorldRecorderHTTPHandler(WorldHTTPHandler):
         except Exception as e:
             return {'success': False, 'error': f'start error: {e}'}
 
-    def _handle_stop(self, method: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    def _handle_cancel(self, method: str, data: Dict[str, Any]) -> Dict[str, Any]:
         try:
             import omni.kit.capture.viewport as vcap
             inst = vcap.CaptureExtension.get_instance()
@@ -225,6 +248,17 @@ class WorldRecorderHTTPHandler(WorldHTTPHandler):
                     inst.cancel()
                 except Exception:
                     pass
+                
+                # Wait for cancellation to complete safely before cleanup
+                import time
+                max_wait_time = 5.0  # 5 seconds max
+                poll_interval = 0.1  # Check every 100ms
+                
+                for _ in range(int(max_wait_time / poll_interval)):
+                    if getattr(inst, 'done', False):
+                        break
+                    time.sleep(poll_interval)
+                
                 done = bool(getattr(inst, 'done', False))
                 outs = []
                 try:
@@ -238,6 +272,13 @@ class WorldRecorderHTTPHandler(WorldHTTPHandler):
                         sess = self.api_interface.sessions.setdefault(sid, {})
                         sess['outputs'] = [str(x) for x in outs]
                         sess['done'] = done
+                        
+                        # Perform cleanup if recording is done and cleanup was requested
+                        if done and sess.get('cleanup_frames', True) and not sess.get('cleaned_up', False):
+                            output_hint = sess.get('output_hint', '')
+                            if output_hint:
+                                self._cleanup_frame_directories(output_hint)
+                                sess['cleaned_up'] = True
                 except Exception:
                     pass
                 return {'success': True, 'done': done, 'outputs': outs, 'session_id': getattr(self.api_interface, 'current_session_id', None)}
@@ -528,3 +569,118 @@ class WorldRecorderHTTPHandler(WorldHTTPHandler):
             return self.api_interface.run_on_main(_do_capture)
         else:
             return _do_capture()
+    
+    def _cleanup_frame_directories(self, output_path: str) -> None:
+        """Clean up temporary frame directories created during recording"""
+        logger.debug(f"_cleanup_frame_directories called with output_path: {output_path}")
+        try:
+            if not output_path:
+                logger.debug("No output_path provided, returning")
+                return
+                
+            output_file = Path(output_path)
+            parent_dir = output_file.parent
+            base_name = output_file.stem
+            
+            logger.debug(f"Looking for frame directories with pattern: {base_name}_frames in {parent_dir}")
+            
+            # Look for frame directories with pattern: {base_name}_frames
+            frame_dir_pattern = f"{base_name}_frames"
+            
+            cleaned_dirs = []
+            for item in parent_dir.glob(f"{frame_dir_pattern}*"):
+                logger.debug(f"Found potential frame directory: {item}")
+                if item.is_dir() and frame_dir_pattern in item.name:
+                    try:
+                        logger.debug(f"Removing directory: {item}")
+                        shutil.rmtree(item)
+                        cleaned_dirs.append(str(item))
+                        logger.debug(f"Successfully removed: {item}")
+                    except Exception as e:
+                        logger.warning(f"Failed to remove {item}: {e}")
+                        pass  # Continue with other directories
+            
+            if cleaned_dirs:
+                logger.info(f"Cleaned up {len(cleaned_dirs)} frame directories: {cleaned_dirs}")
+            else:
+                logger.debug("No frame directories found to clean up")
+                    
+        except Exception as e:
+            logger.error(f"Exception in _cleanup_frame_directories: {e}")
+            pass  # Fail silently - cleanup is best effort
+
+    def _background_cleanup_monitor(self, session_id: str, output_path: str):
+        """Background thread to monitor completion and trigger automatic cleanup."""
+        logger = logging.getLogger('worldrecorder')
+        
+        try:
+            import omni.kit.capture.viewport as vcap
+            inst = vcap.CaptureExtension.get_instance()
+            
+            logger.debug(f"Starting background cleanup monitor for session {session_id}")
+            
+            # Poll until recording/encoding is complete
+            while not getattr(inst, 'done', False):
+                time.sleep(1.5)  # Poll every 1.5 seconds
+            
+            # Check if session still exists and cleanup is enabled
+            if session_id in self.api_interface.sessions:
+                sess = self.api_interface.sessions[session_id]
+                if sess.get('cleanup_frames', True) and not sess.get('cleaned_up', False):
+                    logger.info(f"Background cleanup triggered for completed session {session_id}")
+                    self._cleanup_frame_directories(output_path)
+                    sess['cleaned_up'] = True
+                else:
+                    logger.debug(f"Skipping cleanup for session {session_id} (cleanup_frames={sess.get('cleanup_frames', True)}, cleaned_up={sess.get('cleaned_up', False)})")
+            else:
+                logger.debug(f"Session {session_id} no longer exists, skipping cleanup")
+                
+        except Exception as e:
+            logger.error(f"Background cleanup monitor error for session {session_id}: {e}")
+    
+    def _handle_cleanup_frames(self, method: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Manual cleanup of frame directories for a specific session or output path"""
+        try:
+            session_id = data.get('session_id')
+            output_path = data.get('output_path')
+            
+            # If session_id provided, use session's output_hint
+            if session_id:
+                if hasattr(self.api_interface, 'sessions') and session_id in self.api_interface.sessions:
+                    session = self.api_interface.sessions[session_id]
+                    output_path = session.get('output_hint', '')
+                else:
+                    return {'success': False, 'error': f'Session {session_id} not found'}
+            
+            # Must have output_path to proceed
+            if not output_path:
+                return {'success': False, 'error': 'Either session_id or output_path is required'}
+            
+            # Perform cleanup
+            try:
+                output_file = Path(output_path)
+                parent_dir = output_file.parent
+                base_name = output_file.stem
+                frame_dir_pattern = f"{base_name}_frames"
+                
+                cleaned_dirs = []
+                for item in parent_dir.glob(f"{frame_dir_pattern}*"):
+                    if item.is_dir() and frame_dir_pattern in item.name:
+                        try:
+                            shutil.rmtree(item)
+                            cleaned_dirs.append(str(item))
+                        except Exception:
+                            continue  # Skip directories that can't be removed
+                
+                return {
+                    'success': True,
+                    'cleaned_directories': cleaned_dirs,
+                    'count': len(cleaned_dirs),
+                    'output_path': output_path
+                }
+                
+            except Exception as e:
+                return {'success': False, 'error': f'Cleanup failed: {e}'}
+                
+        except Exception as e:
+            return {'success': False, 'error': f'cleanup error: {e}'}

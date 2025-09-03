@@ -38,6 +38,9 @@ scripts/launch_agent_world.ps1
 # Screenshots
 screenshots/
 
+# Development docs (local notes)
+docs/dev_docs/
+
 # MCP tools in development
 mcp-servers/tools/mcpctl
 

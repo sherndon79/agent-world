@@ -47,7 +47,7 @@ class WorldRecorderResponseFormatter:
     
     SUCCESS_TEMPLATES = {
         'start_video': "🎥 Video recording started: {output_path}",
-        'stop_video': "⏹️ Video recording stopped",
+        'cancel_video': "⏹️ Video recording cancelled",
         'capture_frame': "📸 Frame capture started",
         'get_status': "📊 WorldRecorder Status",
         'health_check': "✅ Extension Health: {status}"
@@ -272,11 +272,29 @@ class WorldRecorderMCP:
                     }
                 ),
                 Tool(
-                    name="worldrecorder_metrics_prometheus",
+                    name="worldrecorder_metrics_prometheus", 
                     description="Get WorldRecorder metrics in Prometheus format for monitoring systems",
                     inputSchema={
                         "type": "object",
                         "properties": {},
+                        "required": []
+                    }
+                ),
+                Tool(
+                    name="worldrecorder_cleanup_frames",
+                    description="Manually clean up temporary frame directories for a session or output path",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "session_id": {
+                                "type": "string",
+                                "description": "Session ID to clean up (will use session's output path)"
+                            },
+                            "output_path": {
+                                "type": "string", 
+                                "description": "Direct output path to clean up frame directories for"
+                            }
+                        },
                         "required": []
                     }
                 ),
@@ -329,6 +347,11 @@ class WorldRecorderMCP:
                                 "type": "boolean",
                                 "description": "Show progress UI during recording",
                                 "default": False
+                            },
+                            "cleanup_frames": {
+                                "type": "boolean",
+                                "description": "Automatically clean up temporary frame directories after recording",
+                                "default": True
                             }
                         },
                         "required": ["output_path", "duration_sec"]
@@ -347,14 +370,15 @@ class WorldRecorderMCP:
                             "height": {"type": "integer", "minimum": 64, "maximum": 4320},
                             "file_type": {"type": "string", "enum": [".mp4", ".avi", ".mov"], "default": ".mp4"},
                             "session_id": {"type": "string"},
-                            "show_progress": {"type": "boolean", "default": False}
+                            "show_progress": {"type": "boolean", "default": False},
+                            "cleanup_frames": {"type": "boolean", "description": "Automatically clean up temporary frame directories after recording", "default": True}
                         },
                         "required": ["output_path", "duration_sec"]
                     }
                 ),
                 Tool(
-                    name="worldrecorder_stop_recording",
-                    description="Stop recording via recording/* API (alias of video/stop)",
+                    name="worldrecorder_cancel_recording",
+                    description="Cancel recording via recording/* API - stops capture without encoding",
                     inputSchema={
                         "type": "object",
                         "properties": {
@@ -373,8 +397,8 @@ class WorldRecorderMCP:
                     }
                 ),
                 Tool(
-                    name="worldrecorder_stop_video",
-                    description="Stop current video recording and finalize output file",
+                    name="worldrecorder_cancel_video",
+                    description="Cancel current video recording - stops capture without encoding",
                     inputSchema={
                         "type": "object",
                         "properties": {},
@@ -460,8 +484,8 @@ class WorldRecorderMCP:
                     return await self._health_check(arguments)
                 elif name == "worldrecorder_start_video":
                     return await self._start_video(arguments)
-                elif name == "worldrecorder_stop_video":
-                    return await self._stop_video(arguments)
+                elif name == "worldrecorder_cancel_video":
+                    return await self._cancel_video(arguments)
                 elif name == "worldrecorder_capture_frame":
                     return await self._capture_frame(arguments)
                 elif name == "worldrecorder_get_status":
@@ -470,10 +494,12 @@ class WorldRecorderMCP:
                     return await self._get_metrics(arguments)
                 elif name == "worldrecorder_metrics_prometheus":
                     return await self._metrics_prometheus(arguments)
+                elif name == "worldrecorder_cleanup_frames":
+                    return await self._cleanup_frames(arguments)
                 elif name == "worldrecorder_start_recording":
                     return await self._start_recording(arguments)
-                elif name == "worldrecorder_stop_recording":
-                    return await self._stop_recording(arguments)
+                elif name == "worldrecorder_cancel_recording":
+                    return await self._cancel_recording(arguments)
                 elif name == "worldrecorder_recording_status":
                     return await self._recording_status(arguments)
                 else:
@@ -543,24 +569,24 @@ class WorldRecorderMCP:
                 text=self.formatter.format_error("start_video", f"Unexpected error: {str(e)}")
             )]
     
-    async def _stop_video(self, arguments: Dict[str, Any]) -> List[TextContent]:
-        """Stop current video recording and finalize output file"""
+    async def _cancel_video(self, arguments: Dict[str, Any]) -> List[TextContent]:
+        """Cancel current video recording - stops capture without encoding"""
         try:
-            response = await self._make_request("POST", "/video/stop", arguments, "video_stop")
+            response = await self._make_request("POST", "/video/cancel", arguments, "video_cancel")
             return [TextContent(
                 type="text",
-                text=self.formatter.format_success("stop_video", response)
+                text=self.formatter.format_success("cancel_video", response)
             )]
         
         except aiohttp.ClientError as e:
             return [TextContent(
                 type="text",
-                text=self.formatter.format_error("stop_video", str(e))
+                text=self.formatter.format_error("cancel_video", str(e))
             )]
         except Exception as e:
             return [TextContent(
                 type="text",
-                text=self.formatter.format_error("stop_video", f"Unexpected error: {str(e)}")
+                text=self.formatter.format_error("cancel_video", f"Unexpected error: {str(e)}")
             )]
     
     async def _capture_frame(self, arguments: Dict[str, Any]) -> List[TextContent]:
@@ -674,15 +700,15 @@ class WorldRecorderMCP:
         except Exception as e:
             return [TextContent(type="text", text=self.formatter.format_error("start_video", f"Unexpected error: {str(e)}"))]
 
-    async def _stop_recording(self, arguments: Dict[str, Any]) -> List[TextContent]:
-        """Stop recording via recording/* API"""
+    async def _cancel_recording(self, arguments: Dict[str, Any]) -> List[TextContent]:
+        """Cancel recording via recording/* API - stops capture without encoding"""
         try:
-            response = await self._make_request("POST", "/recording/stop", arguments, "video_stop")
-            return [TextContent(type="text", text=self.formatter.format_success("stop_video", response))]
+            response = await self._make_request("POST", "/recording/cancel", arguments, "video_cancel")
+            return [TextContent(type="text", text=self.formatter.format_success("cancel_video", response))]
         except aiohttp.ClientError as e:
-            return [TextContent(type="text", text=self.formatter.format_error("stop_video", str(e)))]
+            return [TextContent(type="text", text=self.formatter.format_error("cancel_video", str(e)))]
         except Exception as e:
-            return [TextContent(type="text", text=self.formatter.format_error("stop_video", f"Unexpected error: {str(e)}"))]
+            return [TextContent(type="text", text=self.formatter.format_error("cancel_video", f"Unexpected error: {str(e)}"))]
 
     async def _recording_status(self, arguments: Dict[str, Any]) -> List[TextContent]:
         """Get recording status via recording/* API"""
@@ -696,6 +722,30 @@ class WorldRecorderMCP:
             return [TextContent(type="text", text=self.formatter.format_error("get_status", str(e)))]
         except Exception as e:
             return [TextContent(type="text", text=self.formatter.format_error("get_status", f"Unexpected error: {str(e)}"))]
+
+    async def _cleanup_frames(self, arguments: Dict[str, Any]) -> List[TextContent]:
+        """Manually clean up temporary frame directories"""
+        try:
+            response = await self._make_request("POST", "/cleanup/frames", arguments, "cleanup")
+            if response.get('success'):
+                count = response.get('count', 0)
+                if count > 0:
+                    cleaned_dirs = response.get('cleaned_directories', [])
+                    message = f"🧹 Cleaned up {count} frame director{'y' if count == 1 else 'ies'}"
+                    if len(cleaned_dirs) <= 3:
+                        message += f":\n• " + "\n• ".join(cleaned_dirs)
+                    else:
+                        message += f":\n• " + "\n• ".join(cleaned_dirs[:3]) + f"\n• ... and {len(cleaned_dirs)-3} more"
+                else:
+                    message = "🧹 No frame directories found to clean up"
+                return [TextContent(type="text", text=message)]
+            else:
+                error_msg = response.get('error', 'Unknown error')
+                return [TextContent(type="text", text=f"❌ Cleanup failed: {error_msg}")]
+        except aiohttp.ClientError as e:
+            return [TextContent(type="text", text=self.formatter.format_error("cleanup", str(e)))]
+        except Exception as e:
+            return [TextContent(type="text", text=self.formatter.format_error("cleanup", f"Unexpected error: {str(e)}"))]
     
     async def run(self):
         """Run the MCP server"""

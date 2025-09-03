@@ -12,11 +12,20 @@ from .security import SecurityManager
 from .config import WorldRecorderConfig
 from agent_world_metrics import WorldExtensionMetrics
 
+# Import centralized logging
+try:
+    from agent_world_logging import setup_logging
+except ImportError:
+    setup_logging = None
+
 logger = logging.getLogger(__name__)
 
 
 class HTTPAPIInterface:
     def __init__(self, host: str = '127.0.0.1', port: int = 0):
+        # Initialize unified logging once
+        if setup_logging:
+            setup_logging('worldrecorder')
         self._server: Optional[ThreadingHTTPServer] = None
         self._thread: Optional[threading.Thread] = None
         self._api_stats = {
