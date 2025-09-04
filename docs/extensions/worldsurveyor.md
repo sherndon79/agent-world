@@ -5,6 +5,17 @@ Mark and organize spatial locations in Isaac Sim with waypoints and groups. Worl
 ![WorldSurveyor Isaac Menu](../resources/images/Agent_WorldSurveyor_Isaac_Menu.png)
 *WorldSurveyor extension interface in Isaac Sim showing waypoint management tools and spatial marking controls.*
 
+## For New Users
+
+**WorldSurveyor lets you mark and organize important locations in 3D space.** Instead of trying to remember coordinates, you can:
+
+- **Mark locations**: "Create a waypoint at the current camera position called 'good overview'"  
+- **Organize spatially**: Group waypoints by purpose (camera angles, spawn points, etc.)
+- **Navigate easily**: "Go to the 'aerial view' waypoint" to jump between locations
+- **Use the web interface**: Visit `http://localhost:8891` for visual waypoint management
+
+**Both AI and manual approaches work** - use Claude Code for quick marking or the web interface for detailed organization.
+
 ## Features
 
 ### Waypoint Management

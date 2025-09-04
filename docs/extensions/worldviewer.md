@@ -5,6 +5,16 @@ Control camera positioning and create cinematic movements in Isaac Sim. WorldVie
 ![WorldViewer Isaac Menu](../resources/images/Agent_WorldViewer_Isaac_Menu.png)
 *WorldViewer extension interface in Isaac Sim showing camera control tools and cinematic movement options.*
 
+## For New Users
+
+**WorldViewer lets AI agents control the Isaac Sim camera programmatically.** Instead of manually navigating with mouse controls, you can:
+
+- **Ask Claude Code**: "Move the camera to show the scene from above" or "Create a smooth flythrough"
+- **Position precisely**: Set exact camera positions and targets through natural language
+- **Create cinematics**: Generate smooth camera movements for presentations or analysis
+
+**You don't need to use the HTTP API directly** - the MCP integration handles all the technical details automatically.
+
 ## Features
 
 ### Camera Positioning

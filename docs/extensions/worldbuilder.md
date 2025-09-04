@@ -5,6 +5,16 @@ Build and manipulate 3D scenes programmatically in Isaac Sim. WorldBuilder provi
 ![WorldBuilder Isaac Menu](../resources/images/Agent_WorldBuilder_Isaac_Menu.png)
 *WorldBuilder extension interface in Isaac Sim showing scene creation tools and extension controls.*
 
+## For New Users
+
+**WorldBuilder lets AI agents build 3D scenes programmatically.** Instead of manually placing objects in Isaac Sim, you can:
+
+- **Ask Claude Code**: "Create a simple city scene with buildings and roads"
+- **Build procedurally**: Generate complex scenes through natural language commands
+- **Use MCP tools**: All functionality is accessible through Claude Code's MCP integration
+
+**You don't need to use the HTTP API directly** - the MCP integration handles all the technical details automatically.
+
 ## Features
 
 ### Primitive Creation

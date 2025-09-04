@@ -5,6 +5,17 @@ Capture screenshots and record videos from Isaac Sim viewports. WorldRecorder en
 ![WorldRecorder Isaac Menu](../resources/images/Agent_WorldRecorder_Isaac_Menu.png)
 *WorldRecorder extension interface in Isaac Sim showing video recording controls and capture settings.*
 
+## For New Users
+
+**WorldRecorder captures screenshots and videos from Isaac Sim programmatically.** Instead of using external screen recording software, you can:
+
+- **Ask Claude Code**: "Take a screenshot of the current scene" or "Record a 10-second video"
+- **Capture specific moments**: Automatically screenshot after scene changes or camera moves
+- **Document workflows**: Generate visual records of simulations and scene modifications
+- **Create presentations**: Record smooth camera movements showcasing your 3D scenes
+
+**You don't need to use the HTTP API directly** - the MCP integration handles all the technical details automatically.
+
 ## Features
 
 ### Screenshot Capture
