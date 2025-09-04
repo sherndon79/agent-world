@@ -2,6 +2,9 @@
 
 Control camera positioning and create cinematic movements in Isaac Sim. WorldViewer enables AI agents to navigate 3D scenes with smooth camera transitions, orbital controls, and automated framing.
 
+![WorldViewer Isaac Menu](../resources/images/Agent_WorldViewer_Isaac_Menu.png)
+*WorldViewer extension interface in Isaac Sim showing camera control tools and cinematic movement options.*
+
 ## Features
 
 ### Camera Positioning

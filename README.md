@@ -8,6 +8,10 @@ A suite of Isaac Sim extensions that provide AI agents with comprehensive world 
 
 agenTW∞rld Extensions enable AI agents to build, view, navigate, and record 3D worlds in Isaac Sim through a consistent set of HTTP APIs and Model Context Protocol (MCP) tools. Each extension provides specialized functionality while maintaining a unified architecture for seamless integration.
 
+![Camera Tour](docs/resources/videos/camera_tour.mp4)
+
+*Experience a guided tour through the agenTW∞rld Extensions showcasing camera controls, waypoint navigation, and scene interaction capabilities.*
+
 ## Extensions
 
 ### 🏗️ WorldBuilder
@@ -56,6 +60,9 @@ Capture screenshots and record videos from Isaac Sim viewports. Generate visual 
 2. **Start Services** - Extensions automatically start HTTP servers on unique ports
 3. **Integrate with AI** - Use MCP clients or direct HTTP APIs for AI agent integration
 
+![Claude Code MCP Integration](docs/resources/images/Claude_Code_AWorldMCPUse.png)
+*Claude Code MCP integration in action - AI agents can seamlessly create scenes, navigate cameras, place waypoints, and interact with 3D worlds through natural language commands.*
+
 ```python
 # Example: Create a simple scene
 import requests
@@ -79,6 +86,16 @@ requests.post('http://localhost:8892/capture_frame', json={
     'output_path': '/tmp/my_scene.png'
 })
 ```
+
+## Isaac Sim Integration
+
+Once installed, the agenTW∞rld Extensions integrate seamlessly into Isaac Sim's interface:
+
+![Agent World Extensions in Extensions Menu](docs/resources/images/Agent_World_Exts_Under_ExtsMenu.png)
+*All four agenTW∞rld Extensions available in Isaac Sim's Extensions browser, showing version information and installation status.*
+
+![Agent World Extensions Docked Interface](docs/resources/images/Agent_World_Exts_Docked.png)
+*Extensions docked in Isaac Sim's workspace, providing direct access to controls and real-time status information alongside the 3D viewport.*
 
 ## Architecture
 

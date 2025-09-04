@@ -20,6 +20,9 @@ The WorldSurveyor Waypoint Manager is a comprehensive web-based interface for cr
 2. Navigate to `http://localhost:8891` in your web browser
 3. The waypoint manager interface will load automatically
 
+![WorldSurveyor Waypoint Manager Interface](../resources/images/WorldSurveyor_Waypoint_Manager.png)
+*The WorldSurveyor Waypoint Manager web interface showing hierarchical groups, waypoint list with bulk operations, and comprehensive filtering options.*
+
 ## 📍 Core Features
 
 ### Waypoint Management
@@ -43,6 +46,9 @@ The WorldSurveyor Waypoint Manager is a comprehensive web-based interface for cr
 - **Toggle visibility** for all markers or individual waypoints
 - **Color-coded markers** based on waypoint type
 - **Automatic cleanup** when waypoints are deleted
+
+![WorldSurveyor Debug Draw Points](../resources/images/WorldSurveyor_DebugDraw_Points.png)
+*Waypoint markers visualized in the Isaac Sim viewport as colored debug draw points, providing spatial context for navigation and scene organization.*
 
 ## 📁 Group Organization
 
@@ -137,6 +143,9 @@ The Groups section includes an **"Include child groups"** checkbox:
 - **Automatic camera positioning** for camera_position waypoints
 - **Smooth camera transitions** in Isaac Sim viewport
 - **Target-aware navigation** respects waypoint target directions
+
+![WorldSurveyor Toolbar Integration](../resources/images/WorldSurveyor_Toolbar_Scroll_To_Select.png)
+*WorldSurveyor toolbar integration in Isaac Sim showing the Waypoint Capture Tool for creating waypoints at current camera positions.*
 
 ### Camera Integration
 - **Real-time position capture** from Isaac Sim camera
@@ -298,6 +307,11 @@ The Groups section includes an **"Include child groups"** checkbox:
 - Review the HTTP API logs for debugging
 - Create issues in the project repository for bugs or feature requests
 - Include screenshots and error messages when reporting issues
+
+### MCP Integration Example
+
+![Claude Code MCP Usage](../resources/images/Claude_Code_AWorldMCPUse.png)
+*Example of using WorldSurveyor through Claude Code's MCP integration, showing waypoint creation, navigation, and AI-powered spatial understanding workflows.*
 
 ---
 

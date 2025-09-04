@@ -2,6 +2,9 @@
 
 Capture screenshots and record videos from Isaac Sim viewports. WorldRecorder enables AI agents to generate visual documentation, create training datasets, and record simulations with professional quality output.
 
+![WorldRecorder Isaac Menu](../resources/images/Agent_WorldRecorder_Isaac_Menu.png)
+*WorldRecorder extension interface in Isaac Sim showing video recording controls and capture settings.*
+
 ## Features
 
 ### Screenshot Capture

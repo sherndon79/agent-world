@@ -2,6 +2,9 @@
 
 Build and manipulate 3D scenes programmatically in Isaac Sim. WorldBuilder provides comprehensive scene creation capabilities for AI agents, from simple primitive placement to complex hierarchical scene construction.
 
+![WorldBuilder Isaac Menu](../resources/images/Agent_WorldBuilder_Isaac_Menu.png)
+*WorldBuilder extension interface in Isaac Sim showing scene creation tools and extension controls.*
+
 ## Features
 
 ### Primitive Creation

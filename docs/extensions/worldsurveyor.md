@@ -2,6 +2,9 @@
 
 Mark and organize spatial locations in Isaac Sim with waypoints and groups. WorldSurveyor enables AI agents to create persistent spatial references for navigation, annotation, and scene organization.
 
+![WorldSurveyor Isaac Menu](../resources/images/Agent_WorldSurveyor_Isaac_Menu.png)
+*WorldSurveyor extension interface in Isaac Sim showing waypoint management tools and spatial marking controls.*
+
 ## Features
 
 ### Waypoint Management
