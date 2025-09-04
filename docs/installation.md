@@ -216,28 +216,12 @@ Check that extensions loaded successfully:
    - WorldRecorder: Capture controls
 
 ### Quick Test
-```python
-import requests
-
-# Test basic functionality
-print("Testing extensions...")
-
-# WorldBuilder
-response = requests.get('http://localhost:8899/health')
-print(f"WorldBuilder: {'✓' if response.status_code == 200 else '✗'}")
-
-# WorldViewer  
-response = requests.get('http://localhost:8900/health')
-print(f"WorldViewer: {'✓' if response.status_code == 200 else '✗'}")
-
-# WorldSurveyor
-response = requests.get('http://localhost:8891/health') 
-print(f"WorldSurveyor: {'✓' if response.status_code == 200 else '✗'}")
-
-# WorldRecorder
-response = requests.get('http://localhost:8892/health')
-print(f"WorldRecorder: {'✓' if response.status_code == 200 else '✗'}")
+Use the provided smoke test script for verification:
+```bash
+bash scripts/smoke_test.sh
 ```
+
+This script automatically tests all extension health endpoints and handles authentication if enabled.
 
 ## MCP Integration Setup
 
