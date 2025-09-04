@@ -323,7 +323,7 @@ class SynchronousCinematicController:
     DEFAULT_FPS = 30
     MAX_DURATION = 60.0  # Maximum movement duration in seconds
     MIN_DURATION = 0.1   # Minimum movement duration in seconds
-    MAX_CONCURRENT_MOVEMENTS = 3  # Reduced for capture stability during recording
+    MAX_CONCURRENT_MOVEMENTS = 10  # Allow more queued camera transitions for better workflow
     MOVEMENT_TRANSITION_DELAY = 0.2  # Small delay between movements for capture sync
     
     def __init__(self, camera_controller: CameraController):
@@ -424,7 +424,7 @@ class SynchronousCinematicController:
         try:
             # Check concurrent movement limit
             if len(self.active_movements) >= self.MAX_CONCURRENT_MOVEMENTS:
-                raise ValueError(f"Too many concurrent movements (max: {self.MAX_CONCURRENT_MOVEMENTS})")
+                raise ValueError(f"Camera movement queue full ({len(self.active_movements)}/{self.MAX_CONCURRENT_MOVEMENTS}). Use 'stop_movement' API to cancel active movements or wait for completion.")
             
             # Validate duration
             duration = params.get('duration', 3.0)
