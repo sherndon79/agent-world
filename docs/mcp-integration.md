@@ -15,6 +15,12 @@ agenTW∞rld Extensions provide comprehensive Model Context Protocol (MCP) integ
 
 Each extension includes a dedicated MCP server that translates between MCP protocol and the extension's HTTP APIs, providing seamless AI agent integration.
 
+**Key Orchestration Features:**
+- **Independent MCP servers** enable parallel and sequential workflows
+- **No inter-server dependencies** allow flexible AI-driven orchestration
+- **Unified authentication** across all servers for seamless integration
+- **Consistent error handling** enables robust multi-server workflows
+
 ## MCP Servers
 
 ### Available Servers

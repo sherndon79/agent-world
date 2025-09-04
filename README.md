@@ -100,6 +100,34 @@ Once installed, the agenTW∞rld Extensions integrate seamlessly into Isaac Sim'
 - **Thread Safety** - Proper Isaac Sim threading for UI and simulation stability
 - **Extensible Design** - Modular architecture for easy customization
 
+## Agent Orchestration
+
+**agenTW∞rld Extensions are designed for AI agent orchestration.** Each extension operates independently with no inter-extension dependencies, allowing AI agents to:
+
+### **Compose Complex Workflows**
+```
+AI Agent: "Create a city scene, position camera for aerial view, mark key locations, then record a flythrough"
+↓
+WorldBuilder → WorldViewer → WorldSurveyor → WorldRecorder
+```
+
+### **Independent Operation**
+- **No coupling**: Extensions don't depend on each other
+- **À la carte usage**: Install and run only the extensions you need
+- **Partial deployments**: Use WorldBuilder alone, or just WorldViewer + WorldRecorder
+- **Parallel execution**: AI agents can use multiple extensions simultaneously  
+- **Fault isolation**: One extension failing doesn't break others
+- **Flexible orchestration**: AI decides the sequence and combination
+
+### **AI-Driven Coordination**
+Rather than hard-coded workflows, **AI agents orchestrate extensions dynamically** based on user needs:
+- Analyze requirements and determine which extensions to use
+- Sequence operations across multiple extensions
+- Handle errors and retry strategies
+- Adapt workflows based on intermediate results
+
+This architecture enables emergent, intelligent workflows that weren't explicitly programmed.
+
 ## Documentation
 
 - [Installation Guide](docs/installation.md)
