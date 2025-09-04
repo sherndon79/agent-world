@@ -73,6 +73,7 @@ class WorldViewerHTTPHandler(WorldHTTPHandler):
             'camera/orbit': self._route_camera_orbit,
             'camera/smooth_move': self._route_smooth_move,
             'camera/orbit_shot': self._route_orbit_shot,
+            'camera/arc_shot': self._route_arc_shot,
             'camera/movement_status': self._route_movement_status,
             'movement/stop': self._route_stop_movement,
             'camera/stop_movement': self._route_stop_movement,
@@ -172,6 +173,9 @@ class WorldViewerHTTPHandler(WorldHTTPHandler):
 
     def _route_orbit_shot(self, method: str, data: Dict[str, Any]) -> Dict[str, Any]:
         return self._handle_orbit_shot(data)
+
+    def _route_arc_shot(self, method: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        return self._handle_arc_shot(data)
 
     def _route_stop_movement(self, method: str, data: Dict[str, Any]) -> Dict[str, Any]:
         return self._handle_stop_movement(data)
@@ -298,11 +302,19 @@ class WorldViewerHTTPHandler(WorldHTTPHandler):
         except Exception as e:
             return {'success': False, 'error': str(e)}
 
-    def _handle_stop_movement(self, data: Dict) -> Dict:
-        """Stop ongoing camera movement."""
+    def _handle_arc_shot(self, data: Dict) -> Dict:
+        """Handle cinematic arc shot with curved Bezier path."""
         try:
-            # Queue the operation for main thread processing
-            return self._queue_camera_operation('stop_movement', data)
+            # Queue the operation for main thread processing (cinematic controller generates keyframes)
+            return self._queue_camera_operation('arc_shot', data)
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+
+    def _handle_stop_movement(self, data: Dict) -> Dict:
+        """Stop all ongoing camera movement."""
+        try:
+            # Execute stop_movement directly and return rich response immediately
+            return self.api_interface._handle_stop_movement({})
                 
         except Exception as e:
             return {'success': False, 'error': str(e)}

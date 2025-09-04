@@ -54,6 +54,7 @@ class CameraResponseFormatter:
         'set_position': "✅ Camera position set to {position}",
         'frame_object': "✅ Camera framed on object: {object_path}",
         'orbit_camera': "✅ Camera positioned in orbit around {center}",
+        'stop_movement': "✅ {message}",
         'get_status': "📷 Camera Status",
         'health_check': "✅ Extension Health: {status}"
     }
@@ -123,6 +124,27 @@ class CameraResponseFormatter:
             
             if camera_status.get('camera_path'):
                 message += f"• Camera Path: {camera_status['camera_path']}\n"
+        elif operation == 'stop_movement':
+            # Format rich stop_movement response
+            message = f"✅ {response.get('message', 'Stopped camera movement')}\n"
+            
+            if response.get('stopped_at_position'):
+                pos = response['stopped_at_position']
+                message += f"\n📍 Camera Position: [{pos[0]:.2f}, {pos[1]:.2f}, {pos[2]:.2f}]"
+            
+            if response.get('stopped_at_target'):
+                target = response['stopped_at_target']
+                message += f"\n🎯 Looking At: [{target[0]:.2f}, {target[1]:.2f}, {target[2]:.2f}]"
+            
+            if response.get('interrupted_movement_id'):
+                message += f"\n🎬 Interrupted: {response['interrupted_movement_id']}"
+                if response.get('interrupted_operation'):
+                    message += f" ({response['interrupted_operation']})"
+                if response.get('progress_when_stopped'):
+                    message += f" - {response['progress_when_stopped']} complete"
+            
+            if response.get('stopped_count', 0) > 1:
+                message += f"\n📊 Total Stopped: {response['stopped_count']} movements"
         elif operation == 'health_check':
             # Update for standardized health format
             message = "✅ WorldViewer Health\n"
@@ -399,17 +421,64 @@ class WorldViewerMCP:
                     ),
                     
                     Tool(
+                        name="worldviewer_arc_shot",
+                        description="Cinematic arc shot with curved Bezier path between two camera positions",
+                        inputSchema={
+                            "type": "object",
+                            "properties": {
+                                "start_position": {
+                                    "type": "array",
+                                    "items": {"type": "number"},
+                                    "minItems": 3,
+                                    "maxItems": 3,
+                                    "description": "Starting camera position [x, y, z]"
+                                },
+                                "end_position": {
+                                    "type": "array", 
+                                    "items": {"type": "number"},
+                                    "minItems": 3,
+                                    "maxItems": 3,
+                                    "description": "Ending camera position [x, y, z]"
+                                },
+                                "start_target": {
+                                    "type": "array",
+                                    "items": {"type": "number"},
+                                    "minItems": 3,
+                                    "maxItems": 3,
+                                    "description": "Starting look-at target [x, y, z] (optional)"
+                                },
+                                "end_target": {
+                                    "type": "array",
+                                    "items": {"type": "number"},
+                                    "minItems": 3,
+                                    "maxItems": 3,
+                                    "description": "Ending look-at target [x, y, z] (optional)"
+                                },
+                                "duration": {
+                                    "type": "number",
+                                    "minimum": 0.1,
+                                    "maximum": 60.0,
+                                    "default": 6.0,
+                                    "description": "Duration in seconds"
+                                },
+                                "movement_style": {
+                                    "type": "string",
+                                    "enum": ["standard"],
+                                    "default": "standard",
+                                    "description": "Arc movement style"
+                                }
+                            },
+                            "required": ["start_position", "end_position"]
+                        }
+                    ),
+                    
+                    Tool(
                         name="worldviewer_stop_movement",
                         description="Stop an active cinematic movement",
                         inputSchema={
                             "type": "object",
-                            "properties": {
-                                "movement_id": {
-                                    "type": "string",
-                                    "description": "ID of the movement to stop"
-                                }
-                            },
-                            "required": ["movement_id"]
+                            "properties": {},
+                            "additionalProperties": False
                         }
                     ),
                     
@@ -476,6 +545,8 @@ class WorldViewerMCP:
                 # Cinematic movement tools
                 elif name == "worldviewer_smooth_move":
                     return await self._smooth_move(arguments)
+                elif name == "worldviewer_arc_shot":
+                    return await self._arc_shot(arguments)
                 elif name == "worldviewer_stop_movement":
                     return await self._stop_movement(arguments)
                 elif name == "worldviewer_movement_status":
@@ -686,15 +757,22 @@ class WorldViewerMCP:
             duration=args.get("duration", 3.0)
         )
     
-    async def _stop_movement(self, args: Dict[str, Any]) -> List[TextContent]:
-        """Stop an active cinematic movement"""
-        movement_id = args.get("movement_id")
-        if not movement_id:
-            return [TextContent(type="text", text="❌ Movement ID is required")]
-        
+    async def _arc_shot(self, args: Dict[str, Any]) -> List[TextContent]:
+        """Execute arc shot cinematic movement with curved Bezier path"""
         return await self._execute_camera_operation(
-            "stop_movement", "POST", "/camera/stop_movement", args,
-            movement_id=movement_id
+            "arc_shot", "POST", "/camera/arc_shot", args,
+            start_position=args.get("start_position"),
+            end_position=args.get("end_position"),
+            start_target=args.get("start_target"),
+            end_target=args.get("end_target"),
+            duration=args.get("duration", 6.0)
+        )
+    
+    async def _stop_movement(self, args: Dict[str, Any]) -> List[TextContent]:
+        """Stop all active cinematic movements"""
+        return await self._execute_camera_operation(
+            "stop_movement", "POST", "/camera/stop_movement", {},
+            description="Stopping all camera movements"
         )
     
     async def _movement_status(self, args: Dict[str, Any]) -> List[TextContent]:

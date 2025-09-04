@@ -10,6 +10,7 @@ import math
 import time
 from typing import Dict, List, Optional, Tuple, Callable
 from dataclasses import dataclass
+from collections import deque
 from enum import Enum
 
 import omni.usd
@@ -323,12 +324,15 @@ class SynchronousCinematicController:
     DEFAULT_FPS = 30
     MAX_DURATION = 60.0  # Maximum movement duration in seconds
     MIN_DURATION = 0.1   # Minimum movement duration in seconds
-    MAX_CONCURRENT_MOVEMENTS = 3  # Limit concurrent movements to reduce camera jumping issues
+    MAX_QUEUE_SIZE = 10  # Maximum number of movements (1 active + 9 queued)
     MOVEMENT_TRANSITION_DELAY = 0.2  # Small delay between movements for capture sync
     
     def __init__(self, camera_controller: CameraController):
         self.camera_controller = camera_controller
-        self.active_movements = {}
+        
+        # Sequential queuing system - only one movement active at a time
+        self.active_movement = None  # Single active movement
+        self.movement_queue = deque()  # Queue of pending movements
         self.movement_timer = None
         self.fps = self.DEFAULT_FPS
         self.frame_duration = 1.0 / self.fps  # Time per frame in seconds
@@ -370,45 +374,45 @@ class SynchronousCinematicController:
             self.movement_timer = None
     
     def _update_movements(self):
-        """Update all active movements"""
-        if not self.active_movements:
-            return  # Early exit if no movements
+        """Update the single active movement (sequential processing)"""
+        if not self.active_movement:
+            return  # No active movement
             
         current_time = time.time()
-        completed_movements = []
+        movement = self.active_movement
         
-        for movement_id, movement in self.active_movements.items():
-            try:
-                # Check if movement is complete
-                elapsed = current_time - movement.start_time
-                if elapsed >= movement.duration:
-                    # Complete the movement with final frame
-                    self._apply_final_frame(movement)
-                    completed_movements.append(movement_id)
-                    continue
+        try:
+            # Check if movement is complete
+            elapsed = current_time - movement.start_time
+            if elapsed >= movement.duration:
+                # Complete the movement with final frame
+                self._apply_final_frame(movement)
+                logger.info(f"Completed cinematic movement: {movement.movement_id}")
                 
-                # Calculate current frame
-                progress = elapsed / movement.duration
-                frame_index = int(progress * len(movement.keyframes))
-                frame_index = min(frame_index, len(movement.keyframes) - 1)
-                
-                # Apply current frame
-                if frame_index < len(movement.keyframes):
-                    frame = movement.keyframes[frame_index]
-                    self.camera_controller.set_position(
-                        frame['position'], 
-                        frame.get('target')
-                    )
-                    movement.current_frame = frame_index
-                
-            except Exception as e:
-                logger.error(f"Error updating movement {movement_id}: {e}")
-                completed_movements.append(movement_id)
-        
-        # Clean up completed movements
-        for movement_id in completed_movements:
-            del self.active_movements[movement_id]
-            logger.info(f"Completed cinematic movement: {movement_id}")
+                # Clear active movement and start next queued movement
+                self.active_movement = None
+                self._start_next_queued_movement()
+                return
+            
+            # Calculate current frame
+            progress = elapsed / movement.duration
+            frame_index = int(progress * len(movement.keyframes))
+            frame_index = min(frame_index, len(movement.keyframes) - 1)
+            
+            # Apply current frame
+            if frame_index < len(movement.keyframes):
+                frame = movement.keyframes[frame_index]
+                self.camera_controller.set_position(
+                    frame['position'], 
+                    frame.get('target')
+                )
+                movement.current_frame = frame_index
+            
+        except Exception as e:
+            logger.error(f"Error updating movement {movement.movement_id}: {e}")
+            # Clear failed movement and try next in queue
+            self.active_movement = None
+            self._start_next_queued_movement()
     
     def _apply_final_frame(self, movement: MovementState):
         """Apply the final frame of a movement"""
@@ -419,32 +423,92 @@ class SynchronousCinematicController:
                 final_frame.get('target')
             )
     
-    def start_movement(self, movement_id: str, operation: str, params: Dict):
-        """Start a new cinematic movement"""
+    def _start_next_queued_movement(self):
+        """Start the next movement in the queue with smooth transition"""
+        if not self.movement_queue:
+            return  # No queued movements
+        
+        # Get next movement from queue
+        next_movement_data = self.movement_queue.popleft()
+        movement_id, operation, params = next_movement_data
+        
+        # Add smooth transition from current camera position if needed
+        params = self._add_smooth_transition(params)
+        
+        # Start the movement immediately (no queue check needed)
+        self._start_movement_immediately(movement_id, operation, params)
+    
+    def _add_smooth_transition(self, params: Dict) -> Dict:
+        """Add smooth transition from current camera position to movement start"""
         try:
-            # Check concurrent movement limit
-            if len(self.active_movements) >= self.MAX_CONCURRENT_MOVEMENTS:
-                raise ValueError(f"Too many concurrent camera movements ({len(self.active_movements)}/{self.MAX_CONCURRENT_MOVEMENTS}). Multiple simultaneous movements cause camera jumping. Use 'stop_movement' API to cancel active movements before starting new ones.")
+            # Get current camera status
+            current_status = self.camera_controller.get_status()
+            if not current_status.get('connected') or not current_status.get('position'):
+                return params  # Can't get current position, proceed without transition
             
-            # Validate duration
+            current_pos = current_status['position']
+            current_target = current_status.get('target')
+            
+            # If the movement has a start_position, ensure smooth transition
+            if 'start_position' in params:
+                start_pos = params['start_position']
+                
+                # Calculate distance to see if transition is needed
+                import math
+                distance = math.sqrt(sum((a - b) ** 2 for a, b in zip(current_pos, start_pos)))
+                
+                # If camera is far from start position, update start position to current position
+                if distance > 1.0:  # Threshold for smooth transition
+                    logger.info(f"Adding smooth transition from {current_pos} to {start_pos}")
+                    params = params.copy()
+                    params['start_position'] = current_pos
+                    if current_target:
+                        params['start_target'] = current_target
+            
+            return params
+            
+        except Exception as e:
+            logger.warning(f"Failed to add smooth transition: {e}")
+            return params
+    
+    def start_movement(self, movement_id: str, operation: str, params: Dict):
+        """Start a new cinematic movement (sequential queuing system)"""
+        try:
+            # Validate duration first
             duration = params.get('duration', 3.0)
             if not (self.MIN_DURATION <= duration <= self.MAX_DURATION):
                 raise ValueError(f"Duration must be between {self.MIN_DURATION} and {self.MAX_DURATION} seconds")
+            
+            # Check queue capacity (prevent infinite queueing)
+            total_queued = len(self.movement_queue) + (1 if self.active_movement else 0)
+            if total_queued >= self.MAX_QUEUE_SIZE:
+                raise ValueError(f"Movement queue full ({total_queued}/{self.MAX_QUEUE_SIZE}). Too many movements queued. Use 'stop_movement' API to cancel queued movements.")
+            
+            # If no active movement, start immediately
+            if self.active_movement is None:
+                logger.info(f"Starting movement immediately: {movement_id} ({operation})")
+                self._start_movement_immediately(movement_id, operation, params)
+            else:
+                # Queue the movement for later
+                logger.info(f"Queueing movement: {movement_id} ({operation}). Position in queue: {len(self.movement_queue) + 1}")
+                self.movement_queue.append((movement_id, operation, params))
+            
+        except Exception as e:
+            logger.error(f"Failed to start movement {movement_id}: {e}")
+            raise  # Re-raise for API error handling
+    
+    def _start_movement_immediately(self, movement_id: str, operation: str, params: Dict):
+        """Start a movement immediately (no queue checks)"""
+        try:
             # Generate keyframes based on operation type
             if operation == 'smooth_move':
                 keyframes = self._generate_smooth_move_keyframes(params)
-            elif operation == 'aerial_shot':
-                keyframes = self._generate_aerial_shot_keyframes(params)
             elif operation == 'orbit_shot':
                 keyframes = self._generate_orbit_shot_keyframes(params)
-            elif operation == 'dolly_shot':
-                keyframes = self._generate_dolly_shot_keyframes(params)
-            elif operation == 'pan_tilt_shot':
-                keyframes = self._generate_pan_tilt_keyframes(params)
             elif operation == 'arc_shot':
                 keyframes = self._generate_arc_shot_keyframes(params)
             else:
-                raise ValueError(f"Unknown operation: {operation}")
+                raise ValueError(f"Unknown operation: {operation}. Supported operations: 'smooth_move', 'orbit_shot', 'arc_shot'")
             
             # Create movement state
             movement = MovementState(
@@ -458,11 +522,13 @@ class SynchronousCinematicController:
                 params=params
             )
             
-            self.active_movements[movement_id] = movement
+            # Set as the single active movement
+            self.active_movement = movement
             logger.info(f"Started cinematic movement: {movement_id} ({operation})")
             
         except Exception as e:
-            logger.error(f"Failed to start movement {movement_id}: {e}")
+            logger.error(f"Failed to start movement immediately {movement_id}: {e}")
+            raise
     
     def _generate_smooth_move_keyframes(self, params: Dict) -> List[Dict]:
         """Generate keyframes for smooth movement"""
@@ -543,27 +609,6 @@ class SynchronousCinematicController:
         
         return keyframes
     
-    def _generate_aerial_shot_keyframes(self, params: Dict) -> List[Dict]:
-        """Generate keyframes for aerial shot"""
-        # Check if keyframe mode (start_position provided)
-        if 'start_position' in params and 'end_position' in params:
-            # Use keyframe parameters directly
-            return self._generate_smooth_move_keyframes({
-                'start_position': params['start_position'],
-                'end_position': params['end_position'],
-                'start_target': params.get('start_target'),
-                'end_target': params.get('end_target'),
-                'duration': params.get('duration', 8.0),
-                'easing_type': params.get('easing_type', 'ease_in_out')
-            })
-        else:
-            # Fallback to original height/radius mode
-            return self._generate_smooth_move_keyframes({
-                'start_position': [0, params['start_height'], params['start_radius']],
-                'end_position': [0, params['end_height'], params['end_radius']],
-                'duration': params.get('duration', 8.0),
-                'easing_type': params.get('easing_type', 'ease_in_out')
-            })
     
     def _generate_orbit_shot_keyframes(self, params: Dict) -> List[Dict]:
         """Generate keyframes for orbit shot"""
@@ -1121,17 +1166,80 @@ class SynchronousCinematicController:
         
         return keyframes
     
-    def stop_movement(self, movement_id: str) -> Dict:
-        """Stop an active movement"""
-        if movement_id in self.active_movements:
-            del self.active_movements[movement_id]
-            return {'success': True, 'message': f'Stopped movement {movement_id}'}
-        return {'success': False, 'error': f'Movement {movement_id} not found'}
+    def stop_movement(self) -> Dict:
+        """Stop all camera movement and return current position details"""
+        stopped_count = 0
+        stopped_movement_id = None
+        
+        # Get current camera position before stopping
+        current_position = None
+        current_target = None
+        try:
+            camera_status = self.camera_controller.get_status()
+            if camera_status.get('connected'):
+                current_position = camera_status.get('position')
+                current_target = camera_status.get('target')
+        except Exception as e:
+            logger.warning(f"Could not get current camera position: {e}")
+        
+        # Stop active movement
+        if self.active_movement:
+            stopped_movement_id = self.active_movement.movement_id
+            operation = self.active_movement.operation
+            progress = 0.0
+            
+            # Calculate progress if possible
+            try:
+                elapsed = time.time() - self.active_movement.start_time
+                progress = min(elapsed / self.active_movement.duration, 1.0)
+            except:
+                pass
+            
+            logger.info(f"Stopping active movement: {stopped_movement_id} ({operation}) at {progress*100:.1f}% progress")
+            self.active_movement = None
+            stopped_count += 1
+        
+        # Clear entire queue
+        if self.movement_queue:
+            queue_count = len(self.movement_queue)
+            logger.info(f"Clearing entire queue: {queue_count} movements")
+            self.movement_queue.clear()
+            stopped_count += queue_count
+        
+        # Build response with position details
+        response = {
+            'success': True,
+            'stopped_count': stopped_count,
+            'message': f'Stopped all camera movement. Total stopped: {stopped_count} movements.'
+        }
+        
+        # Add position information if available
+        if current_position:
+            response['stopped_at_position'] = current_position
+        if current_target:
+            response['stopped_at_target'] = current_target
+        
+        # Add interrupted movement details if there was one
+        if stopped_movement_id:
+            response['interrupted_movement_id'] = stopped_movement_id
+            response['interrupted_operation'] = operation
+            response['progress_when_stopped'] = f"{progress*100:.1f}%"
+            response['message'] += f' Interrupted {operation} movement {stopped_movement_id} at {progress*100:.1f}% completion.'
+        
+        if stopped_count > 0:
+            logger.info(f"Camera stopped at position {current_position}, looking at {current_target}")
+        else:
+            response['message'] = 'No active movements to stop. Camera already idle.'
+        
+        return response
+    
+    # Removed stop_all_movements() - stop_movement() now handles everything
     
     def get_movement_status(self, movement_id: str) -> Dict:
-        """Get status of a movement"""
-        if movement_id in self.active_movements:
-            movement = self.active_movements[movement_id]
+        """Get status of an active or queued movement"""
+        # Check active movement
+        if self.active_movement and self.active_movement.movement_id == movement_id:
+            movement = self.active_movement
             elapsed = time.time() - movement.start_time
             progress = min(elapsed / movement.duration, 1.0)
             
@@ -1139,30 +1247,60 @@ class SynchronousCinematicController:
                 'success': True,
                 'movement_id': movement_id,
                 'operation': movement.operation,
-                'status': movement.status,
+                'status': 'active',
                 'progress': progress,
                 'elapsed_time': elapsed,
-                'total_duration': movement.duration
+                'total_duration': movement.duration,
+                'queue_position': 0  # Active movement is position 0
             }
+        
+        # Check queued movements
+        for i, (queued_id, operation, params) in enumerate(self.movement_queue):
+            if queued_id == movement_id:
+                return {
+                    'success': True,
+                    'movement_id': movement_id,
+                    'operation': operation,
+                    'status': 'queued',
+                    'progress': 0.0,
+                    'elapsed_time': 0.0,
+                    'total_duration': params.get('duration', 3.0),
+                    'queue_position': i + 1  # Queue position (1-indexed)
+                }
         
         return {'success': False, 'error': f'Movement {movement_id} not found'}
     
     def list_active_movements(self) -> Dict:
-        """List all active movements"""
+        """List active movement and queued movements"""
         movements = []
-        for movement_id, movement in self.active_movements.items():
-            elapsed = time.time() - movement.start_time
-            progress = min(elapsed / movement.duration, 1.0)
+        
+        # Add active movement
+        if self.active_movement:
+            elapsed = time.time() - self.active_movement.start_time
+            progress = min(elapsed / self.active_movement.duration, 1.0)
             
             movements.append({
+                'movement_id': self.active_movement.movement_id,
+                'operation': self.active_movement.operation,
+                'status': 'active',
+                'progress': progress,
+                'queue_position': 0
+            })
+        
+        # Add queued movements
+        for i, (movement_id, operation, params) in enumerate(self.movement_queue):
+            movements.append({
                 'movement_id': movement_id,
-                'operation': movement.operation,
-                'status': movement.status,
-                'progress': progress
+                'operation': operation,
+                'status': 'queued',
+                'progress': 0.0,
+                'queue_position': i + 1
             })
         
         return {
             'success': True,
-            'active_movements': movements,
-            'count': len(movements)
+            'movements': movements,  # Changed from 'active_movements' to 'movements'
+            'active_count': 1 if self.active_movement else 0,
+            'queued_count': len(self.movement_queue),
+            'total_count': len(movements)
         }

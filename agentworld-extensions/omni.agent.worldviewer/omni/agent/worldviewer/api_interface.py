@@ -150,6 +150,9 @@ class HTTPAPIInterface:
             elif operation == 'orbit_shot':
                 result = self._start_cinematic_operation('orbit_shot', params)
                 
+            elif operation == 'arc_shot':
+                result = self._start_cinematic_operation('arc_shot', params)
+                
             elif operation == 'stop_movement':
                 result = self._handle_stop_movement(params)
             
@@ -188,14 +191,10 @@ class HTTPAPIInterface:
             return {'success': False, 'error': str(e)}
 
     def _handle_stop_movement(self, params: Dict) -> Dict:
-        """Stop ongoing camera movement."""
+        """Stop all ongoing camera movement."""
         try:
-            movement_id = params.get('movement_id')
-            if not movement_id:
-                return {'success': False, 'error': 'movement_id is required'}
-                
             cinematic_controller = self.camera_controller.get_cinematic_controller()
-            result = cinematic_controller.stop_movement(movement_id)
+            result = cinematic_controller.stop_movement()  # No parameters needed
             return result
             
         except Exception as e:
