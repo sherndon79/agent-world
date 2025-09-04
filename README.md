@@ -12,8 +12,6 @@ agenTW∞rld Extensions enable AI agents to build, view, navigate, and record 3D
 
 *Experience a guided tour through the agenTW∞rld Extensions showcasing camera controls, waypoint navigation, and scene interaction capabilities.*
 
-[![Watch full video on YouTube](https://img.youtube.com/vi/Rbs3wqSv5TM/maxresdefault.jpg)](https://youtu.be/Rbs3wqSv5TM)
-
 ## Extensions
 
 ### 🏗️ WorldBuilder
