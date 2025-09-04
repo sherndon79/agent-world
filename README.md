@@ -8,12 +8,6 @@ A suite of Isaac Sim extensions that provide AI agents with comprehensive world 
 
 agenTW∞rld Extensions enable AI agents to build, view, navigate, and record 3D worlds in Isaac Sim through a consistent set of HTTP APIs and Model Context Protocol (MCP) tools. Each extension provides specialized functionality while maintaining a unified architecture for seamless integration.
 
-<video width="800" controls>
-  <source src="docs/resources/videos/camera_tour.mp4" type="video/mp4">
-  Your browser does not support the video tag. 
-  <a href="docs/resources/videos/camera_tour.mp4">Download camera tour video</a>
-</video>
-
 *Experience a guided tour through the agenTW∞rld Extensions showcasing camera controls, waypoint navigation, and scene interaction capabilities.*
 
 ## Extensions
