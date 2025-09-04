@@ -56,36 +56,31 @@ Capture screenshots and record videos from Isaac Sim viewports. Generate visual 
 
 ## Quick Start
 
-1. **Install Extensions** - Load the extensions in Isaac Sim
-2. **Start Services** - Extensions automatically start HTTP servers on unique ports
-3. **Integrate with AI** - Use MCP clients or direct HTTP APIs for AI agent integration
+Get up and running in minutes with the automated installer:
+
+```bash
+# Clone the repository
+git clone https://github.com/sherndon79/agent-world.git
+cd agent-world
+
+# Run the installer (handles everything automatically)
+bash scripts/install_agent_world.sh
+
+# Launch Isaac Sim with extensions enabled
+bash scripts/launch_agent_world.sh
+
+# Verify everything works
+bash scripts/smoke_test.sh
+```
+
+That's it! The installer will:
+- Download and install Isaac Sim if needed
+- Set up all extensions and dependencies
+- Configure authentication and MCP servers
+- Create launch scripts for easy startup
 
 ![Claude Code MCP Integration](docs/resources/images/Claude_Code_AWorldMCPUse.png)
 *Claude Code MCP integration in action - AI agents can seamlessly create scenes, navigate cameras, place waypoints, and interact with 3D worlds through natural language commands.*
-
-```python
-# Example: Create a simple scene
-import requests
-
-# Add a cube to the scene
-response = requests.post('http://localhost:8899/add_element', json={
-    'element_type': 'cube',
-    'name': 'my_cube',
-    'position': [0, 0, 1],
-    'color': [0.8, 0.2, 0.2]
-})
-
-# Position camera to view the cube
-requests.post('http://localhost:8900/camera/set_position', json={
-    'position': [5, 5, 5],
-    'target': [0, 0, 1]
-})
-
-# Take a screenshot
-requests.post('http://localhost:8892/capture_frame', json={
-    'output_path': '/tmp/my_scene.png'
-})
-```
 
 ## Isaac Sim Integration
 

@@ -2,6 +2,15 @@
 
 agenTW∞rld Extensions provide comprehensive Model Context Protocol (MCP) integration, enabling AI agents to interact with Isaac Sim through standardized MCP tools and resources.
 
+## For New Users
+
+**MCP integration is automatically set up by the installer!** If you ran `install_agent_world.sh` and chose "yes" for MCP servers, you're ready to use AI tools like Claude Code.
+
+**You only need this guide if you:**
+- Want to configure MCP servers manually
+- Are using a different MCP client  
+- Need to troubleshoot MCP connectivity
+
 ## Overview
 
 Each extension includes a dedicated MCP server that translates between MCP protocol and the extension's HTTP APIs, providing seamless AI agent integration.
@@ -45,25 +54,23 @@ Use the agenTW∞rld installer to automatically set up MCP server virtual enviro
 ```
 
 #### Manual Setup
-If setting up manually, each MCP server requires its own virtual environment:
+If setting up manually, create a unified virtual environment for all MCP servers:
 
 ```bash
-# Create virtual environments for each MCP server
-cd mcp-servers/worldbuilder
-python -m venv venv
+# Create unified virtual environment in mcp-servers directory
+cd mcp-servers
+python3 -m venv venv
 source venv/bin/activate  # Linux/macOS
 # or: venv\Scripts\activate  # Windows
-pip install -e .
 
-cd ../worldviewer
-python -m venv venv 
-source venv/bin/activate
-pip install -e .
+# Upgrade pip and install build tools
+pip install --upgrade pip setuptools wheel
 
-# Repeat for worldrecorder, worldsurveyor, desktop-screenshot
+# Install the unified MCP package with all dependencies
+pip install -e .
 ```
 
-**Note:** MCP servers use modern Python packaging (`pyproject.toml`) and must be installed in development mode (`pip install -e .`) to work properly.
+**Note:** The installer uses a unified virtual environment approach that installs all MCP servers from a single `pyproject.toml` file in the `mcp-servers` directory. This simplifies dependency management and reduces disk usage.
 
 ### MCP Client Configuration
 

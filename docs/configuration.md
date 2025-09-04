@@ -2,6 +2,17 @@
 
 agenTW∞rld Extensions use a unified configuration system that supports hierarchical configuration loading with environment variable overrides.
 
+## For New Users
+
+**Most users don't need to modify any configuration!** The extensions work out of the box with sensible defaults.
+
+**Only customize if you need to:**
+- Change server ports (default: WorldBuilder=8899, WorldViewer=8900, WorldSurveyor=8891, WorldRecorder=8892)
+- Enable debug logging for troubleshooting
+- Adjust performance limits for your hardware
+
+The installer automatically handles authentication setup via `.env` file generation.
+
 ## Configuration Hierarchy
 
 Settings are loaded in order of precedence (highest to lowest):
