@@ -62,6 +62,23 @@ bash scripts/smoke_test.sh
 
 Note: If auth is enabled, `smoke_test.sh` will pick up `AGENT_EXT_AUTH_TOKEN` from `.env` automatically.
 
+#### Authentication Setup
+The installer automatically generates authentication credentials if you choose to enable API security:
+
+**Generated Files:**
+- **`.env` file**: Contains generated Bearer token and HMAC secret
+- **Launcher script**: Automatically sources `.env` for authentication
+
+**Generated Credentials:**
+```bash
+# Example .env contents (values are auto-generated)
+AGENT_EXT_AUTH_ENABLED=1
+AGENT_EXT_AUTH_TOKEN=abc123...  # 64-character hex token
+AGENT_EXT_HMAC_SECRET=def456...  # 96-character hex secret
+```
+
+**Per-Service Overrides:** You can optionally set individual tokens per extension by uncommenting the per-service variables in `.env`.
+
 
 
 ### Method 1: Manual Installation
@@ -240,25 +257,23 @@ The agenTW∞rld installer can automatically set up MCP server virtual environme
 ```
 
 #### Manual Setup
-If setting up manually, each MCP server requires its own virtual environment:
+If setting up manually, create a unified virtual environment for all MCP servers:
 
 ```bash
-# Create virtual environments for each MCP server
-cd mcp-servers/worldbuilder
-python -m venv venv
+# Create unified virtual environment in mcp-servers directory
+cd mcp-servers
+python3 -m venv venv
 source venv/bin/activate  # Linux/macOS
 # or: venv\Scripts\activate  # Windows
-pip install -e .
 
-cd ../worldviewer
-python -m venv venv 
-source venv/bin/activate
-pip install -e .
+# Upgrade pip and install build tools
+pip install --upgrade pip setuptools wheel
 
-# Repeat for worldrecorder, worldsurveyor, desktop-screenshot
+# Install the unified MCP package with all dependencies
+pip install -e .
 ```
 
-**Note:** MCP servers use modern Python packaging (`pyproject.toml`) and must be installed in development mode (`pip install -e .`) to work properly.
+**Note:** The installer now uses a unified virtual environment approach that installs all MCP servers from a single `pyproject.toml` file in the `mcp-servers` directory. This simplifies dependency management and reduces disk usage compared to individual virtual environments per server.
 
 ### Configure MCP Servers
 Copy MCP server configurations to your MCP client:
@@ -266,19 +281,37 @@ Copy MCP server configurations to your MCP client:
 ```json
 {
   "mcpServers": {
-    "worldbuilder": {
-      "command": "python",
-      "args": ["/path/to/mcp-servers/worldbuilder/src/mcp_agent_worldbuilder.py"],
+    "worldbuilder-server": {
+      "command": "/path/to/mcp-servers/venv/bin/python",
+      "args": ["-m", "mcp_agent_worldbuilder"],
       "env": {
-        "WORLDBUILDER_BASE_URL": "http://localhost:8899"
+        "WORLDBUILDER_API_URL": "http://localhost:8899"
       }
     },
-    "worldviewer": {
-      "command": "python", 
-      "args": ["/path/to/mcp-servers/worldviewer/src/mcp_agent_worldviewer.py"],
+    "worldviewer-server": {
+      "command": "/path/to/mcp-servers/venv/bin/python",
+      "args": ["-m", "mcp_agent_worldviewer"],
       "env": {
-        "WORLDVIEWER_BASE_URL": "http://localhost:8900"
+        "WORLDVIEWER_API_URL": "http://localhost:8900"
       }
+    },
+    "worldsurveyor-server": {
+      "command": "/path/to/mcp-servers/venv/bin/python",
+      "args": ["-m", "mcp_agent_worldsurveyor"],
+      "env": {
+        "WORLDSURVEYOR_API_URL": "http://localhost:8891"
+      }
+    },
+    "worldrecorder-server": {
+      "command": "/path/to/mcp-servers/venv/bin/python",
+      "args": ["-m", "mcp_agent_worldrecorder"],
+      "env": {
+        "WORLDRECORDER_API_URL": "http://localhost:8892"
+      }
+    },
+    "screenshot-server": {
+      "command": "/path/to/mcp-servers/venv/bin/python",
+      "args": ["-m", "mcp_desktop_screenshot"]
     }
   }
 }
