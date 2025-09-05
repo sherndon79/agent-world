@@ -3,7 +3,7 @@
 Control camera positioning and create cinematic movements in Isaac Sim. WorldViewer enables AI agents to navigate 3D scenes with smooth camera transitions, orbital controls, and automated framing.
 
 ![WorldViewer Isaac Menu](../resources/images/Agent_WorldViewer_Isaac_Menu.png)
-*WorldViewer extension interface in Isaac Sim showing camera control tools and cinematic movement options.*
+*WorldViewer extension interface in Isaac Sim showing professional queue control system with 10-shot cinematography sequence, media player controls, and comprehensive shot details.*
 
 ## For New Users
 
@@ -57,6 +57,33 @@ Control camera positioning and create cinematic movements in Isaac Sim. WorldVie
 - **Automated Presentations**: Script sophisticated camera movements for demos
 - **Multi-Shot Planning**: Pre-plan entire camera sequences with mixed timing control
 - **Production Workflows**: Professional-grade cinematography for Isaac Sim scenes
+
+## Isaac Sim UI Controls
+
+WorldViewer provides a comprehensive queue control interface directly in Isaac Sim for hands-on cinematography management:
+
+### Queue Controls Panel
+- **Queue Status Display**: Shows current state (Idle/Running/Paused/Pending) and total duration
+- **Media Player Controls**: Professional Play/Pause/Stop buttons for queue management
+- **Shot Count**: Real-time display of queued shots and total sequence timing
+
+### Queued Shots List
+- **Scrollable Queue**: View up to 10+ shots with detailed information per shot
+- **Shot Details**: Complete movement information including:
+  - Position movement: `[start]->[end]` coordinates
+  - Camera targets: `T:[start]->[end]` look-at points  
+  - Speed settings: `spd:12` units per second
+  - Easing functions: `ease_in_out`, `linear`, etc.
+- **Execution Modes**: Color-coded display
+  - **Manual shots [M]**: Orange text, require Play button to start
+  - **Auto shots [A]**: Gray text, execute automatically in sequence
+- **Real-time Updates**: Queue display updates as shots progress
+
+### Manual Camera Controls
+- **Quick Positions**: Front, Top, Side camera presets
+- **Precise Positioning**: Manual X/Y/Z coordinate input with Set Position button
+
+**Perfect for users who prefer visual queue management alongside programmatic control.**
 
 ## API Endpoints (canonical)
 

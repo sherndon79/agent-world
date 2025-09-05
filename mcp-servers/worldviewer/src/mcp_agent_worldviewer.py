@@ -955,7 +955,7 @@ class WorldViewerMCP:
                     for i, shot in enumerate(queued_shots, 1):
                         mov_id = shot.get("movement_id", f"shot_{i}")
                         operation = shot.get("operation", "unknown")
-                        duration = shot.get("total_duration", 0)
+                        duration = shot.get("estimated_duration", 0)
                         status_text += f"  {i}. {mov_id} ({operation}) - {duration:.1f}s\n"
                 
                 return [TextContent(type="text", text=status_text)]
