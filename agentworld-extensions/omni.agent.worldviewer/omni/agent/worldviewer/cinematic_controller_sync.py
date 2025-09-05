@@ -1430,7 +1430,18 @@ class SynchronousCinematicController:
             estimated_start_time = active_shot['remaining_time'] if active_shot else 0
             
             for i, (movement_id, operation, params) in enumerate(self.movement_queue):
-                duration = params.get('duration', 3.0)  # Use calculated duration
+                # Calculate duration for display (same logic as movement generation)
+                if 'start_position' in params and 'end_position' in params:
+                    start_pos = params['start_position']
+                    end_pos = params['end_position']
+                    speed = params.get('speed')
+                    duration = params.get('duration')
+                    if speed is not None or duration is None:
+                        duration = calculate_duration(start_pos, end_pos, speed, duration)
+                    else:
+                        duration = duration or 3.0
+                else:
+                    duration = params.get('duration', 3.0)
                 
                 shot_info = {
                     'movement_id': movement_id,
@@ -1438,7 +1449,8 @@ class SynchronousCinematicController:
                     'estimated_duration': duration,
                     'estimated_start_time': estimated_start_time,
                     'queue_position': i + 1,
-                    'execution': params.get('execution', 'auto')
+                    'execution': params.get('execution_mode', 'auto'),
+                    'params': params  # Include full parameters for UI display
                 }
                 
                 queued_shots.append(shot_info)

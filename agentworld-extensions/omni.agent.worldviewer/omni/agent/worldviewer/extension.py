@@ -473,6 +473,30 @@ class AgentWorldViewerExtension(omni.ext.IExt):
                             self._api_status_label = ui.Label("API: Unknown")
                             self._api_requests_label = ui.Label("Requests: 0 | Errors: 0")
                     
+                    # Queue Controls section
+                    with ui.CollapsableFrame("Queue Controls", collapsed=False, height=0):
+                        with ui.VStack(spacing=2):
+                            # Queue status display
+                            self._queue_status_label = ui.Label("Queue: Unknown")
+                            self._queue_count_label = ui.Label("Shots: 0 | Duration: 0.0s")
+                            
+                            ui.Separator()
+                            
+                            # Media player style controls
+                            ui.Label("Queue Playback:")
+                            with ui.HStack():
+                                self._play_btn = ui.Button("Play", clicked_fn=self._play_queue)
+                                self._pause_btn = ui.Button("Pause", clicked_fn=self._pause_queue)
+                                self._stop_btn = ui.Button("Stop", clicked_fn=self._stop_queue)
+                            
+                            ui.Separator()
+                            
+                            # Queue list display
+                            ui.Label("Queued Shots:")
+                            with ui.ScrollingFrame(height=120):
+                                with ui.VStack(spacing=1):
+                                    self._queue_list_container = ui.VStack(spacing=1)
+                    
                     # Manual Camera Controls section
                     with ui.CollapsableFrame("Manual Controls", collapsed=False, height=0):
                         with ui.VStack(spacing=1):
@@ -560,6 +584,10 @@ class AgentWorldViewerExtension(omni.ext.IExt):
             except Exception as e:
                 self._camera_status_label.text = f"Camera: Cache error ({str(e)[:30]})"
                 self._camera_target_label.text = "Target: Cache error"
+            
+            # Update queue status and control button states (if queue controls exist)
+            if hasattr(self, '_queue_status_label'):
+                self._update_queue_status()
             
         except Exception as e:
             logger.warning(f"Failed to update UI status: {e}")
@@ -704,5 +732,248 @@ class AgentWorldViewerExtension(omni.ext.IExt):
                 
         except Exception as e:
             logger.error(f"Error setting manual position: {e}")
+    
+    def _update_queue_status(self):
+        """Update queue status display and button states"""
+        try:
+            if not self._http_api_interface or not hasattr(self, '_queue_status_label'):
+                return
+            
+            # Get cinematic controller through camera controller
+            if not self._http_api_interface.camera_controller:
+                self._queue_status_label.text = "Queue: No camera controller"
+                self._queue_count_label.text = "Shots: 0 | Duration: 0.0s"
+                return
+                
+            cinematic_controller = self._http_api_interface.camera_controller.get_cinematic_controller()
+            if not cinematic_controller:
+                self._queue_status_label.text = "Queue: No cinematic controller"
+                self._queue_count_label.text = "Shots: 0 | Duration: 0.0s"
+                return
+            
+            try:
+                queue_status = cinematic_controller.get_queue_status()
+                if queue_status.get('success'):
+                    state = queue_status.get('queue_state', 'unknown')
+                    active_count = queue_status.get('active_count', 0)
+                    queued_count = queue_status.get('queued_count', 0)
+                    total_duration = queue_status.get('total_duration', 0.0)
+                    
+                    # Format status display
+                    state_display = state.title() if state else 'Unknown'
+                    self._queue_status_label.text = f"Queue: {state_display}"
+                    self._queue_count_label.text = f"Shots: {active_count + queued_count} | Duration: {total_duration:.1f}s"
+                    
+                    # Update button states based on queue state
+                    self._update_button_states(state, active_count + queued_count)
+                    
+                    # Update queue list display
+                    self._update_queue_list(queue_status)
+                    
+                else:
+                    self._queue_status_label.text = f"Queue: Error ({queue_status.get('error', 'Unknown')[:20]})"
+                    self._queue_count_label.text = "Shots: 0 | Duration: 0.0s"
+                    self._update_button_states('error', 0)
+                    
+            except Exception as e:
+                self._queue_status_label.text = f"Queue: Status error ({str(e)[:20]})"
+                self._queue_count_label.text = "Shots: 0 | Duration: 0.0s"
+                self._update_button_states('error', 0)
+                
+        except Exception as e:
+            logger.debug(f"Failed to update queue status: {e}")
+    
+    def _update_button_states(self, queue_state: str, total_shots: int):
+        """Update button enabled/disabled states based on queue state"""
+        try:
+            if not hasattr(self, '_play_btn'):
+                return
+            
+            # Default: all buttons enabled
+            play_enabled = True
+            pause_enabled = True  
+            stop_enabled = True
+            
+            if queue_state == 'idle':
+                # Idle: can play if shots exist, pause/stop not useful
+                play_enabled = total_shots > 0
+                pause_enabled = False
+                stop_enabled = total_shots > 0  # Can stop to clear queue
+                
+            elif queue_state == 'running':
+                # Running: can pause/stop, play not useful
+                play_enabled = False
+                pause_enabled = True
+                stop_enabled = True
+                
+            elif queue_state == 'paused' or queue_state == 'pending':
+                # Paused/Pending: can play to resume, stop to clear
+                play_enabled = True
+                pause_enabled = False
+                stop_enabled = True
+                
+            elif queue_state == 'stopped':
+                # Stopped: can play if shots exist
+                play_enabled = total_shots > 0
+                pause_enabled = False
+                stop_enabled = False
+                
+            else:
+                # Unknown/error: disable all
+                play_enabled = False
+                pause_enabled = False
+                stop_enabled = False
+            
+            # Apply button states
+            self._play_btn.enabled = play_enabled
+            self._pause_btn.enabled = pause_enabled
+            self._stop_btn.enabled = stop_enabled
+            
+        except Exception as e:
+            logger.debug(f"Failed to update button states: {e}")
+    
+    def _update_queue_list(self, queue_status: dict):
+        """Update the queue list display with current shots"""
+        try:
+            if not hasattr(self, '_queue_list_container'):
+                return
+            
+            # Clear existing queue list
+            self._queue_list_container.clear()
+            
+            # Get active and queued shots
+            active_shots = queue_status.get('active_shots', [])
+            queued_shots = queue_status.get('queued_shots', [])
+            
+            with self._queue_list_container:
+                # Show active shot (if any)
+                for i, shot in enumerate(active_shots):
+                    operation = shot.get('operation', 'unknown')
+                    mode = shot.get('execution', 'auto')
+                    duration = shot.get('total_duration', shot.get('estimated_duration', 0.0))
+                    details = self._format_shot_details(shot)
+                    
+                    # Format operation name nicely
+                    op_display = operation.replace('_', ' ').title()
+                    mode_symbol = "M" if mode == 'manual' else "A"
+                    
+                    ui.Label(f"🎬 ACTIVE: {op_display} [{mode_symbol}] {duration:.1f}s - {details}", style={"color": 0xFF00AA00, "font_size": 12})
+                
+                # Show queued shots
+                for i, shot in enumerate(queued_shots):
+                    operation = shot.get('operation', 'unknown')
+                    mode = shot.get('execution', 'auto')
+                    duration = shot.get('estimated_duration', 0.0)
+                    details = self._format_shot_details(shot)
+                    
+                    # Format operation name nicely
+                    op_display = operation.replace('_', ' ').title()
+                    mode_symbol = "M" if mode == 'manual' else "A"
+                    
+                    # Different styling for pending manual shots
+                    if mode == 'manual':
+                        ui.Label(f"{i+1}. {op_display} [{mode_symbol}] {duration:.1f}s - {details}", style={"color": 0xFFFFAA00, "font_size": 12})
+                    else:
+                        ui.Label(f"{i+1}. {op_display} [{mode_symbol}] {duration:.1f}s - {details}", style={"color": 0xFFAAAAAA, "font_size": 12})
+                
+                # Show message if queue is empty
+                if not active_shots and not queued_shots:
+                    ui.Label("(No shots queued)", style={"color": 0xFF888888})
+            
+        except Exception as e:
+            logger.debug(f"Failed to update queue list: {e}")
+    
+    def _format_shot_details(self, shot: dict) -> str:
+        """Format shot parameters into a readable string"""
+        try:
+            params = shot.get('params', {})
+            
+            # Extract key parameters
+            start_pos = params.get('start_position', [0, 0, 0])
+            end_pos = params.get('end_position', [0, 0, 0])
+            start_target = params.get('start_target')
+            end_target = params.get('end_target')
+            speed = params.get('speed')
+            easing = params.get('easing_type', 'linear')
+            
+            # Format positions very compactly
+            start_str = f"[{start_pos[0]:.0f},{start_pos[1]:.0f},{start_pos[2]:.0f}]"
+            end_str = f"[{end_pos[0]:.0f},{end_pos[1]:.0f},{end_pos[2]:.0f}]"
+            
+            details_parts = [f"{start_str}->{end_str}"]
+            
+            # Add target info if available
+            if start_target and end_target:
+                target_start = f"[{start_target[0]:.0f},{start_target[1]:.0f},{start_target[2]:.0f}]"
+                target_end = f"[{end_target[0]:.0f},{end_target[1]:.0f},{end_target[2]:.0f}]"
+                details_parts.append(f"T:{target_start}->{target_end}")
+            
+            # Add speed and easing
+            if speed:
+                details_parts.append(f"spd:{speed}")
+            details_parts.append(f"{easing}")
+            
+            return " ".join(details_parts)
+            
+        except Exception as e:
+            logger.debug(f"Failed to format shot details: {e}")
+            return "details unavailable"
+    
+    def _play_queue(self):
+        """Play/resume the queue"""
+        try:
+            if not self._http_api_interface.camera_controller:
+                logger.warning("No camera controller available for queue play")
+                return
+                
+            cinematic_controller = self._http_api_interface.camera_controller.get_cinematic_controller()
+            if cinematic_controller:
+                result = cinematic_controller.play_queue()
+                if result.get('success'):
+                    logger.info(f"Queue play: {result.get('message', 'Started')}")
+                else:
+                    logger.warning(f"Queue play failed: {result.get('error', 'Unknown error')}")
+            else:
+                logger.warning("No cinematic controller available for queue play")
+        except Exception as e:
+            logger.error(f"Error playing queue: {e}")
+    
+    def _pause_queue(self):
+        """Pause the queue"""
+        try:
+            if not self._http_api_interface.camera_controller:
+                logger.warning("No camera controller available for queue pause")
+                return
+                
+            cinematic_controller = self._http_api_interface.camera_controller.get_cinematic_controller()
+            if cinematic_controller:
+                result = cinematic_controller.pause_queue()
+                if result.get('success'):
+                    logger.info(f"Queue pause: {result.get('message', 'Paused')}")
+                else:
+                    logger.warning(f"Queue pause failed: {result.get('error', 'Unknown error')}")
+            else:
+                logger.warning("No cinematic controller available for queue pause")
+        except Exception as e:
+            logger.error(f"Error pausing queue: {e}")
+    
+    def _stop_queue(self):
+        """Stop and clear the queue"""
+        try:
+            if not self._http_api_interface.camera_controller:
+                logger.warning("No camera controller available for queue stop")
+                return
+                
+            cinematic_controller = self._http_api_interface.camera_controller.get_cinematic_controller()
+            if cinematic_controller:
+                result = cinematic_controller.stop_queue()
+                if result.get('success'):
+                    logger.info(f"Queue stop: {result.get('message', 'Stopped and cleared')}")
+                else:
+                    logger.warning(f"Queue stop failed: {result.get('error', 'Unknown error')}")
+            else:
+                logger.warning("No cinematic controller available for queue stop")
+        except Exception as e:
+            logger.error(f"Error stopping queue: {e}")
     
     
