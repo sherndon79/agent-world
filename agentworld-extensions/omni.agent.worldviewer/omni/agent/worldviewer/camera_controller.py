@@ -35,11 +35,17 @@ class CameraController:
             self.viewport_window = get_active_viewport_window()
             if self.viewport_window:
                 self.viewport_api = self.viewport_window.viewport_api
-                logger.info("Camera controller initialized with active viewport")
+                # Only log on successful initialization if we didn't have viewport_api before
+                if not hasattr(self, '_viewport_initialized') or not self._viewport_initialized:
+                    logger.info("Camera controller initialized with active viewport")
+                    self._viewport_initialized = True
             else:
-                logger.warning("No active viewport found")
+                if not hasattr(self, '_viewport_initialized') or self._viewport_initialized:
+                    logger.warning("No active viewport found")
+                    self._viewport_initialized = False
         except Exception as e:
             logger.error(f"Failed to initialize viewport: {e}")
+            self._viewport_initialized = False
     
     def _set_camera_with_compatibility(self, position: List[float], target: Optional[List[float]] = None) -> bool:
         """

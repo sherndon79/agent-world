@@ -25,8 +25,9 @@ logger = logging.getLogger(__name__)
 class CachedCameraStatus:
     """Cached camera status to reduce expensive USD operations on UI thread."""
     
-    def __init__(self, cache_duration_ms: float = 500):
+    def __init__(self, cache_duration_ms: float = 500, extension=None):
         self.cache_duration_ms = cache_duration_ms
+        self._extension = extension  # Reference to extension for accessing camera controller
         self._last_update_time = 0
         self._cached_status = {
             'position': None,
@@ -94,10 +95,24 @@ class CachedCameraStatus:
             try:
                 camera_path = viewport_window.viewport_api.camera_path
                 if camera_path:
-                    # Use the camera controller's get_status method for comprehensive camera info
-                    from .camera_controller import CameraController
-                    temp_controller = CameraController()
-                    camera_status = temp_controller.get_status()
+                    # Use the existing camera controller if available to avoid creating new instances
+                    camera_status = None
+                    try:
+                        # Try to use the extension's HTTP API camera controller first
+                        if (self._extension and 
+                            hasattr(self._extension, '_http_api_interface') and 
+                            self._extension._http_api_interface and 
+                            hasattr(self._extension._http_api_interface, 'camera_controller') and 
+                            self._extension._http_api_interface.camera_controller):
+                            camera_status = self._extension._http_api_interface.camera_controller.get_status()
+                    except Exception:
+                        pass
+                    
+                    # Fallback: create temporary controller only if needed
+                    if not camera_status:
+                        from .camera_controller import CameraController
+                        temp_controller = CameraController()
+                        camera_status = temp_controller.get_status()
                     
                     if camera_status.get('connected') and not camera_status.get('error'):
                         position = camera_status.get('position')
@@ -184,7 +199,7 @@ class AgentWorldViewerExtension(omni.ext.IExt):
             self._ext_id = ext_id
             
             # Initialize cached camera status (performance optimization)
-            self._camera_status_cache = CachedCameraStatus(cache_duration_ms=self._config.cache_duration_ms)
+            self._camera_status_cache = CachedCameraStatus(cache_duration_ms=self._config.cache_duration_ms, extension=self)
             
             # Initialize HTTP API
             self._initialize_api()
