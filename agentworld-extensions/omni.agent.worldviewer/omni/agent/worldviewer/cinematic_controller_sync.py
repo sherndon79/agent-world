@@ -21,6 +21,25 @@ from pxr import Gf, UsdGeom
 # Import duration calculation utilities
 from .cinematic.duration_calculator import calculate_distance, calculate_duration, validate_speed_parameters
 
+# Import modular cinematic components (Phase 1 - keeping duplicates for compatibility testing)
+from .cinematic import (
+    MovementState as ModularMovementState,
+    EasingType as ModularEasingType, 
+    ShotType as ModularShotType,
+    FramingStyle as ModularFramingStyle,
+    EasingFunctions as ModularEasingFunctions,
+    get_style_config as modular_get_style_config,
+    get_available_styles as modular_get_available_styles,
+    rotation_to_target as modular_rotation_to_target,
+    CINEMATIC_STYLES as MODULAR_CINEMATIC_STYLES,
+    # Phase 2 - Queue management
+    QueueManager as ModularQueueManager,
+    QueueStateManager as ModularQueueStateManager
+)
+
+# Phase 3 - Keyframe generation
+from .cinematic.keyframe_generators import KeyframeGeneratorFactory
+
 from .camera_controller import CameraController
 
 
@@ -333,16 +352,23 @@ class SynchronousCinematicController:
     def __init__(self, camera_controller: CameraController):
         self.camera_controller = camera_controller
         
-        # Sequential queuing system - only one movement active at a time
-        self.active_movement = None  # Single active movement
-        self.movement_queue = deque()  # Queue of pending movements
+        # Initialize modular queue manager (Phase 2)
+        self.queue_manager = ModularQueueManager()
+        self.queue_state_manager = ModularQueueStateManager(self.queue_manager)
+        
+        # Initialize keyframe generator factory (Phase 3)
+        self.keyframe_generator_factory = KeyframeGeneratorFactory(camera_controller)
+        
+        # Legacy attributes for backward compatibility (Phase 2 - maintaining during transition)
+        self.active_movement = None  # Will sync with queue_manager.active_movement
+        self.movement_queue = deque()  # Will sync with queue_manager.movement_queue
         self.movement_timer = None
         self.fps = self.DEFAULT_FPS
         self.frame_duration = 1.0 / self.fps  # Time per frame in seconds
         
-        # Queue control state
+        # Legacy queue control state (will sync with queue_manager.queue_state)
         self._queue_state = 'idle'  # idle, running, paused, stopped
-        self._paused_movement = None  # Store paused movement for resume
+        self._paused_movement = None  # Will sync with queue_manager.paused_movement
         
         # Easing function mapping
         self.easing_functions = {
@@ -564,15 +590,29 @@ class SynchronousCinematicController:
     def _start_movement_immediately(self, movement_id: str, operation: str, params: Dict):
         """Start a movement immediately (no queue checks)"""
         try:
-            # Generate keyframes based on operation type
-            if operation == 'smooth_move':
-                keyframes = self._generate_smooth_move_keyframes(params)
-            elif operation == 'orbit_shot':
-                keyframes = self._generate_orbit_shot_keyframes(params)
-            elif operation == 'arc_shot':
-                keyframes = self._generate_arc_shot_keyframes(params)
-            else:
-                raise ValueError(f"Unknown operation: {operation}. Supported operations: 'smooth_move', 'orbit_shot', 'arc_shot'")
+            # Generate keyframes using factory pattern (Phase 3)
+            try:
+                keyframes = self.keyframe_generator_factory.generate_keyframes(operation, params)
+            except ValueError as e:
+                # Fallback to legacy methods for backward compatibility
+                if operation == 'smooth_move':
+                    keyframes = self._generate_smooth_move_keyframes(params)
+                elif operation == 'orbit_shot':
+                    keyframes = self._generate_orbit_shot_keyframes(params)
+                elif operation == 'arc_shot':
+                    keyframes = self._generate_arc_shot_keyframes(params)
+                elif operation == 'dolly_shot':
+                    keyframes = self._generate_dolly_shot_keyframes(params)
+                elif operation == 'pan_tilt':
+                    keyframes = self._generate_pan_tilt_keyframes(params)
+                elif operation == 'cinematic_orbit':
+                    keyframes = self._generate_cinematic_orbit_keyframes(params)
+                else:
+                    supported_ops = self.keyframe_generator_factory.list_supported_operations()
+                    raise ValueError(f"Unknown operation: {operation}. Supported operations: {supported_ops}")
+            except Exception as e:
+                logger.error(f"Factory keyframe generation failed for {operation}: {e}")
+                raise
             
             # Create movement state
             movement = MovementState(
@@ -593,6 +633,13 @@ class SynchronousCinematicController:
         except Exception as e:
             logger.error(f"Failed to start movement immediately {movement_id}: {e}")
             raise
+    
+    # ============================================================================
+    # LEGACY KEYFRAME GENERATION METHODS (Phase 3 - keeping for backward compatibility)
+    # These methods are now replaced by the modular keyframe generator factory,
+    # but maintained during transition period for fallback support.
+    # TODO: Remove these methods once factory integration is fully tested.
+    # ============================================================================
     
     def _generate_smooth_move_keyframes(self, params: Dict) -> List[Dict]:
         """Generate keyframes for smooth movement"""
@@ -1476,175 +1523,103 @@ class SynchronousCinematicController:
         except Exception as e:
             return {'success': False, 'error': str(e)}
 
-    # Queue Control Commands
+    # Queue Control Commands (Phase 2 - delegating to modular queue manager)
     def play_queue(self) -> Dict:
         """Start/resume queue processing"""
         try:
-            if self._queue_state == 'stopped':
-                return {'success': False, 'error': 'Queue is stopped. Cannot play stopped queue.'}
+            # Delegate to modular queue manager
+            result = self.queue_manager.play_queue()
             
-            # Check actual current state (not just internal variable)
-            actual_state = self._get_actual_queue_state()
+            # Sync legacy state attributes for backward compatibility
+            self._sync_queue_state_from_manager()
             
-            if actual_state == 'running':
-                return {'success': True, 'message': 'Queue is already running', 'queue_state': 'running'}
-            
-            # Resume from paused state
-            if self._queue_state == 'paused' and self._paused_movement:
-                # Resume the paused movement from current position
-                paused = self._paused_movement
-                
-                # Get current camera position for resume
-                try:
-                    camera_status = self.camera_controller.get_status()
-                    current_pos = camera_status.get('position', [0, 0, 0])
-                    
-                    # Create modified parameters to continue from current position
-                    resume_params = paused['params'].copy()
-                    resume_params['start_position'] = current_pos
-                    
-                    # Calculate correct target based on original trajectory progress
-                    progress = paused['progress']
-                    original_start_target = paused['params'].get('start_target')
-                    original_end_target = paused['params'].get('end_target')
-                    
-                    if original_start_target and original_end_target:
-                        # Interpolate target based on progress
-                        current_target = [
-                            original_start_target[i] + (original_end_target[i] - original_start_target[i]) * progress
-                            for i in range(3)
-                        ]
-                        resume_params['start_target'] = current_target
-                    elif original_start_target:
-                        resume_params['start_target'] = original_start_target
-                    elif original_end_target:
-                        resume_params['start_target'] = original_end_target
-                    
-                    # Adjust duration to remaining time
-                    resume_params['duration'] = paused['remaining_time']
-                    
-                    logger.info(f"Resuming paused movement: {paused['movement_id']} from position {current_pos} with {paused['remaining_time']:.1f}s remaining")
-                    self._start_movement_immediately(paused['movement_id'] + "_resumed", paused['operation'], resume_params)
-                    self._paused_movement = None
-                    
-                except Exception as e:
-                    logger.error(f"Failed to resume movement: {e}")
-                    # Fallback to restart
-                    self._start_movement_immediately(paused['movement_id'], paused['operation'], paused['params'])
-                    self._paused_movement = None
-            
-            # Set state to running
-            self._queue_state = 'running'
-            
-            # If we have queued movements but no active movement, check for manual shots
-            if not self.active_movement and self.movement_queue:
-                # Check if first queued movement is manual
-                next_movement_data = self.movement_queue[0]  # Peek at next movement
-                movement_id, operation, params = next_movement_data
-                execution_mode = params.get('execution_mode', 'auto')
-                
-                if execution_mode == 'manual':
-                    # Start the manual movement immediately when play is pressed
-                    self.movement_queue.popleft()  # Remove from queue
-                    logger.info(f"Starting manual movement via play command: {movement_id} ({operation})")
-                    self._start_movement_immediately(movement_id, operation, params)
-                else:
-                    # Start auto movements normally
-                    self._start_next_queued_movement()
-            
-            return {
-                'success': True,
-                'message': 'Queue resumed/started',
-                'queue_state': self._queue_state,
-                'active_count': 1 if self.active_movement else 0,
-                'queued_count': len(self.movement_queue)
-            }
+            return result
             
         except Exception as e:
+            logger.error(f"Error in play_queue delegation: {e}")
             return {'success': False, 'error': str(e)}
     
-    def pause_queue(self) -> Dict:
-        """Pause queue processing (stops current movement and prevents new ones)"""
+    def _sync_queue_state_from_manager(self):
+        """Sync legacy state attributes from modular queue manager for backward compatibility"""
         try:
-            if self._queue_state == 'stopped':
-                return {'success': False, 'error': 'Queue is stopped. Cannot pause stopped queue.'}
-                
-            if self._queue_state == 'paused':
-                return {'success': True, 'message': 'Queue is already paused', 'queue_state': 'paused'}
+            # Sync queue state
+            self._queue_state = self.queue_manager.queue_state
+            self.active_movement = self.queue_manager.active_movement
+            self._paused_movement = self.queue_manager.paused_movement
             
-            # Store current movement state for resume
-            paused_movement = None
-            if self.active_movement:
-                # Calculate current progress
-                elapsed = time.time() - self.active_movement.start_time
-                progress = min(elapsed / self.active_movement.duration, 1.0)
-                
-                # Store paused movement info for resume
-                paused_movement = {
-                    'movement_id': self.active_movement.movement_id,
-                    'operation': self.active_movement.operation,
-                    'params': self.active_movement.params,
-                    'progress': progress,
-                    'remaining_time': max(0, self.active_movement.duration - elapsed)
-                }
-                
-                # Clear active movement (stops the camera)
-                self.active_movement = None
-                logger.info(f"Paused movement at {progress*100:.1f}% progress")
-            
-            # Set queue state to paused
-            self._queue_state = 'paused'
-            self._paused_movement = paused_movement  # Store for resume
-            
-            return {
-                'success': True,
-                'message': 'Queue paused. Camera movement stopped.',
-                'queue_state': self._queue_state,
-                'active_count': 0,  # No active movement when paused
-                'queued_count': len(self.movement_queue),
-                'paused_progress': f"{paused_movement['progress']*100:.1f}%" if paused_movement else None
-            }
+            # Sync movement queue
+            self.movement_queue.clear()
+            self.movement_queue.extend(self.queue_manager.movement_queue)
             
         except Exception as e:
+            logger.error(f"Error syncing queue state: {e}")
+    
+    def _sync_queue_state_to_manager(self):
+        """Sync legacy state attributes to modular queue manager"""
+        try:
+            # This would be used when legacy methods modify state
+            self.queue_manager.queue_state = self._queue_state
+            self.queue_manager.active_movement = self.active_movement
+            self.queue_manager.paused_movement = self._paused_movement
+            
+            # Sync movement queue
+            self.queue_manager.movement_queue.clear()
+            self.queue_manager.movement_queue.extend(self.movement_queue)
+            
+        except Exception as e:
+            logger.error(f"Error syncing to queue manager: {e}")
+    
+    def pause_queue(self) -> Dict:
+        """Pause queue processing (current movement continues, no new movements start)"""
+        try:
+            # Delegate to modular queue manager
+            result = self.queue_manager.pause_queue()
+            
+            # Sync legacy state attributes for backward compatibility  
+            self._sync_queue_state_from_manager()
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error in pause_queue delegation: {e}")
             return {'success': False, 'error': str(e)}
     
     def stop_queue(self) -> Dict:
         """Stop and clear entire queue"""
         try:
-            # Stop current movement
-            stop_result = self.stop_movement()
+            # Delegate to modular queue manager
+            result = self.queue_manager.stop_queue()
             
-            # Set queue state to stopped
-            self._queue_state = 'stopped'
+            # Sync legacy state attributes for backward compatibility
+            self._sync_queue_state_from_manager()
             
-            return {
-                'success': True,
-                'message': 'Queue stopped and cleared',
-                'queue_state': self._queue_state,
-                'stopped_movements': stop_result.get('stopped_count', 0),
-                'active_count': 0,
-                'queued_count': 0
-            }
+            return result
             
         except Exception as e:
+            logger.error(f"Error in stop_queue delegation: {e}")
             return {'success': False, 'error': str(e)}
-
+    
+    def get_queue_status(self) -> Dict:
+        """Get comprehensive queue status with timing information"""
+        try:
+            # Delegate to modular queue manager
+            result = self.queue_manager.get_queue_status()
+            
+            # Sync legacy state attributes for backward compatibility
+            self._sync_queue_state_from_manager()
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error in get_queue_status delegation: {e}")
+            return {'success': False, 'error': str(e)}
+    
     def _get_actual_queue_state(self) -> str:
-        """Get the actual current queue state based on conditions"""
-        if self._queue_state == 'stopped':
-            return 'stopped'
-        elif self._queue_state == 'paused':
-            return 'paused'
-        elif self.active_movement is not None:
-            return 'running'  # Has active movement
-        elif self.movement_queue:
-            # Check if next movement is manual
-            next_movement_data = self.movement_queue[0]
-            movement_id, operation, params = next_movement_data
-            execution_mode = params.get('execution_mode', 'auto')
-            if execution_mode == 'manual':
-                return 'pending'  # Manual shot waiting for play command
-            else:
-                return 'running'  # Auto shots in queue
-        else:
-            return 'idle'     # Empty queue, ready for work
+        """Determine actual queue state from current conditions"""
+        try:
+            # Delegate to modular queue manager
+            return self.queue_manager._get_actual_queue_state()
+            
+        except Exception as e:
+            logger.error(f"Error getting actual queue state: {e}")
+            return "error"
