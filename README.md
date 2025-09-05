@@ -25,13 +25,15 @@ Create and manipulate 3D scenes programmatically. Add primitives (cubes, spheres
 - Real-time scene validation
 
 ### 🎥 WorldViewer  
-Control camera positioning and create cinematic movements in Isaac Sim. Navigate through 3D scenes with smooth camera transitions and orbital controls.
+Control camera positioning and create cinematic movements in Isaac Sim. Navigate through 3D scenes with smooth camera transitions, queue control, and production-ready cinematography.
 
 **Key Features:**
-- Camera positioning and targeting
-- Orbital camera controls around objects
-- Smooth cinematic movements with easing
-- Object framing and automatic positioning
+- Camera positioning and targeting with precise control
+- Sequential movement queuing with play/pause/stop controls
+- Execution modes for automatic and manual-triggered movements
+- Speed-based duration calculation and timing control
+- Smooth cinematic movements with multiple easing functions
+- Object framing and orbital camera controls
 - Camera bounds checking for safety
 
 ### 🧭 WorldSurveyor
