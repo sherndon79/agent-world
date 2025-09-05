@@ -10,8 +10,10 @@ Control camera positioning and create cinematic movements in Isaac Sim. WorldVie
 **WorldViewer lets AI agents control the Isaac Sim camera programmatically.** Instead of manually navigating with mouse controls, you can:
 
 - **Ask Claude Code**: "Move the camera to show the scene from above" or "Create a smooth flythrough"
-- **Position precisely**: Set exact camera positions and targets through natural language
+- **Position precisely**: Set exact camera positions and targets through natural language  
 - **Create cinematics**: Generate smooth camera movements for presentations or analysis
+- **🎬 Build shot sequences**: Create complex cinematography with mixed auto/manual execution modes
+- **Professional workflows**: Use media player controls (play/pause/stop) for sophisticated camera sequences
 
 **You don't need to use the HTTP API directly** - the MCP integration handles all the technical details automatically.
 
@@ -38,6 +40,23 @@ Control camera positioning and create cinematic movements in Isaac Sim. WorldVie
 - **Spherical Coordinates**: Position camera using azimuth and elevation
 - **Center Point Orbiting**: Orbit around any 3D coordinate
 - **Distance Control**: Maintain specific distance from center
+
+### 🎬 **Queue Control System** *(Production Ready)*
+- **Sequential Cinematography**: Chain multiple camera movements in perfect sequence
+- **Mixed Execution Modes**: Combine automatic and manual-triggered movements
+- **Media Player Controls**: Play, pause, stop, and resume complex shot sequences
+- **Speed-Based Timing**: Intelligent duration calculation based on movement speed
+- **Advanced State Management**: Sophisticated queue states (idle, running, paused, pending)
+- **Target Preservation**: Smooth camera target interpolation during pause/resume
+- **Complex Workflows**: Support for intricate patterns (Manual→Auto→Manual→Auto)
+- **Real-time Status**: Live queue monitoring with progress tracking and timing
+- **Camera Target Display**: Visual debugging in Isaac Sim interface
+
+**Perfect for:**
+- **AI-Generated Cinematography**: Let Claude Code create and control complex shot sequences
+- **Automated Presentations**: Script sophisticated camera movements for demos
+- **Multi-Shot Planning**: Pre-plan entire camera sequences with mixed timing control
+- **Production Workflows**: Professional-grade cinematography for Isaac Sim scenes
 
 ## API Endpoints (canonical)
 
@@ -83,10 +102,17 @@ Note: canonical paths include the `/camera/` prefix. Backward‑compatible alias
   "end_position": [10, 0, 5],
   "start_target": [0, 0, 0],
   "end_target": [10, 0, 0],
+  "speed": 10.0,
   "duration": 3.0,
+  "execution_mode": "auto",
   "easing_type": "ease_in_out"
 }
 ```
+
+**New Parameters:**
+- `speed` - Movement speed in units/second (auto-calculates duration)
+- `execution_mode` - `"auto"` (immediate) or `"manual"` (wait for play command) 
+- `duration` - Manual override (optional when using speed)
 
 **POST** `/camera/stop_movement` (alias: `/movement/stop`)
 ```json
@@ -120,6 +146,55 @@ Note: canonical paths include the `/camera/` prefix. Backward‑compatible alias
   "default_movement_duration": 3.0,
   "max_movement_duration": 60.0,
   "camera_bounds_checking": true
+}
+```
+
+### 🎬 **Queue Control** *(New)*
+
+**GET** `/camera/queue/status`
+```json
+{
+  "success": true,
+  "queue_state": "pending",
+  "active_count": 0,
+  "queued_count": 3,
+  "total_duration": 15.0,
+  "estimated_remaining": 15.0,
+  "queued_shots": [
+    {
+      "movement_id": "smooth_move_123",
+      "operation": "smooth_move", 
+      "execution_mode": "manual",
+      "duration": 5.0
+    }
+  ]
+}
+```
+
+**POST** `/camera/queue/play`
+```json
+{
+  "success": true,
+  "message": "Queue resumed/started",
+  "queue_state": "running"
+}
+```
+
+**POST** `/camera/queue/pause`  
+```json
+{
+  "success": true,
+  "message": "Queue paused. Camera movement stopped.",
+  "queue_state": "paused"
+}
+```
+
+**POST** `/camera/queue/stop`
+```json
+{
+  "success": true,
+  "message": "Queue stopped and cleared",
+  "stopped_movements": 2
 }
 ```
 
@@ -188,6 +263,60 @@ status = requests.get('http://localhost:8900/camera/movement_status', params={'m
         break
     print(f"Progress: {status.json()['progress']}%")
     time.sleep(0.5)
+```
+
+### 🎬 **Queue Control Cinematography** *(New)*
+```python
+# Create sophisticated shot sequences with mixed execution modes
+import requests
+
+# Shot 1: Manual trigger - establisher
+requests.post('http://localhost:8900/camera/smooth_move', json={
+    'start_position': [50, 50, 30],
+    'end_position': [0, -40, 15], 
+    'start_target': [0, 0, 5],
+    'end_target': [0, 0, 5],
+    'speed': 8.0,
+    'execution_mode': 'manual'  # Wait for play command
+})
+
+# Shot 2: Auto execution - detail shot
+requests.post('http://localhost:8900/camera/smooth_move', json={
+    'start_position': [0, -40, 15],
+    'end_position': [15, -25, 8],
+    'start_target': [0, 0, 5], 
+    'end_target': [10, -15, 5],
+    'speed': 12.0,
+    'execution_mode': 'auto'  # Automatic execution
+})
+
+# Shot 3: Manual trigger - final reveal
+requests.post('http://localhost:8900/camera/smooth_move', json={
+    'start_position': [15, -25, 8],
+    'end_position': [25, 25, 20],
+    'start_target': [10, -15, 5],
+    'end_target': [0, 0, 5],
+    'speed': 6.0,
+    'execution_mode': 'manual'  # Wait for play command
+})
+
+# Check queue status
+status = requests.get('http://localhost:8900/camera/queue/status')
+print(f"Queue state: {status.json()['queue_state']}")
+print(f"Total shots: {status.json()['queued_count']}")
+
+# Start the sequence (triggers first manual shot)
+requests.post('http://localhost:8900/camera/queue/play')
+
+# Auto shot will execute automatically after shot 1 completes
+# Final shot will wait for another play command
+
+# Later: trigger final shot
+requests.post('http://localhost:8900/camera/queue/play')
+
+# Advanced: Pause and resume with target preservation
+requests.post('http://localhost:8900/camera/queue/pause')  # Preserves camera targets
+requests.post('http://localhost:8900/camera/queue/play')   # Resumes smoothly
 ```
 
 ### Object Framing

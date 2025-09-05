@@ -30,6 +30,7 @@ class CachedCameraStatus:
         self._last_update_time = 0
         self._cached_status = {
             'position': None,
+            'target': None,
             'camera_path': None,
             'connected': False,
             'error': None
@@ -44,6 +45,7 @@ class CachedCameraStatus:
         if self._shutdown_event.is_set():
             return {
                 'position': None,
+                'target': None,
                 'camera_path': None,
                 'connected': False,
                 'error': 'Shutdown in progress'
@@ -78,34 +80,40 @@ class CachedCameraStatus:
             if not viewport_window or not viewport_window.viewport_api:
                 return {
                     'position': None,
+                    'target': None,
                     'camera_path': None,
                     'connected': False,
                     'error': 'No viewport connection'
                 }
             
-            # Get camera position using USD API
+            # Get camera position and target using camera controller
             position = None
+            target = None
             camera_path = None
             
             try:
                 camera_path = viewport_window.viewport_api.camera_path
                 if camera_path:
-                    import omni.usd
-                    from pxr import UsdGeom
+                    # Use the camera controller's get_status method for comprehensive camera info
+                    from .camera_controller import CameraController
+                    temp_controller = CameraController()
+                    camera_status = temp_controller.get_status()
                     
-                    stage = omni.usd.get_context().get_stage()
-                    if stage:
-                        camera_prim = stage.GetPrimAtPath(camera_path)
-                        if camera_prim and camera_prim.IsValid():
-                            camera = UsdGeom.Camera(camera_prim)
-                            if camera:
-                                transform = camera.ComputeLocalToWorldTransform(0.0)
-                                if transform:
-                                    pos = transform.ExtractTranslation()
-                                    position = [float(pos[0]), float(pos[1]), float(pos[2])]
+                    if camera_status.get('connected') and not camera_status.get('error'):
+                        position = camera_status.get('position')
+                        target = camera_status.get('target')
+                    elif camera_status.get('error'):
+                        return {
+                            'position': None,
+                            'target': None,
+                            'camera_path': str(camera_path) if camera_path else None,
+                            'connected': True,
+                            'error': f'Camera error: {str(camera_status["error"])[:50]}'
+                        }
             except Exception as e:
                 return {
                     'position': None,
+                    'target': None,
                     'camera_path': str(camera_path) if camera_path else None,
                     'connected': True,
                     'error': f'USD access error: {str(e)[:50]}'
@@ -113,6 +121,7 @@ class CachedCameraStatus:
             
             return {
                 'position': position,
+                'target': target,
                 'camera_path': str(camera_path) if camera_path else None,
                 'connected': True,
                 'error': None
@@ -121,6 +130,7 @@ class CachedCameraStatus:
         except Exception as e:
             return {
                 'position': None,
+                'target': None,
                 'camera_path': None,
                 'connected': False,
                 'error': f'Status fetch error: {str(e)[:50]}'
@@ -459,6 +469,7 @@ class AgentWorldViewerExtension(omni.ext.IExt):
                         with ui.VStack(spacing=1):
                             self._status_label = ui.Label("Initializing...")
                             self._camera_status_label = ui.Label("Camera: Unknown")
+                            self._camera_target_label = ui.Label("Target: Unknown")
                             self._api_status_label = ui.Label("API: Unknown")
                             self._api_requests_label = ui.Label("Requests: 0 | Errors: 0")
                     
@@ -525,18 +536,30 @@ class AgentWorldViewerExtension(omni.ext.IExt):
                     # Show error with truncated message
                     error_msg = camera_status['error'][:30]
                     self._camera_status_label.text = f"Camera: {error_msg}"
+                    self._camera_target_label.text = "Target: Error"
                 elif not camera_status['connected']:
                     self._camera_status_label.text = "Camera: No viewport connection"
+                    self._camera_target_label.text = "Target: No connection"
                 elif camera_status['position']:
                     # Format position with 1 decimal place
                     pos = camera_status['position']
                     pos_str = f"[{pos[0]:.1f}, {pos[1]:.1f}, {pos[2]:.1f}]"
                     self._camera_status_label.text = f"Camera: {pos_str}"
+                    
+                    # Format target with 1 decimal place if available
+                    if camera_status.get('target'):
+                        target = camera_status['target']
+                        target_str = f"[{target[0]:.1f}, {target[1]:.1f}, {target[2]:.1f}]"
+                        self._camera_target_label.text = f"Target: {target_str}"
+                    else:
+                        self._camera_target_label.text = "Target: Unknown"
                 else:
                     self._camera_status_label.text = "Camera: Position unknown"
+                    self._camera_target_label.text = "Target: Unknown"
                     
             except Exception as e:
                 self._camera_status_label.text = f"Camera: Cache error ({str(e)[:30]})"
+                self._camera_target_label.text = "Target: Cache error"
             
         except Exception as e:
             logger.warning(f"Failed to update UI status: {e}")

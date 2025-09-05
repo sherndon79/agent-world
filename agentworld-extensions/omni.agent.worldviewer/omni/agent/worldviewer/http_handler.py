@@ -75,8 +75,12 @@ class WorldViewerHTTPHandler(WorldHTTPHandler):
             'camera/orbit_shot': self._route_orbit_shot,
             'camera/arc_shot': self._route_arc_shot,
             'camera/movement_status': self._route_movement_status,
+            'camera/shot_queue_status': self._route_shot_queue_status,
             'movement/stop': self._route_stop_movement,
             'camera/stop_movement': self._route_stop_movement,
+            'camera/queue/play': self._route_play_queue,
+            'camera/queue/pause': self._route_pause_queue,
+            'camera/queue/stop': self._route_stop_queue,
             'get_asset_transform': self._route_get_asset_transform,
             'request_status': self._route_request_status,
         }
@@ -132,6 +136,9 @@ class WorldViewerHTTPHandler(WorldHTTPHandler):
             return {'success': False, 'error': 'movement_id parameter required'}
         return self._get_movement_status(movement_id)
 
+    def _route_shot_queue_status(self, method: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        return self._get_shot_queue_status()
+
     def _route_get_asset_transform(self, method: str, data: Dict[str, Any]) -> Dict[str, Any]:
         usd_path = data.get('usd_path')
         calculation_mode = data.get('calculation_mode', 'auto')
@@ -185,6 +192,15 @@ class WorldViewerHTTPHandler(WorldHTTPHandler):
         if not request_id:
             return {'success': False, 'error': 'request_id parameter required'}
         return self._get_request_status(request_id)
+
+    def _route_play_queue(self, method: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        return self._play_queue()
+
+    def _route_pause_queue(self, method: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        return self._pause_queue()
+
+    def _route_stop_queue(self, method: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        return self._stop_queue()
 
     # Unified base already serves docs/openapi using module import
 
@@ -331,6 +347,18 @@ class WorldViewerHTTPHandler(WorldHTTPHandler):
         except Exception as e:
             return {'success': False, 'error': str(e)}
 
+    def _get_shot_queue_status(self) -> Dict:
+        """Get comprehensive shot queue status."""
+        try:
+            if not self.api_interface or not self.api_interface.camera_controller:
+                return {'success': False, 'error': 'Camera controller not initialized'}
+            cinematic_controller = self.api_interface.camera_controller.get_cinematic_controller()
+            if hasattr(cinematic_controller, 'get_queue_status'):
+                return cinematic_controller.get_queue_status()
+            return {'success': False, 'error': 'Queue status not supported'}
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+
     def _get_asset_transform(self, usd_path: str, calculation_mode: str) -> Dict:
         """Get asset transform information."""
         try:
@@ -399,5 +427,41 @@ class WorldViewerHTTPHandler(WorldHTTPHandler):
                     }
                 else:
                     return {'success': False, 'error': f'Request {request_id} not found'}
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+
+    def _play_queue(self) -> Dict:
+        """Start/resume queue processing"""
+        try:
+            if not self.api_interface or not self.api_interface.camera_controller:
+                return {'success': False, 'error': 'Camera controller not initialized'}
+            cinematic_controller = self.api_interface.camera_controller.get_cinematic_controller()
+            if hasattr(cinematic_controller, 'play_queue'):
+                return cinematic_controller.play_queue()
+            return {'success': False, 'error': 'Queue control not supported'}
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+
+    def _pause_queue(self) -> Dict:
+        """Pause queue processing"""
+        try:
+            if not self.api_interface or not self.api_interface.camera_controller:
+                return {'success': False, 'error': 'Camera controller not initialized'}
+            cinematic_controller = self.api_interface.camera_controller.get_cinematic_controller()
+            if hasattr(cinematic_controller, 'pause_queue'):
+                return cinematic_controller.pause_queue()
+            return {'success': False, 'error': 'Queue control not supported'}
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+
+    def _stop_queue(self) -> Dict:
+        """Stop and clear queue"""
+        try:
+            if not self.api_interface or not self.api_interface.camera_controller:
+                return {'success': False, 'error': 'Camera controller not initialized'}
+            cinematic_controller = self.api_interface.camera_controller.get_cinematic_controller()
+            if hasattr(cinematic_controller, 'stop_queue'):
+                return cinematic_controller.stop_queue()
+            return {'success': False, 'error': 'Queue control not supported'}
         except Exception as e:
             return {'success': False, 'error': str(e)}

@@ -18,6 +18,9 @@ import omni.kit.app
 from omni.kit.viewport.utility import get_active_viewport_window
 from pxr import Gf, UsdGeom
 
+# Import duration calculation utilities
+from .cinematic.duration_calculator import calculate_distance, calculate_duration, validate_speed_parameters
+
 from .camera_controller import CameraController
 
 
@@ -337,6 +340,10 @@ class SynchronousCinematicController:
         self.fps = self.DEFAULT_FPS
         self.frame_duration = 1.0 / self.fps  # Time per frame in seconds
         
+        # Queue control state
+        self._queue_state = 'idle'  # idle, running, paused, stopped
+        self._paused_movement = None  # Store paused movement for resume
+        
         # Easing function mapping
         self.easing_functions = {
             EasingType.LINEAR: EasingFunctions.linear,
@@ -426,16 +433,42 @@ class SynchronousCinematicController:
     def _start_next_queued_movement(self):
         """Start the next movement in the queue with smooth transition"""
         if not self.movement_queue:
-            return  # No queued movements
+            # No queued movements - set state appropriately
+            if self._queue_state == 'running':
+                self._queue_state = 'idle'
+            return
+        
+        # Don't start next movement if queue is stopped
+        if self._queue_state == 'stopped':
+            logger.info(f"Queue is stopped, not starting next movement")
+            return
+        
+        # If queue is paused but next movement is auto, we should transition to running
+        # This handles the case where auto movements follow manual movements
         
         # Get next movement from queue
         next_movement_data = self.movement_queue.popleft()
         movement_id, operation, params = next_movement_data
         
+        # Check execution mode
+        execution_mode = params.get('execution_mode', 'auto')
+        
+        if execution_mode == 'manual':
+            # Put movement back at front of queue and wait for manual play
+            self.movement_queue.appendleft((movement_id, operation, params))
+            logger.info(f"Next movement {movement_id} is in manual mode - waiting for play command")
+            self._queue_state = 'paused'  # Set to paused to wait for manual play
+            return
+        elif self._queue_state == 'paused':
+            # If we're paused but next movement is auto, transition to running
+            # This happens when auto movements follow manual movements
+            logger.info(f"Transitioning from paused to running for auto movement {movement_id}")
+            self._queue_state = 'running'
+        
         # Add smooth transition from current camera position if needed
         params = self._add_smooth_transition(params)
         
-        # Start the movement immediately (no queue check needed)
+        # Start the movement immediately (auto mode)
         self._start_movement_immediately(movement_id, operation, params)
     
     def _add_smooth_transition(self, params: Dict) -> Dict:
@@ -474,24 +507,55 @@ class SynchronousCinematicController:
     def start_movement(self, movement_id: str, operation: str, params: Dict):
         """Start a new cinematic movement (sequential queuing system)"""
         try:
-            # Validate duration first
-            duration = params.get('duration', 3.0)
-            if not (self.MIN_DURATION <= duration <= self.MAX_DURATION):
-                raise ValueError(f"Duration must be between {self.MIN_DURATION} and {self.MAX_DURATION} seconds")
+            # Validate duration/speed parameters 
+            duration = params.get('duration')
+            speed = params.get('speed')
+            
+            # If neither duration nor speed provided, use default duration
+            if duration is None and speed is None:
+                duration = 3.0
+                params['duration'] = duration
+            
+            # If duration is provided, validate it
+            if duration is not None:
+                if not (self.MIN_DURATION <= duration <= self.MAX_DURATION):
+                    raise ValueError(f"Duration must be between {self.MIN_DURATION} and {self.MAX_DURATION} seconds")
+            
+            # Check if queue is stopped
+            if self._queue_state == 'stopped':
+                # Reset to idle when new movements are added to stopped queue
+                self._queue_state = 'idle'
             
             # Check queue capacity (prevent infinite queueing)
             total_queued = len(self.movement_queue) + (1 if self.active_movement else 0)
             if total_queued >= self.MAX_QUEUE_SIZE:
                 raise ValueError(f"Movement queue full ({total_queued}/{self.MAX_QUEUE_SIZE}). Too many movements queued. Use 'stop_movement' API to cancel queued movements.")
             
-            # If no active movement, start immediately
-            if self.active_movement is None:
-                logger.info(f"Starting movement immediately: {movement_id} ({operation})")
+            # Get execution mode (auto by default)
+            execution_mode = params.get('execution_mode', 'auto')
+            
+            # Manual movements are always queued and require explicit play command
+            if execution_mode == 'manual':
+                logger.info(f"Queueing manual movement: {movement_id} ({operation}). Position in queue: {len(self.movement_queue) + 1}")
+                self.movement_queue.append((movement_id, operation, params))
+                
+                # If queue was idle, set to running but manual movements will pause queue
+                if self._queue_state == 'idle':
+                    self._queue_state = 'running'
+                    
+            # Auto movements: start immediately only if no active movement, no queue, and not paused/stopped
+            elif self.active_movement is None and len(self.movement_queue) == 0 and self._queue_state not in ['paused', 'stopped']:
+                logger.info(f"Starting movement immediately: {movement_id} ({operation}) - auto mode")
+                self._queue_state = 'running'
                 self._start_movement_immediately(movement_id, operation, params)
             else:
-                # Queue the movement for later
-                logger.info(f"Queueing movement: {movement_id} ({operation}). Position in queue: {len(self.movement_queue) + 1}")
+                # Queue auto movement for later
+                logger.info(f"Queueing auto movement: {movement_id} ({operation}). Position in queue: {len(self.movement_queue) + 1}")
                 self.movement_queue.append((movement_id, operation, params))
+                
+                # If queue was idle, set to running
+                if self._queue_state == 'idle':
+                    self._queue_state = 'running'
             
         except Exception as e:
             logger.error(f"Failed to start movement {movement_id}: {e}")
@@ -549,7 +613,20 @@ class SynchronousCinematicController:
         end_rotation = params.get('end_rotation')
         start_target = params.get('start_target')
         end_target = params.get('end_target')
-        duration = params.get('duration', 3.0)
+        
+        # Calculate duration using speed-based calculation if speed provided
+        speed = params.get('speed')
+        duration = params.get('duration')
+        if speed is not None or duration is None:
+            # Use speed-based calculation
+            duration = calculate_duration(start_pos, end_pos, speed, duration)
+            # Update params with calculated duration for MovementState
+            params['duration'] = duration
+        else:
+            # Use provided duration or default
+            duration = duration or 3.0
+            params['duration'] = duration
+            
         easing_value = params.get('easing_type', 'ease_in_out')
         easing_type = EasingType(easing_value) if easing_value is not None else EasingType.EASE_IN_OUT
         
@@ -1041,7 +1118,19 @@ class SynchronousCinematicController:
         end_pos = params['end_position']
         start_target = params.get('start_target')
         end_target = params.get('end_target')
-        duration = float(params.get('duration', 6.0))
+        
+        # Calculate duration using speed-based calculation if speed provided
+        speed = params.get('speed')
+        duration = params.get('duration')
+        if speed is not None or duration is None:
+            # Use speed-based calculation (arc shots default to slightly slower)
+            duration = calculate_duration(start_pos, end_pos, speed or 8.0, duration)
+            # Update params with calculated duration for MovementState
+            params['duration'] = duration
+        else:
+            duration = float(duration or 6.0)
+            params['duration'] = duration
+            
         movement_style = params.get('movement_style', 'standard')
         
         # Get style configuration
@@ -1304,3 +1393,246 @@ class SynchronousCinematicController:
             'queued_count': len(self.movement_queue),
             'total_count': len(movements)
         }
+    
+    def get_queue_status(self) -> Dict:
+        """Get comprehensive queue status with timing information"""
+        try:
+            # Get actual queue state
+            queue_state = self._get_actual_queue_state()
+            
+            # Initialize response
+            response = {
+                'success': True,
+                'queue_state': queue_state,
+                'timestamp': time.time()
+            }
+            
+            # Get active shot info
+            active_shot = None
+            if self.active_movement:
+                elapsed = time.time() - self.active_movement.start_time
+                progress = min(elapsed / self.active_movement.duration, 1.0)
+                remaining_time = max(0, self.active_movement.duration - elapsed)
+                
+                active_shot = {
+                    'movement_id': self.active_movement.movement_id,
+                    'operation': self.active_movement.operation,
+                    'progress': progress,
+                    'remaining_time': remaining_time,
+                    'total_duration': self.active_movement.duration,
+                    'execution': self.active_movement.params.get('execution', 'auto')
+                }
+            
+            response['active_shot'] = active_shot
+            
+            # Get queued shots info
+            queued_shots = []
+            estimated_start_time = active_shot['remaining_time'] if active_shot else 0
+            
+            for i, (movement_id, operation, params) in enumerate(self.movement_queue):
+                duration = params.get('duration', 3.0)  # Use calculated duration
+                
+                shot_info = {
+                    'movement_id': movement_id,
+                    'operation': operation,
+                    'estimated_duration': duration,
+                    'estimated_start_time': estimated_start_time,
+                    'queue_position': i + 1,
+                    'execution': params.get('execution', 'auto')
+                }
+                
+                queued_shots.append(shot_info)
+                estimated_start_time += duration
+            
+            response['queued_shots'] = queued_shots
+            
+            # Calculate totals
+            active_duration = active_shot['total_duration'] if active_shot else 0
+            queued_duration = sum(shot['estimated_duration'] for shot in queued_shots)
+            remaining_active = active_shot['remaining_time'] if active_shot else 0
+            
+            response.update({
+                'total_duration': active_duration + queued_duration,
+                'remaining_duration': remaining_active + queued_duration,
+                'shot_count': len(queued_shots) + (1 if active_shot else 0),
+                'active_count': 1 if active_shot else 0,
+                'queued_count': len(queued_shots)
+            })
+            
+            return response
+            
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+
+    # Queue Control Commands
+    def play_queue(self) -> Dict:
+        """Start/resume queue processing"""
+        try:
+            if self._queue_state == 'stopped':
+                return {'success': False, 'error': 'Queue is stopped. Cannot play stopped queue.'}
+            
+            # Check actual current state (not just internal variable)
+            actual_state = self._get_actual_queue_state()
+            
+            if actual_state == 'running':
+                return {'success': True, 'message': 'Queue is already running', 'queue_state': 'running'}
+            
+            # Resume from paused state
+            if self._queue_state == 'paused' and self._paused_movement:
+                # Resume the paused movement from current position
+                paused = self._paused_movement
+                
+                # Get current camera position for resume
+                try:
+                    camera_status = self.camera_controller.get_status()
+                    current_pos = camera_status.get('position', [0, 0, 0])
+                    
+                    # Create modified parameters to continue from current position
+                    resume_params = paused['params'].copy()
+                    resume_params['start_position'] = current_pos
+                    
+                    # Calculate correct target based on original trajectory progress
+                    progress = paused['progress']
+                    original_start_target = paused['params'].get('start_target')
+                    original_end_target = paused['params'].get('end_target')
+                    
+                    if original_start_target and original_end_target:
+                        # Interpolate target based on progress
+                        current_target = [
+                            original_start_target[i] + (original_end_target[i] - original_start_target[i]) * progress
+                            for i in range(3)
+                        ]
+                        resume_params['start_target'] = current_target
+                    elif original_start_target:
+                        resume_params['start_target'] = original_start_target
+                    elif original_end_target:
+                        resume_params['start_target'] = original_end_target
+                    
+                    # Adjust duration to remaining time
+                    resume_params['duration'] = paused['remaining_time']
+                    
+                    logger.info(f"Resuming paused movement: {paused['movement_id']} from position {current_pos} with {paused['remaining_time']:.1f}s remaining")
+                    self._start_movement_immediately(paused['movement_id'] + "_resumed", paused['operation'], resume_params)
+                    self._paused_movement = None
+                    
+                except Exception as e:
+                    logger.error(f"Failed to resume movement: {e}")
+                    # Fallback to restart
+                    self._start_movement_immediately(paused['movement_id'], paused['operation'], paused['params'])
+                    self._paused_movement = None
+            
+            # Set state to running
+            self._queue_state = 'running'
+            
+            # If we have queued movements but no active movement, check for manual shots
+            if not self.active_movement and self.movement_queue:
+                # Check if first queued movement is manual
+                next_movement_data = self.movement_queue[0]  # Peek at next movement
+                movement_id, operation, params = next_movement_data
+                execution_mode = params.get('execution_mode', 'auto')
+                
+                if execution_mode == 'manual':
+                    # Start the manual movement immediately when play is pressed
+                    self.movement_queue.popleft()  # Remove from queue
+                    logger.info(f"Starting manual movement via play command: {movement_id} ({operation})")
+                    self._start_movement_immediately(movement_id, operation, params)
+                else:
+                    # Start auto movements normally
+                    self._start_next_queued_movement()
+            
+            return {
+                'success': True,
+                'message': 'Queue resumed/started',
+                'queue_state': self._queue_state,
+                'active_count': 1 if self.active_movement else 0,
+                'queued_count': len(self.movement_queue)
+            }
+            
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+    
+    def pause_queue(self) -> Dict:
+        """Pause queue processing (stops current movement and prevents new ones)"""
+        try:
+            if self._queue_state == 'stopped':
+                return {'success': False, 'error': 'Queue is stopped. Cannot pause stopped queue.'}
+                
+            if self._queue_state == 'paused':
+                return {'success': True, 'message': 'Queue is already paused', 'queue_state': 'paused'}
+            
+            # Store current movement state for resume
+            paused_movement = None
+            if self.active_movement:
+                # Calculate current progress
+                elapsed = time.time() - self.active_movement.start_time
+                progress = min(elapsed / self.active_movement.duration, 1.0)
+                
+                # Store paused movement info for resume
+                paused_movement = {
+                    'movement_id': self.active_movement.movement_id,
+                    'operation': self.active_movement.operation,
+                    'params': self.active_movement.params,
+                    'progress': progress,
+                    'remaining_time': max(0, self.active_movement.duration - elapsed)
+                }
+                
+                # Clear active movement (stops the camera)
+                self.active_movement = None
+                logger.info(f"Paused movement at {progress*100:.1f}% progress")
+            
+            # Set queue state to paused
+            self._queue_state = 'paused'
+            self._paused_movement = paused_movement  # Store for resume
+            
+            return {
+                'success': True,
+                'message': 'Queue paused. Camera movement stopped.',
+                'queue_state': self._queue_state,
+                'active_count': 0,  # No active movement when paused
+                'queued_count': len(self.movement_queue),
+                'paused_progress': f"{paused_movement['progress']*100:.1f}%" if paused_movement else None
+            }
+            
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+    
+    def stop_queue(self) -> Dict:
+        """Stop and clear entire queue"""
+        try:
+            # Stop current movement
+            stop_result = self.stop_movement()
+            
+            # Set queue state to stopped
+            self._queue_state = 'stopped'
+            
+            return {
+                'success': True,
+                'message': 'Queue stopped and cleared',
+                'queue_state': self._queue_state,
+                'stopped_movements': stop_result.get('stopped_count', 0),
+                'active_count': 0,
+                'queued_count': 0
+            }
+            
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+
+    def _get_actual_queue_state(self) -> str:
+        """Get the actual current queue state based on conditions"""
+        if self._queue_state == 'stopped':
+            return 'stopped'
+        elif self._queue_state == 'paused':
+            return 'paused'
+        elif self.active_movement is not None:
+            return 'running'  # Has active movement
+        elif self.movement_queue:
+            # Check if next movement is manual
+            next_movement_data = self.movement_queue[0]
+            movement_id, operation, params = next_movement_data
+            execution_mode = params.get('execution_mode', 'auto')
+            if execution_mode == 'manual':
+                return 'pending'  # Manual shot waiting for play command
+            else:
+                return 'running'  # Auto shots in queue
+        else:
+            return 'idle'     # Empty queue, ready for work

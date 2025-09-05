@@ -402,18 +402,29 @@ class WorldViewerMCP:
                                     "maxItems": 3,
                                     "description": "Ending look-at target [x, y, z] (optional)"
                                 },
+                                "speed": {
+                                    "type": "number",
+                                    "minimum": 0.1,
+                                    "maximum": 100.0,
+                                    "description": "Average speed in units per second (alternative to duration)"
+                                },
                                 "duration": {
                                     "type": "number",
                                     "minimum": 0.1,
                                     "maximum": 60.0,
-                                    "default": 3.0,
-                                    "description": "Duration in seconds"
+                                    "description": "Duration in seconds (overrides speed if provided)"
                                 },
                                 "easing_type": {
                                     "type": "string",
                                     "enum": ["linear", "ease_in", "ease_out", "ease_in_out", "bounce", "elastic"],
                                     "default": "ease_in_out",
                                     "description": "Movement easing function"
+                                },
+                                "execution_mode": {
+                                    "type": "string",
+                                    "enum": ["auto", "manual"],
+                                    "default": "auto",
+                                    "description": "Execution mode: auto (execute immediately in sequence) or manual (wait for play command)"
                                 }
                             },
                             "required": ["start_position", "end_position"]
@@ -454,18 +465,29 @@ class WorldViewerMCP:
                                     "maxItems": 3,
                                     "description": "Ending look-at target [x, y, z] (optional)"
                                 },
+                                "speed": {
+                                    "type": "number",
+                                    "minimum": 0.1,
+                                    "maximum": 100.0,
+                                    "description": "Average speed in units per second (alternative to duration)"
+                                },
                                 "duration": {
                                     "type": "number",
                                     "minimum": 0.1,
                                     "maximum": 60.0,
-                                    "default": 6.0,
-                                    "description": "Duration in seconds"
+                                    "description": "Duration in seconds (overrides speed if provided)"
                                 },
                                 "movement_style": {
                                     "type": "string",
                                     "enum": ["standard"],
                                     "default": "standard",
                                     "description": "Arc movement style"
+                                },
+                                "execution_mode": {
+                                    "type": "string",
+                                    "enum": ["auto", "manual"],
+                                    "default": "auto",
+                                    "description": "Execution mode: auto (execute immediately in sequence) or manual (wait for play command)"
                                 }
                             },
                             "required": ["start_position", "end_position"]
@@ -521,6 +543,46 @@ class WorldViewerMCP:
                             "properties": {},
                             "additionalProperties": False
                         }
+                    ),
+                    
+                    Tool(
+                        name="worldviewer_get_queue_status",
+                        description="Get comprehensive shot queue status with timing information and queue state",
+                        inputSchema={
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": False
+                        }
+                    ),
+                    
+                    Tool(
+                        name="worldviewer_play_queue",
+                        description="Start/resume queue processing",
+                        inputSchema={
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": False
+                        }
+                    ),
+                    
+                    Tool(
+                        name="worldviewer_pause_queue",
+                        description="Pause queue processing (current movement continues, no new movements start)",
+                        inputSchema={
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": False
+                        }
+                    ),
+                    
+                    Tool(
+                        name="worldviewer_stop_queue",
+                        description="Stop and clear entire queue",
+                        inputSchema={
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": False
+                        }
                     )
                 ]
         
@@ -557,6 +619,14 @@ class WorldViewerMCP:
                     return await self._get_metrics(arguments)
                 elif name == "worldviewer_metrics_prometheus":
                     return await self._metrics_prometheus(arguments)
+                elif name == "worldviewer_get_queue_status":
+                    return await self._get_queue_status(arguments)
+                elif name == "worldviewer_play_queue":
+                    return await self._play_queue(arguments)
+                elif name == "worldviewer_pause_queue":
+                    return await self._pause_queue(arguments)
+                elif name == "worldviewer_stop_queue":
+                    return await self._stop_queue(arguments)
                 
                 else:
                     return [TextContent(type="text", text=f"Unknown tool: {name}")]
@@ -838,6 +908,122 @@ class WorldViewerMCP:
                 
         except Exception as e:
             return [TextContent(type="text", text=f"❌ Error getting Prometheus metrics: {str(e)}")]
+
+    async def _get_queue_status(self, args: Dict[str, Any]) -> List[TextContent]:
+        """Get comprehensive shot queue status with timing information"""
+        try:
+            await self._initialize_client()
+            response = await self.client.get("/camera/shot_queue_status")
+            
+            if response.get("success"):
+                # Format the response nicely
+                status_text = "🎬 **WorldViewer Queue Status**\n\n"
+                
+                # Queue state
+                queue_state = response.get("queue_state", "unknown")
+                shot_count = response.get("shot_count", 0)
+                active_count = response.get("active_count", 0)
+                queued_count = response.get("queued_count", 0)
+                
+                status_text += f"**Queue State:** {queue_state.title()}\n"
+                status_text += f"**Total Shots:** {shot_count} ({active_count} active, {queued_count} queued)\n\n"
+                
+                # Active shot info
+                active_shot = response.get("active_shot")
+                if active_shot:
+                    movement_id = active_shot.get("movement_id", "N/A")
+                    operation = active_shot.get("operation", "N/A")
+                    progress = active_shot.get("progress", 0) * 100  # Convert to percentage
+                    remaining_time = active_shot.get("remaining_time", 0)
+                    total_duration = active_shot.get("total_duration", 0)
+                    
+                    status_text += f"**Active Shot:** {movement_id} ({operation})\n"
+                    status_text += f"**Progress:** {progress:.1f}%\n"
+                    status_text += f"**Duration:** {total_duration:.1f}s (remaining: {remaining_time:.1f}s)\n\n"
+                
+                # Overall timing information
+                total_duration = response.get("total_duration", 0)
+                remaining_duration = response.get("remaining_duration", 0)
+                if total_duration > 0:
+                    status_text += f"**Total Queue Duration:** {total_duration:.1f}s\n"
+                    status_text += f"**Estimated Remaining:** {remaining_duration:.1f}s\n\n"
+                
+                # Queue details if there are queued shots
+                queued_shots = response.get("queued_shots", [])
+                if queued_shots:
+                    status_text += "**Queued Shots:**\n"
+                    for i, shot in enumerate(queued_shots, 1):
+                        mov_id = shot.get("movement_id", f"shot_{i}")
+                        operation = shot.get("operation", "unknown")
+                        duration = shot.get("total_duration", 0)
+                        status_text += f"  {i}. {mov_id} ({operation}) - {duration:.1f}s\n"
+                
+                return [TextContent(type="text", text=status_text)]
+            else:
+                error_msg = response.get('error', 'Unknown error')
+                return [TextContent(type="text", text=f"❌ Failed to get queue status: {error_msg}")]
+                
+        except Exception as e:
+            return [TextContent(type="text", text=f"❌ Error getting queue status: {str(e)}")]
+
+    async def _play_queue(self, args: Dict[str, Any]) -> List[TextContent]:
+        """Start/resume queue processing"""
+        try:
+            await self._initialize_client()
+            response = await self.client.post("/camera/queue/play")
+            
+            if response.get("success"):
+                queue_state = response.get("queue_state", "unknown")
+                active_count = response.get("active_count", 0)
+                queued_count = response.get("queued_count", 0)
+                message = response.get("message", "Queue started")
+                
+                return [TextContent(type="text", text=f"▶️ **Queue Play**\n\n{message}\n\n**State:** {queue_state.title()}\n**Active:** {active_count} | **Queued:** {queued_count}")]
+            else:
+                error_msg = response.get('error', 'Unknown error')
+                return [TextContent(type="text", text=f"❌ Failed to play queue: {error_msg}")]
+                
+        except Exception as e:
+            return [TextContent(type="text", text=f"❌ Error playing queue: {str(e)}")]
+
+    async def _pause_queue(self, args: Dict[str, Any]) -> List[TextContent]:
+        """Pause queue processing"""
+        try:
+            await self._initialize_client()
+            response = await self.client.post("/camera/queue/pause")
+            
+            if response.get("success"):
+                queue_state = response.get("queue_state", "unknown")
+                active_count = response.get("active_count", 0)
+                queued_count = response.get("queued_count", 0)
+                message = response.get("message", "Queue paused")
+                
+                return [TextContent(type="text", text=f"⏸️ **Queue Pause**\n\n{message}\n\n**State:** {queue_state.title()}\n**Active:** {active_count} | **Queued:** {queued_count}")]
+            else:
+                error_msg = response.get('error', 'Unknown error')
+                return [TextContent(type="text", text=f"❌ Failed to pause queue: {error_msg}")]
+                
+        except Exception as e:
+            return [TextContent(type="text", text=f"❌ Error pausing queue: {str(e)}")]
+
+    async def _stop_queue(self, args: Dict[str, Any]) -> List[TextContent]:
+        """Stop and clear entire queue"""
+        try:
+            await self._initialize_client()
+            response = await self.client.post("/camera/queue/stop")
+            
+            if response.get("success"):
+                queue_state = response.get("queue_state", "unknown")
+                stopped_movements = response.get("stopped_movements", 0)
+                message = response.get("message", "Queue stopped")
+                
+                return [TextContent(type="text", text=f"⏹️ **Queue Stop**\n\n{message}\n\n**State:** {queue_state.title()}\n**Stopped Movements:** {stopped_movements}")]
+            else:
+                error_msg = response.get('error', 'Unknown error')
+                return [TextContent(type="text", text=f"❌ Failed to stop queue: {error_msg}")]
+                
+        except Exception as e:
+            return [TextContent(type="text", text=f"❌ Error stopping queue: {str(e)}")]
     
 async def main():
     """Main entry point for the MCP server."""
