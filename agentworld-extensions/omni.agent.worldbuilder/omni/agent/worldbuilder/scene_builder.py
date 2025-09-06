@@ -1,27 +1,21 @@
 """
-Scene Builder Service
+Scene Builder Service - Modular Architecture
 
 Batch scene creation system for programmatic USD scene construction.
 Allows adding individual elements and creating complete batches with proper USD hierarchy.
+
+This is the clean, modular version using factory patterns and specialized managers.
 """
 
 import logging
 import time
 from typing import Dict, Any, List, Optional, Tuple
 from collections import OrderedDict
-import sys
-import os
-
-# Add shared modules to path
-shared_path = os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', '..', 'shared')
-if shared_path not in sys.path:
-    sys.path.insert(0, shared_path)
 
 try:
     from .config import get_config
     config = get_config()
 except ImportError:
-    # Fallback if shared config not available
     config = None
 
 import omni.usd
@@ -38,27 +32,33 @@ from .scene.scene_types import (
     RequestType
 )
 from .scene.queue_manager import WorldBuilderQueueManager
+from .scene.element_factory import ElementFactory
+from .scene.asset_manager import AssetManager
+from .scene.cleanup_operations import CleanupOperations
 
 logger = logging.getLogger(__name__)
 
 
-
 class SceneBuilder:
     """
-    Batch scene creation service for programmatic USD scene construction.
+    Modular batch scene creation service for programmatic USD scene construction.
     
-    Provides high-level API for creating complex scenes with proper USD hierarchy.
+    Provides high-level API for creating complex scenes with proper USD hierarchy
+    using specialized managers and factory patterns.
     """
 
     def __init__(self):
-        """Initialize scene builder with modular queue-based processing."""
+        """Initialize scene builder with modular architecture."""
         self._usd_context = omni.usd.get_context()
         self._current_batches: Dict[str, SceneBatch] = {}
         
-        # Modular queue manager
+        # Initialize modular components
         self._queue_manager = WorldBuilderQueueManager()
+        self._element_factory = ElementFactory(self._usd_context)
+        self._asset_manager = AssetManager(self._usd_context)
+        self._cleanup_operations = CleanupOperations(self._usd_context)
         
-        logger.info("🏗️ Scene Builder initialized with modular queue-based processing")
+        logger.info("🏗️ Scene Builder initialized with modular architecture")
     
     def _sanitize_usd_name(self, name: str) -> str:
         """Sanitize name for USD path compatibility by replacing invalid characters."""
@@ -70,17 +70,14 @@ class SceneBuilder:
             sanitized = f"_{sanitized}"
         return sanitized
     
-
+    # =============================================================================
+    # PUBLIC API METHODS - Queue-based operations
+    # =============================================================================
+    
     def add_element_to_stage(self, element: SceneElement) -> Dict[str, Any]:
         """
         Queue an element for creation on Isaac Sim's main thread.
         Returns immediately - actual USD creation happens asynchronously.
-        
-        Args:
-            element: SceneElement to queue for creation
-            
-        Returns:
-            Result dictionary with request ID for status tracking
         """
         return self._queue_manager.add_element_request(element)
 
@@ -88,12 +85,6 @@ class SceneBuilder:
         """
         Queue an asset for placement on Isaac Sim's main thread via USD reference.
         Returns immediately - actual USD reference creation happens asynchronously.
-        
-        Args:
-            asset: AssetPlacement to queue for placement
-            
-        Returns:
-            Result dictionary with request ID for status tracking
         """
         return self._queue_manager.add_asset_request(asset, 'asset')
 
@@ -101,12 +92,6 @@ class SceneBuilder:
         """
         Queue an element for removal from the USD stage.
         Returns immediately - actual USD removal happens asynchronously.
-        
-        Args:
-            element_path: USD path of element to remove (e.g., "/World/my_cube")
-            
-        Returns:
-            Result dictionary with request ID for status tracking
         """
         return self._queue_manager.add_removal_request('remove_element', element_path=element_path)
 
@@ -114,154 +99,8 @@ class SceneBuilder:
         """
         Queue removal of all elements under a USD path.
         Useful for clearing entire batches or sections.
-        
-        Args:
-            path: USD path to clear (e.g., "/World/my_batch" or "/World")
-            
-        Returns:
-            Result dictionary with request ID for status tracking
         """
         return self._queue_manager.add_removal_request('clear_path', path=path)
-
-    def process_queued_requests(self) -> Dict[str, Any]:
-        """
-        Process queued requests on Isaac Sim's main thread using modular queue manager.
-        This should be called regularly from the main thread (e.g., via timer).
-        
-        Returns:
-            Processing statistics
-        """
-        return self._queue_manager.process_queues(
-            element_processor=self._create_element_on_main_thread,
-            batch_processor=self._create_batch_on_main_thread,
-            asset_processor=self._process_asset_request,
-            removal_processor=self._process_removal_request
-        )
-
-    def _create_element_on_main_thread(self, element: SceneElement) -> Dict[str, Any]:
-        """Create element safely on Isaac Sim's main thread."""
-        try:
-            # Get USD stage
-            stage = self._usd_context.get_stage()
-            if not stage:
-                return {
-                    'success': False,
-                    'error': "No USD stage available. Please create or open a stage first."
-                }
-            
-            # Create element directly in /World/
-            element_path = f"/World/{element.name}"
-            
-            # Create primitive based on type
-            prim = self._create_primitive(stage, element_path, element.primitive_type)
-            if not prim:
-                return {
-                    'success': False,
-                    'error': f"Failed to create {element.primitive_type.value} primitive"
-                }
-            
-            # Set element transform
-            if hasattr(prim, 'GetXformOpOrderAttr'):  # It's an Xformable
-                self._set_transform(prim, element.position, element.rotation, element.scale)
-            
-            # Set color
-            self._set_color(prim, element.color)
-            
-            return {
-                'success': True,
-                'element_name': element.name,
-                'element_type': element.primitive_type.value,
-                'usd_path': element_path,
-                'position': element.position,
-                'message': f"Created {element.name} in USD stage"
-            }
-            
-        except Exception as e:
-            logger.error(f"❌ Error in main thread element creation: {e}")
-            return {
-                'success': False,
-                'error': str(e),
-                'element_name': element.name
-            }
-
-    def _place_asset_on_main_thread(self, asset: AssetPlacement) -> Dict[str, Any]:
-        """Place asset via USD reference safely on Isaac Sim's main thread."""
-        try:
-            # Get USD stage
-            stage = self._usd_context.get_stage()
-            if not stage:
-                return {
-                    'success': False,
-                    'error': "No USD stage available. Please create or open a stage first."
-                }
-            
-            # Validate asset path exists
-            if not self._validate_asset_path(asset.asset_path):
-                return {
-                    'success': False,
-                    'error': f"Asset file not found: {asset.asset_path}"
-                }
-            
-            # Create USD reference prim
-            prim_path = asset.prim_path if asset.prim_path.startswith('/') else f"/World/{asset.prim_path}"
-            
-            # Define the reference prim
-            prim = stage.DefinePrim(prim_path)
-            if not prim:
-                return {
-                    'success': False,
-                    'error': f"Failed to create prim at path: {prim_path}"
-                }
-            
-            # Add USD reference
-            references = prim.GetReferences()
-            references.AddReference(asset.asset_path)
-            
-            # Apply transforms to the container prim (not the referenced content)
-            if any(asset.position) or any(asset.rotation) or any(v != 1.0 for v in asset.scale):
-                try:
-                    # Make the container prim transformable (correct approach for references)
-                    xformable = UsdGeom.Xformable(prim)
-                    
-                    # Clear any existing transforms on the container
-                    xformable.ClearXformOpOrder()
-                    
-                    # Add transform operations in proper order: Translate, Rotate, Scale
-                    if any(asset.position):
-                        translate_op = xformable.AddTranslateOp()
-                        translate_op.Set(Gf.Vec3d(asset.position))
-                    
-                    if any(asset.rotation):
-                        # Use RotateXYZ for Euler angles in degrees
-                        rotate_op = xformable.AddRotateXYZOp()
-                        rotate_op.Set(Gf.Vec3f(asset.rotation))
-                    
-                    if any(v != 1.0 for v in asset.scale):
-                        scale_op = xformable.AddScaleOp()
-                        scale_op.Set(Gf.Vec3f(asset.scale))
-                        
-                    logger.info(f"✅ Applied transforms to reference container: pos{asset.position}, rot{asset.rotation}, scale{asset.scale}")
-                        
-                except Exception as transform_error:
-                    logger.warning(f"⚠️ Could not apply transform to asset '{asset.name}': {transform_error}")
-                    # Continue without transforms - asset placement still succeeds
-            
-            return {
-                'success': True,
-                'asset_name': asset.name,
-                'asset_path': asset.asset_path,
-                'prim_path': prim_path,
-                'position': asset.position,
-                'message': f"Placed asset '{asset.name}' via USD reference"
-            }
-            
-        except Exception as e:
-            logger.error(f"❌ Error in main thread asset placement: {e}")
-            return {
-                'success': False,
-                'error': str(e),
-                'asset_name': asset.name
-            }
 
     def transform_asset_in_stage(self, prim_path: str, position: Optional[Tuple[float, float, float]] = None, 
                                 rotation: Optional[Tuple[float, float, float]] = None, 
@@ -269,15 +108,6 @@ class SceneBuilder:
         """
         Queue an existing asset for transformation on Isaac Sim's main thread.
         Returns immediately - actual USD transform happens asynchronously.
-        
-        Args:
-            prim_path: Path to existing prim to transform
-            position: Optional new position [x, y, z]
-            rotation: Optional new rotation [rx, ry, rz] in degrees
-            scale: Optional new scale [sx, sy, sz]
-            
-        Returns:
-            Result dictionary with request ID for status tracking
         """
         return self._queue_manager.add_transform_request(
             prim_path, 
@@ -286,158 +116,36 @@ class SceneBuilder:
             list(scale) if scale else None
         )
 
-    def _transform_asset_on_main_thread(self, prim_path: str, position: Optional[Tuple[float, float, float]] = None, 
-                                       rotation: Optional[Tuple[float, float, float]] = None, 
-                                       scale: Optional[Tuple[float, float, float]] = None) -> Dict[str, Any]:
-        """Transform existing asset safely on Isaac Sim's main thread."""
-        try:
-            # Get USD stage
-            stage = self._usd_context.get_stage()
-            if not stage:
-                return {
-                    'success': False,
-                    'error': "No USD stage available. Please create or open a stage first."
-                }
-            
-            # Check if prim exists
-            prim = stage.GetPrimAtPath(prim_path)
-            if not prim.IsValid():
-                return {
-                    'success': False,
-                    'error': f"Prim not found at path: {prim_path}"
-                }
-            
-            # Make prim transformable
-            xformable = UsdGeom.Xformable(prim)
-            if not xformable:
-                return {
-                    'success': False,
-                    'error': f"Prim at '{prim_path}' is not transformable"
-                }
-            
-            # Clear existing transforms and apply new ones
-            xformable.ClearXformOpOrder()
-            
-            # Apply transforms in order: Translate, Rotate, Scale
-            if position is not None:
-                translate_op = xformable.AddTranslateOp()
-                translate_op.Set(Gf.Vec3d(position))
-            
-            if rotation is not None:
-                rotate_op = xformable.AddRotateXYZOp()
-                rotate_op.Set(Gf.Vec3f(rotation))
-            
-            if scale is not None:
-                scale_op = xformable.AddScaleOp()
-                scale_op.Set(Gf.Vec3f(scale))
-            
-            return {
-                'success': True,
-                'prim_path': prim_path,
-                'position': position,
-                'rotation': rotation,
-                'scale': scale,
-                'message': f"Transformed asset at '{prim_path}'"
-            }
-            
-        except Exception as e:
-            logger.error(f"❌ Error in main thread asset transform: {e}")
-            return {
-                'success': False,
-                'error': str(e),
-                'prim_path': prim_path
-            }
+    def create_batch_in_scene(self, batch_name: str, elements: List[Dict], 
+                              batch_transform: Optional[Dict[str, Tuple[float, float, float]]] = None) -> Dict[str, Any]:
+        """
+        Create a complete USD batch Xform with all its child elements.
+        Queued approach using modular queue manager.
+        """
+        return self._queue_manager.add_batch_request(batch_name, elements, batch_transform)
 
-    def _remove_element_on_main_thread(self, element_path: str) -> Dict[str, Any]:
-        """Remove a single element safely on main thread."""
-        try:
-            # Get USD stage
-            stage = self._usd_context.get_stage()
-            if not stage:
-                return {
-                    'success': False,
-                    'error': "No USD stage available."
-                }
-            
-            # Get the prim to remove
-            prim = stage.GetPrimAtPath(element_path)
-            if not prim.IsValid():
-                return {
-                    'success': False,
-                    'error': f"Element at path '{element_path}' not found or invalid."
-                }
-            
-            # Remove the prim
-            stage.RemovePrim(element_path)
-            
-            return {
-                'success': True,
-                'element_path': element_path,
-                'removed_count': 1,
-                'message': f"Removed element at {element_path}"
-            }
-            
-        except Exception as e:
-            logger.error(f"❌ Error removing element {element_path}: {e}")
-            return {
-                'success': False,
-                'error': str(e),
-                'element_path': element_path
-            }
-
-    def _clear_path_on_main_thread(self, path: str) -> Dict[str, Any]:
-        """Clear all elements under a USD path safely on main thread."""
-        try:
-            # Get USD stage
-            stage = self._usd_context.get_stage()
-            if not stage:
-                return {
-                    'success': False,
-                    'error': "No USD stage available."
-                }
-            
-            # Get the prim to clear
-            prim = stage.GetPrimAtPath(path)
-            if not prim.IsValid():
-                return {
-                    'success': False,
-                    'error': f"Path '{path}' not found or invalid."
-                }
-            
-            # Count children before removal
-            children = list(prim.GetChildren())
-            removed_count = len(children)
-            
-            # If it's a batch/group, remove all children
-            if path != "/World":  # Safety check - don't remove the entire world
-                stage.RemovePrim(path)
-                removed_count += 1  # Include the parent prim itself
-            else:
-                # If clearing /World, remove all its children but keep /World itself
-                for child in children:
-                    stage.RemovePrim(child.GetPath())
-            
-            return {
-                'success': True,
-                'path': path,
-                'removed_count': removed_count,
-                'message': f"Cleared {removed_count} elements from {path}"
-            }
-            
-        except Exception as e:
-            logger.error(f"❌ Error clearing path {path}: {e}")
-            return {
-                'success': False,
-                'error': str(e),
-                'path': path
-            }
+    def process_queued_requests(self) -> Dict[str, Any]:
+        """
+        Process queued requests on Isaac Sim's main thread using modular queue manager.
+        This should be called regularly from the main thread (e.g., via timer).
+        """
+        return self._queue_manager.process_queues(
+            element_processor=self._element_factory.create_element,
+            batch_processor=self._create_batch_on_main_thread,
+            asset_processor=self._process_asset_request,
+            removal_processor=self._process_removal_request
+        )
+    
+    # =============================================================================
+    # PROCESSOR METHODS - Used by queue manager
+    # =============================================================================
     
     def _process_asset_request(self, request_type: str, request_data) -> Dict[str, Any]:
-        """Process asset-related requests for the queue manager."""
+        """Process asset-related requests for the queue manager using modular managers."""
         if request_type == 'place':
-            return self._place_asset_on_main_thread(request_data)
+            return self._asset_manager.place_asset(request_data)
         elif request_type == 'transform':
-            return self._transform_asset_on_main_thread(
+            return self._asset_manager.transform_asset(
                 request_data['prim_path'], 
                 request_data.get('position'), 
                 request_data.get('rotation'), 
@@ -447,40 +155,30 @@ class SceneBuilder:
             return {'success': False, 'error': f"Unknown asset request type: {request_type}"}
     
     def _process_removal_request(self, request_data: Dict) -> Dict[str, Any]:
-        """Process removal requests for the queue manager."""
+        """Process removal requests for the queue manager using modular cleanup operations."""
         request_type = request_data['type']
         if request_type == 'remove_element':
-            return self._remove_element_on_main_thread(request_data['element_path'])
+            return self._cleanup_operations.remove_element(request_data['element_path'])
         elif request_type == 'clear_path':
-            return self._clear_path_on_main_thread(request_data['path'])
+            return self._cleanup_operations.clear_path(request_data['path'])
         else:
             return {'success': False, 'error': f"Unknown removal type: {request_type}"}
-
-
-
-    def create_batch_in_scene(self, batch_name: str, elements: List[Dict], 
-                                  batch_transform: Optional[Dict[str, Tuple[float, float, float]]] = None) -> Dict[str, Any]:
-        """
-        Create a complete USD batch Xform with all its child elements.
-        Queued approach using modular queue manager.
-        
-        Args:
-            batch_name: Name of the batch Xform to create
-            elements: List of element definitions to create as children
-            batch_transform: Optional transform for the batch Xform
-                           {'position': (x,y,z), 'rotation': (rx,ry,rz), 'scale': (sx,sy,sz)}
-            
-        Returns:
-            Result dictionary with USD creation details
-        """
-        return self._queue_manager.add_batch_request(batch_name, elements, batch_transform)
 
     def _create_batch_on_main_thread(self, batch_name: str, elements: List[Dict], 
                                      batch_transform: Optional[Dict[str, Tuple[float, float, float]]] = None) -> Dict[str, Any]:
         """
         Create batch in scene - MUST run on main thread for USD operations.
+        Uses modular element factory for individual element creation.
         """
         try:
+            # Get USD stage
+            stage = self._usd_context.get_stage()
+            if not stage:
+                return {
+                    'success': False,
+                    'error': "No USD stage available. Please create or open a stage first."
+                }
+            
             # Parse elements from request data
             scene_elements = []
             for elem_data in elements:
@@ -502,55 +200,44 @@ class SceneBuilder:
             
             # Apply batch transform if provided
             if batch_transform:
-                if 'position' in batch_transform:
-                    batch_position = tuple(batch_transform['position'])
-                if 'rotation' in batch_transform:
-                    batch_rotation = tuple(batch_transform['rotation'])
-                if 'scale' in batch_transform:
-                    batch_scale = tuple(batch_transform['scale'])
+                batch_position = batch_transform.get('position', batch_position)
+                batch_rotation = batch_transform.get('rotation', batch_rotation)
+                batch_scale = batch_transform.get('scale', batch_scale)
             
-            # Get USD stage
-            stage = self._usd_context.get_stage()
-            if not stage:
+            # Create batch Xform parent
+            batch_path = f"/World/{self._sanitize_usd_name(batch_name)}"
+            batch_xform = UsdGeom.Xform.Define(stage, batch_path)
+            if not batch_xform:
                 return {
                     'success': False,
-                    'error': "No USD stage available. Please create or open a stage first."
+                    'error': f"Failed to create batch Xform at {batch_path}"
                 }
             
-            # Sanitize batch name for USD path compatibility
-            sanitized_batch_name = self._sanitize_usd_name(batch_name)
-            if sanitized_batch_name != batch_name:
-                logger.info(f"📝 Sanitized batch name '{batch_name}' → '{sanitized_batch_name}' for USD compatibility")
-            
-            # Create batch Xform
-            batch_path = f"/World/{sanitized_batch_name}"
-            batch_xform = UsdGeom.Xform.Define(stage, batch_path)
-            
-            # Set batch transform
+            # Apply batch transform
             self._set_transform(batch_xform, batch_position, batch_rotation, batch_scale)
             
-            # Create all elements in the batch
+            # Create all elements in the batch using element factory
             created_elements = []
             for element in scene_elements:
-                element_path = f"{batch_path}/{element.name}"
+                # Temporarily adjust element name to include batch path
+                original_name = element.name
+                element.name = f"{self._sanitize_usd_name(batch_name)}/{original_name}"
                 
-                # Create primitive based on type
-                prim = self._create_primitive(stage, element_path, element.primitive_type)
-                if prim:
-                    # Set element transform
-                    if hasattr(prim, 'GetXformOpOrderAttr'):  # It's an Xformable
-                        self._set_transform(prim, element.position, element.rotation, element.scale)
-                    
-                    # Set color
-                    self._set_color(prim, element.color)
-                    
+                # Use element factory to create the element
+                result = self._element_factory.create_element(element)
+                
+                # Restore original name
+                element.name = original_name
+                
+                if result['success']:
                     created_elements.append({
-                        'name': element.name,
+                        'name': original_name,
                         'type': element.primitive_type.value,
-                        'path': element_path,
+                        'path': result['usd_path'],
                         'position': element.position
                     })
-                    
+                else:
+                    logger.warning(f"⚠️ Failed to create element '{original_name}' in batch: {result.get('error')}")
             
             # Create SceneBatch object and store in _current_batches for tracking
             scene_batch = SceneBatch(
@@ -563,7 +250,6 @@ class SceneBuilder:
             )
             self._current_batches[batch_name] = scene_batch
             
-            
             logger.info(f"🎯 Created batch '{batch_name}' with {len(created_elements)} elements at {batch_path}")
             
             return {
@@ -572,206 +258,50 @@ class SceneBuilder:
                 'batch_path': batch_path,
                 'elements_created': len(created_elements),
                 'elements': created_elements,
-                'batch_transform': {
-                    'position': batch_position,
-                    'rotation': batch_rotation,
-                    'scale': batch_scale
-                }
+                'message': f"Created batch '{batch_name}' with {len(created_elements)} elements"
             }
             
         except Exception as e:
-            logger.error(f"❌ Error in main thread batch creation: {e}")
+            logger.error(f"❌ Error in batch creation: {e}")
             return {
                 'success': False,
                 'error': str(e),
                 'batch_name': batch_name
             }
-
-    def _create_primitive(self, stage: Usd.Stage, path: str, prim_type: PrimitiveType) -> Optional[UsdGeom.Gprim]:
-        """Create a USD primitive of the specified type."""
-        try:
-            if prim_type == PrimitiveType.CUBE:
-                return UsdGeom.Cube.Define(stage, path)
-            elif prim_type == PrimitiveType.SPHERE:
-                return UsdGeom.Sphere.Define(stage, path)
-            elif prim_type == PrimitiveType.CYLINDER:
-                return UsdGeom.Cylinder.Define(stage, path)
-            elif prim_type == PrimitiveType.PLANE:
-                # Create a flattened cube for plane
-                plane = UsdGeom.Cube.Define(stage, path)
-                # Set very thin in Y direction to make it plane-like
-                return plane
-            elif prim_type == PrimitiveType.CONE:
-                return UsdGeom.Cone.Define(stage, path)
-            else:
-                logger.error(f"Unknown primitive type: {prim_type}")
-                return None
-                
-        except Exception as e:
-            logger.error(f"Error creating {prim_type.value} at {path}: {e}")
-            return None
-
+    
     def _set_transform(self, xformable: UsdGeom.Xformable, 
                       position: Tuple[float, float, float],
                       rotation: Tuple[float, float, float],
                       scale: Tuple[float, float, float]):
-        """Set transform on an Xformable prim."""
+        """Apply transform operations to a USD Xformable prim."""
         try:
-            # Clear existing transform ops
+            # Clear existing transforms to ensure clean state
             xformable.ClearXformOpOrder()
             
-            # Add transform operations in TRS order
-            translate_op = xformable.AddTranslateOp()
-            rotate_xyz_op = xformable.AddRotateXYZOp()
-            scale_op = xformable.AddScaleOp()
+            # Add transform operations in TRS order (Translate, Rotate, Scale)
+            if any(position):
+                translate_op = xformable.AddTranslateOp()
+                translate_op.Set(Gf.Vec3d(*position))
             
-            # Set values
-            translate_op.Set(Gf.Vec3d(position[0], position[1], position[2]))
-            rotate_xyz_op.Set(Gf.Vec3f(rotation[0], rotation[1], rotation[2]))
-            scale_op.Set(Gf.Vec3f(scale[0], scale[1], scale[2]))
+            if any(rotation):
+                rotate_op = xformable.AddRotateXYZOp()
+                rotate_op.Set(Gf.Vec3f(*rotation))  # USD expects degrees for Euler rotations
             
-        except Exception as e:
-            logger.error(f"Error setting transform: {e}")
-
-    def _set_color(self, prim: UsdGeom.Gprim, color: Tuple[float, float, float]):
-        """Set display color on a geometric primitive."""
-        try:
-            if hasattr(prim, 'GetDisplayColorAttr'):
-                color_attr = prim.GetDisplayColorAttr()
-                if not color_attr:
-                    color_attr = prim.CreateDisplayColorAttr()
-                color_attr.Set([Gf.Vec3f(color[0], color[1], color[2])])
+            if any(s != 1.0 for s in scale):
+                scale_op = xformable.AddScaleOp()
+                scale_op.Set(Gf.Vec3f(*scale))
                 
         except Exception as e:
-            logger.error(f"Error setting color: {e}")
+            logger.error(f"❌ Error setting transform: {e}")
 
-    def _validate_asset_path(self, asset_path: str) -> bool:
-        """
-        Validate that an asset path is accessible for USD reference creation.
-        Handles both local filesystem paths and omniverse:// URLs.
-        
-        Args:
-            asset_path: Path to asset file (local or omniverse://)
-            
-        Returns:
-            True if asset is accessible, False otherwise
-        """
-        try:
-            if asset_path.startswith('omniverse://'):
-                # For omniverse URLs, use USD layer validation
-                try:
-                    # Attempt to open the layer - this validates Nucleus connectivity and file existence
-                    layer = Sdf.Layer.FindOrOpen(asset_path)
-                    if layer:
-                        logger.info(f"✅ Validated omniverse asset: {asset_path}")
-                        return True
-                    else:
-                        logger.warning(f"⚠️ Cannot access omniverse asset: {asset_path}")
-                        return False
-                except Exception as e:
-                    logger.error(f"❌ Omniverse asset validation failed for {asset_path}: {e}")
-                    return False
-            else:
-                # For local paths, use filesystem check
-                from pathlib import Path
-                exists = Path(asset_path).exists()
-                if exists:
-                    logger.info(f"✅ Validated local asset: {asset_path}")
-                else:
-                    logger.warning(f"⚠️ Local asset not found: {asset_path}")
-                return exists
-                
-        except Exception as e:
-            logger.error(f"❌ Asset validation error for {asset_path}: {e}")
-            return False
+    # =============================================================================
+    # SCENE INSPECTION AND STATISTICS
+    # =============================================================================
 
-    def get_batch_info(self, batch_name: Optional[str] = None) -> Dict[str, Any]:
+    def get_scene_contents(self, include_metadata: bool = True) -> Dict[str, Any]:
         """
-        Get information about current batches.
-        
-        Args:
-            batch_name: Specific batch name, or None for all batches
-            
-        Returns:
-            Batch information dictionary
-        """
-        try:
-            if batch_name:
-                if batch_name in self._current_batches:
-                    batch = self._current_batches[batch_name]
-                    return {
-                        'success': True,
-                        'batch_name': batch_name,
-                        'element_count': len(batch.elements),
-                        'elements': [
-                            {
-                                'name': elem.name,
-                                'type': elem.primitive_type.value,
-                                'position': elem.position,
-                                'color': elem.color
-                            }
-                            for elem in batch.elements
-                        ]
-                    }
-                else:
-                    return {
-                        'success': False,
-                        'error': f"Batch '{batch_name}' not found",
-                        'available_batches': list(self._current_batches.keys())
-                    }
-            else:
-                # Return all batches
-                return {
-                    'success': True,
-                    'batch_count': len(self._current_batches),
-                    'batches': {
-                        name: {
-                            'element_count': len(batch.elements),
-                            'elements': [elem.name for elem in batch.elements]
-                        }
-                        for name, batch in self._current_batches.items()
-                    },
-                    'statistics': self._stats
-                }
-                
-        except Exception as e:
-            logger.error(f"Error getting batch info: {e}")
-            return {
-                'success': False,
-                'error': str(e)
-            }
-
-    def clear_batch(self, batch_name: str) -> Dict[str, Any]:
-        """Clear a specific batch without creating it in the scene."""
-        try:
-            if batch_name in self._current_batches:
-                del self._current_batches[batch_name]
-                return {
-                    'success': True,
-                    'message': f"Cleared batch '{batch_name}'"
-                }
-            else:
-                return {
-                    'success': False,
-                    'error': f"Batch '{batch_name}' not found",
-                    'available_batches': list(self._current_batches.keys())
-                }
-                
-        except Exception as e:
-            return {
-                'success': False,
-                'error': str(e)
-            }
-
-    def get_scene_contents(self, path: str = "/World") -> Dict[str, Any]:
-        """
-        Get contents of the USD stage at a specific path.
-        
-        Args:
-            path: USD path to inspect (default: "/World")
-            
-        Returns:
-            Dictionary with scene contents and structure
+        Get comprehensive scene contents using traversal.
+        This method should be called from main thread for USD stage access.
         """
         try:
             # Get USD stage
@@ -779,166 +309,154 @@ class SceneBuilder:
             if not stage:
                 return {
                     'success': False,
-                    'error': "No USD stage available."
+                    'error': "No USD stage available. Cannot inspect scene contents."
                 }
             
-            # Get the root prim
-            root_prim = stage.GetPrimAtPath(path)
-            if not root_prim.IsValid():
+            # Get world prim as root
+            world_prim = stage.GetPrimAtPath("/World")
+            if not world_prim.IsValid():
                 return {
-                    'success': False,
-                    'error': f"Path '{path}' not found or invalid."
+                    'success': False, 
+                    'error': "/World prim not found in scene"
                 }
             
-            # Debug: Check if root prim has children
-            children = list(root_prim.GetChildren())
-            logger.info(f"🔍 Debug: Root prim '{path}' has {len(children)} children")
-            for child in children:
-                logger.info(f"  - Child: {child.GetPath()} (Type: {child.GetTypeName()})")
+            # Inspect scene hierarchy
+            scene_data = self._inspect_prim_recursive(world_prim, 0, max_depth=10)
             
-            # Recursively gather scene structure
-            scene_data = self._inspect_prim_recursive(root_prim, max_depth=5)
-            logger.info(f"🔍 Debug: Scene data structure: {scene_data}")
+            # Generate statistics
+            stats = self._generate_scene_statistics(world_prim)
             
-            return {
+            result = {
                 'success': True,
-                'path': path,
-                'contents': scene_data,
-                'total_prims': self._count_prims_recursive(root_prim),
+                'scene_root': '/World',
+                'hierarchy': scene_data,
+                'statistics': stats,
                 'timestamp': time.time()
             }
+            
+            if include_metadata:
+                result['metadata'] = {
+                    'current_batches': len(self._current_batches),
+                    'batch_names': list(self._current_batches.keys())
+                }
+            
+            return result
             
         except Exception as e:
             logger.error(f"❌ Error getting scene contents: {e}")
             return {
                 'success': False,
-                'error': str(e),
-                'path': path
+                'error': str(e)
             }
 
-    def _inspect_prim_recursive(self, prim, current_depth: int = 0, max_depth: int = 5) -> Dict[str, Any]:
+    def _inspect_prim_recursive(self, prim: Usd.Prim, depth: int, max_depth: int = 5) -> Dict[str, Any]:
         """Recursively inspect a USD prim and its children."""
-        if current_depth > max_depth:
-            return {'name': prim.GetName(), 'type': 'max_depth_reached', 'children_count': len(list(prim.GetChildren()))}
+        if depth > max_depth:
+            return {'name': prim.GetName(), 'truncated': True}
         
         prim_data = {
             'name': prim.GetName(),
             'path': str(prim.GetPath()),
             'type': prim.GetTypeName(),
-            'is_active': prim.IsActive(),
+            'active': prim.IsActive(),
             'children': []
         }
         
-        # Add transform info if available
-        try:
-            if prim.HasAPI('UsdGeom.Xformable'):
-                from pxr import UsdGeom
-                xformable = UsdGeom.Xformable(prim)
-                # Get local transform
-                transform_matrix = xformable.GetLocalTransformation()
-                if transform_matrix:
-                    # Extract translation from matrix
-                    translation = transform_matrix.ExtractTranslation()
-                    prim_data['position'] = [float(translation[0]), float(translation[1]), float(translation[2])]
-        except Exception:
-            pass  # Skip transform info if not available
-        
-        # Add geometry info if it's a geometric primitive
-        try:
-            if prim.GetTypeName() in ['Cube', 'Sphere', 'Cylinder', 'Cone', 'Plane']:
-                from pxr import UsdGeom
+        # Add geometric info for geometric prims
+        if prim.IsA(UsdGeom.Gprim):
+            try:
                 gprim = UsdGeom.Gprim(prim)
-                # Get display color if available
-                color_attr = gprim.GetDisplayColorAttr()
-                if color_attr:
-                    colors = color_attr.Get()
-                    if colors:
-                        color = colors[0]
-                        prim_data['color'] = [float(color[0]), float(color[1]), float(color[2])]
-        except Exception:
-            pass  # Skip color info if not available
+                # Get bounding box if possible
+                bbox = gprim.ComputeWorldBound(Usd.TimeCode.Default(), UsdGeom.Tokens.default_)
+                if bbox:
+                    prim_data['bounds'] = {
+                        'min': list(bbox.GetRange().GetMin()),
+                        'max': list(bbox.GetRange().GetMax())
+                    }
+            except:
+                pass  # Bounds calculation can fail, that's ok
         
-        # Recursively add children
-        children = list(prim.GetChildren())
-        for child in children:
-            prim_data['children'].append(self._inspect_prim_recursive(child, current_depth + 1, max_depth))
+        # Recursively inspect children
+        current_depth = depth + 1
+        for child in prim.GetChildren():
+            prim_data['children'].append(self._inspect_prim_recursive(child, current_depth, max_depth))
         
         return prim_data
 
-    def _count_prims_recursive(self, prim) -> int:
-        """Count total prims recursively."""
-        count = 1  # Count this prim
-        for child in prim.GetChildren():
-            count += self._count_prims_recursive(child)
-        return count
-
-    def list_elements_at_path(self, path: str = "/World") -> Dict[str, Any]:
-        """
-        Get a flat list of all elements at a specific path (non-recursive).
+    def _generate_scene_statistics(self, world_prim: Usd.Prim) -> Dict[str, Any]:
+        """Generate scene statistics from USD traversal."""
+        stats = {
+            'total_prims': 0,
+            'active_prims': 0,
+            'prim_types': {},
+            'geometric_prims': 0
+        }
         
-        Args:
-            path: USD path to list (default: "/World")
+        # Traverse and count
+        for prim in world_prim.GetAllDescendants():
+            stats['total_prims'] += 1
             
-        Returns:
-            Dictionary with list of direct children
-        """
+            if prim.IsActive():
+                stats['active_prims'] += 1
+            
+            prim_type = prim.GetTypeName()
+            stats['prim_types'][prim_type] = stats['prim_types'].get(prim_type, 0) + 1
+            
+            if prim.IsA(UsdGeom.Gprim):
+                stats['geometric_prims'] += 1
+        
+        return stats
+
+    def list_elements_in_scene(self, filter_type: str = "") -> Dict[str, Any]:
+        """List all elements in the scene with optional type filtering."""
         try:
-            # Get USD stage
             stage = self._usd_context.get_stage()
             if not stage:
-                return {
-                    'success': False,
-                    'error': "No USD stage available."
-                }
+                return {'success': False, 'error': "No USD stage available"}
             
-            # Get the root prim
-            root_prim = stage.GetPrimAtPath(path)
-            if not root_prim.IsValid():
-                return {
-                    'success': False,
-                    'error': f"Path '{path}' not found or invalid."
-                }
-            
-            # Get direct children only
             elements = []
-            for child in root_prim.GetChildren():
+            world_prim = stage.GetPrimAtPath("/World")
+            if not world_prim.IsValid():
+                return {'success': False, 'error': "/World prim not found"}
+            
+            # Traverse and collect elements
+            for prim in world_prim.GetAllDescendants():
+                if not prim.IsActive():
+                    continue
+                    
+                prim_type = prim.GetTypeName()
+                if filter_type and prim_type != filter_type:
+                    continue
+                
                 element_info = {
-                    'name': child.GetName(),
-                    'path': str(child.GetPath()),
-                    'type': child.GetTypeName(),
-                    'is_active': child.IsActive(),
-                    'has_children': len(list(child.GetChildren())) > 0
+                    'name': prim.GetName(),
+                    'path': str(prim.GetPath()),
+                    'type': prim_type,
+                    'is_geometric': prim.IsA(UsdGeom.Gprim)
                 }
                 
-                # Add position if available
-                try:
-                    if child.HasAPI('UsdGeom.Xformable'):
-                        from pxr import UsdGeom
-                        xformable = UsdGeom.Xformable(child)
-                        transform_matrix = xformable.GetLocalTransformation()
-                        if transform_matrix:
-                            translation = transform_matrix.ExtractTranslation()
-                            element_info['position'] = [float(translation[0]), float(translation[1]), float(translation[2])]
-                except Exception:
-                    pass
+                # Get transform info if it's an Xformable
+                if prim.IsA(UsdGeom.Xformable):
+                    try:
+                        xformable = UsdGeom.Xformable(prim)
+                        local_matrix = xformable.GetLocalTransformation()
+                        translation = local_matrix.ExtractTranslation()
+                        element_info['position'] = [translation[0], translation[1], translation[2]]
+                    except:
+                        element_info['position'] = None
                 
                 elements.append(element_info)
             
             return {
                 'success': True,
-                'path': path,
-                'elements': elements,
-                'count': len(elements),
-                'timestamp': time.time()
+                'element_count': len(elements),
+                'filter_type': filter_type or "all",
+                'elements': elements
             }
             
         except Exception as e:
-            logger.error(f"❌ Error listing elements: {e}")
-            return {
-                'success': False,
-                'error': str(e),
-                'path': path
-            }
+            logger.error(f"❌ Error listing scene elements: {e}")
+            return {'success': False, 'error': str(e)}
 
     def get_request_status(self, request_id: str) -> Dict[str, Any]:
         """Get status of a queued request using modular queue manager."""
