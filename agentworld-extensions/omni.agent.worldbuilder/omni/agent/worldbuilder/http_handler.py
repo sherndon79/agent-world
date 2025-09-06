@@ -479,12 +479,7 @@ class WorldBuilderHTTPHandler(WorldHTTPHandler):
                 'scene_health': 'healthy',
                 'total_prims': total_prims,
                 'active_batches': len(self.api_interface._scene_builder._current_batches),
-                'queued_operations': {
-                    'elements': len(self.api_interface._scene_builder._element_queue),
-                    'batches': len(self.api_interface._scene_builder._batch_queue),
-                    'removals': len(self.api_interface._scene_builder._removal_queue),
-                    'assets': len(self.api_interface._scene_builder._asset_queue)
-                },
+                'queued_operations': self.api_interface._scene_builder._queue_manager.get_queue_status()['queue_lengths'],
                 'timestamp': datetime.now().isoformat()
             }
         except Exception as e:

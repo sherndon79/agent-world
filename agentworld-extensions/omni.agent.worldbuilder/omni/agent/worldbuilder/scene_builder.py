@@ -37,6 +37,7 @@ from .scene.scene_types import (
     RequestState,
     RequestType
 )
+from .scene.queue_manager import WorldBuilderQueueManager
 
 logger = logging.getLogger(__name__)
 
@@ -50,35 +51,14 @@ class SceneBuilder:
     """
 
     def __init__(self):
-        """Initialize scene builder with queue-based processing."""
+        """Initialize scene builder with modular queue-based processing."""
         self._usd_context = omni.usd.get_context()
         self._current_batches: Dict[str, SceneBatch] = {}
         
-        # Queue-based processing
-        self._element_queue = []
-        self._batch_queue = []
-        self._removal_queue = []
-        self._asset_queue = []
-        self._completed_requests = OrderedDict()  # O(1) FIFO eviction
-        self._request_counter = 0
-        self._max_completed_requests = config.max_completed_requests if config else 100
+        # Modular queue manager
+        self._queue_manager = WorldBuilderQueueManager()
         
-        # Statistics
-        self._stats = {
-            'batches_created': 0,
-            'elements_created': 0,
-            'assets_placed': 0,
-            'total_prims_added': 0,
-            'last_operation_time': None,
-            'queued_elements': 0,
-            'queued_batches': 0,
-            'queued_removals': 0,
-            'queued_assets': 0,
-            'elements_removed': 0,
-            'completed_requests': 0
-        }
-        
-        logger.info("🏗️ Scene Builder initialized with queue-based processing")
+        logger.info("🏗️ Scene Builder initialized with modular queue-based processing")
     
     def _sanitize_usd_name(self, name: str) -> str:
         """Sanitize name for USD path compatibility by replacing invalid characters."""
@@ -90,45 +70,6 @@ class SceneBuilder:
             sanitized = f"_{sanitized}"
         return sanitized
     
-    def _store_completed_request(self, request_id: str, result: Dict[str, Any]):
-        """Store completed request with O(1) automatic eviction."""
-        # Automatic eviction when at capacity
-        if len(self._completed_requests) >= self._max_completed_requests:
-            # Remove oldest request (FIFO) - O(1) operation
-            self._completed_requests.popitem(last=False)
-        
-        # Store new request - O(1) operation
-        self._completed_requests[request_id] = result
-
-    def _process_single_request(self, request_id: str, operation_func, success_msg: str = "", error_context: str = "") -> Dict[str, Any]:
-        """Helper method to process a single request with consistent error handling."""
-        try:
-            result = operation_func()
-            
-            # Store completion result with automatic eviction
-            self._store_completed_request(request_id, {
-                'success': result['success'],
-                'result': result,
-                'completed_time': time.time()
-            })
-            
-            if result['success']:
-                if success_msg:
-                    logger.info(f"✅ {success_msg} (ID: {request_id})")
-            else:
-                logger.error(f"❌ Failed {error_context}: {result.get('error')}")
-            
-            return result
-                
-        except Exception as e:
-            logger.error(f"❌ Error processing {error_context}: {e}")
-            error_result = {'success': False, 'error': str(e)}
-            self._store_completed_request(request_id, {
-                'success': False,
-                'result': error_result,
-                'completed_time': time.time()
-            })
-            return error_result
 
     def add_element_to_stage(self, element: SceneElement) -> Dict[str, Any]:
         """
@@ -141,40 +82,7 @@ class SceneBuilder:
         Returns:
             Result dictionary with request ID for status tracking
         """
-        try:
-            # Generate request ID
-            self._request_counter += 1
-            request_id = f"element_{self._request_counter}_{int(time.time())}"
-            
-            # Add to queue - no USD operations here!
-            request_data = {
-                'request_id': request_id,
-                'type': 'element',
-                'element': element,
-                'timestamp': time.time()
-            }
-            
-            self._element_queue.append(request_data)
-            self._stats['queued_elements'] += 1
-            
-            logger.info(f"✅ Queued element '{element.name}' for creation (ID: {request_id})")
-            
-            return {
-                'success': True,
-                'request_id': request_id,
-                'element_name': element.name,
-                'status': 'queued',
-                'message': f"Element '{element.name}' queued for creation",
-                'queue_position': len(self._element_queue)
-            }
-                
-        except Exception as e:
-            logger.error(f"❌ Error queuing element: {e}")
-            return {
-                'success': False,
-                'error': str(e),
-                'element_name': element.name
-            }
+        return self._queue_manager.add_element_request(element)
 
     def place_asset_in_stage(self, asset: AssetPlacement) -> Dict[str, Any]:
         """
@@ -187,42 +95,7 @@ class SceneBuilder:
         Returns:
             Result dictionary with request ID for status tracking
         """
-        try:
-            # Generate request ID
-            self._request_counter += 1
-            request_id = f"asset_{self._request_counter}_{int(time.time())}"
-            
-            # Add to queue - no USD operations here!
-            request_data = {
-                'request_id': request_id,
-                'type': 'asset',
-                'asset': asset,
-                'timestamp': time.time()
-            }
-            
-            self._asset_queue.append(request_data)
-            self._stats['queued_assets'] += 1
-            
-            logger.info(f"✅ Queued asset '{asset.name}' for placement (ID: {request_id})")
-            
-            return {
-                'success': True,
-                'request_id': request_id,
-                'asset_name': asset.name,
-                'asset_path': asset.asset_path,
-                'prim_path': asset.prim_path,
-                'status': 'queued',
-                'message': f"Asset '{asset.name}' queued for placement",
-                'queue_position': len(self._asset_queue)
-            }
-                
-        except Exception as e:
-            logger.error(f"❌ Error queuing asset: {e}")
-            return {
-                'success': False,
-                'error': str(e),
-                'asset_name': asset.name
-            }
+        return self._queue_manager.add_asset_request(asset, 'asset')
 
     def remove_element_from_stage(self, element_path: str) -> Dict[str, Any]:
         """
@@ -235,40 +108,7 @@ class SceneBuilder:
         Returns:
             Result dictionary with request ID for status tracking
         """
-        try:
-            # Generate request ID
-            self._request_counter += 1
-            request_id = f"remove_{self._request_counter}_{int(time.time())}"
-            
-            # Add to removal queue - no USD operations here!
-            request_data = {
-                'request_id': request_id,
-                'type': 'remove_element',
-                'element_path': element_path,
-                'timestamp': time.time()
-            }
-            
-            self._removal_queue.append(request_data)
-            self._stats['queued_removals'] += 1
-            
-            logger.info(f"✅ Queued element '{element_path}' for removal (ID: {request_id})")
-            
-            return {
-                'success': True,
-                'request_id': request_id,
-                'element_path': element_path,
-                'status': 'queued',
-                'message': f"Element '{element_path}' queued for removal",
-                'queue_position': len(self._removal_queue)
-            }
-                
-        except Exception as e:
-            logger.error(f"❌ Error queuing element removal: {e}")
-            return {
-                'success': False,
-                'error': str(e),
-                'element_path': element_path
-            }
+        return self._queue_manager.add_removal_request('remove_element', element_path=element_path)
 
     def clear_stage_path(self, path: str) -> Dict[str, Any]:
         """
@@ -281,185 +121,22 @@ class SceneBuilder:
         Returns:
             Result dictionary with request ID for status tracking
         """
-        try:
-            # Generate request ID
-            self._request_counter += 1
-            request_id = f"clear_{self._request_counter}_{int(time.time())}"
-            
-            # Add to removal queue
-            request_data = {
-                'request_id': request_id,
-                'type': 'clear_path',
-                'path': path,
-                'timestamp': time.time()
-            }
-            
-            self._removal_queue.append(request_data)
-            self._stats['queued_removals'] += 1
-            
-            logger.info(f"✅ Queued path '{path}' for clearing (ID: {request_id})")
-            
-            return {
-                'success': True,
-                'request_id': request_id,
-                'path': path,
-                'status': 'queued',
-                'message': f"Path '{path}' queued for clearing",
-                'queue_position': len(self._removal_queue)
-            }
-                
-        except Exception as e:
-            logger.error(f"❌ Error queuing path clearing: {e}")
-            return {
-                'success': False,
-                'error': str(e),
-                'path': path
-            }
+        return self._queue_manager.add_removal_request('clear_path', path=path)
 
     def process_queued_requests(self) -> Dict[str, Any]:
         """
-        Process queued requests on Isaac Sim's main thread.
+        Process queued requests on Isaac Sim's main thread using modular queue manager.
         This should be called regularly from the main thread (e.g., via timer).
         
         Returns:
             Processing statistics
         """
-        processed_count = 0
-        max_operations_per_update = config.max_operations_per_cycle if config else 5
-        
-        try:
-            # Process element queue
-            while self._element_queue and processed_count < max_operations_per_update:
-                request = self._element_queue.pop(0)
-                request_id = request['request_id']
-                
-                result = self._process_single_request(
-                    request_id, 
-                    lambda: self._create_element_on_main_thread(request['element']),
-                    success_msg=f"Created element '{request['element'].name}'",
-                    error_context=f"element request {request_id}"
-                )
-                
-                if result['success']:
-                    self._stats['elements_created'] += 1
-                
-                processed_count += 1
-                self._stats['queued_elements'] -= 1
-                self._stats['completed_requests'] += 1
-            
-            # Process batch queue
-            while self._batch_queue and processed_count < max_operations_per_update:
-                request = self._batch_queue.pop(0)
-                request_id = request['request_id']
-                
-                result = self._process_single_request(
-                    request_id,
-                    lambda: self._create_batch_on_main_thread(
-                        request['batch_name'], 
-                        request['elements'], 
-                        request['batch_transform']
-                    ),
-                    success_msg=f"Created batch '{request['batch_name']}'",
-                    error_context=f"batch request {request_id}"
-                )
-                
-                if result['success']:
-                    self._stats['batches_created'] += 1
-                
-                processed_count += 1
-                self._stats['queued_batches'] -= 1
-                self._stats['completed_requests'] += 1
-            
-            # Process asset queue (handles both placement and transform)
-            while self._asset_queue and processed_count < max_operations_per_update:
-                request = self._asset_queue.pop(0)
-                request_id = request['request_id']
-                request_type = request['type']
-                
-                if request_type == 'asset':
-                    # Asset placement
-                    result = self._process_single_request(
-                        request_id,
-                        lambda: self._place_asset_on_main_thread(request['asset']),
-                        success_msg=f"Placed asset '{request['asset'].name}'",
-                        error_context=f"asset request {request_id}"
-                    )
-                elif request_type == 'transform':
-                    # Asset transformation
-                    result = self._process_single_request(
-                        request_id,
-                        lambda: self._transform_asset_on_main_thread(
-                            request['prim_path'], 
-                            request['position'], 
-                            request['rotation'], 
-                            request['scale']
-                        ),
-                        success_msg=f"Transformed asset '{request['prim_path']}'",
-                        error_context=f"transform request {request_id}"
-                    )
-                else:
-                    logger.error(f"❌ Unknown request type: {request_type}")
-                    continue
-                
-                if result['success']:
-                    self._stats['assets_placed'] += 1
-                
-                processed_count += 1
-                self._stats['queued_assets'] -= 1
-                self._stats['completed_requests'] += 1
-            
-            # Process removal queue  
-            while self._removal_queue and processed_count < max_operations_per_update:
-                request = self._removal_queue.pop(0)
-                request_id = request['request_id']
-                
-                # Determine operation function based on request type
-                if request['type'] == 'remove_element':
-                    operation_func = lambda: self._remove_element_on_main_thread(request['element_path'])
-                    context = f"remove element {request['element_path']}"
-                elif request['type'] == 'clear_path':
-                    operation_func = lambda: self._clear_path_on_main_thread(request['path'])
-                    context = f"clear path {request['path']}"
-                else:
-                    operation_func = lambda: {'success': False, 'error': f"Unknown removal type: {request['type']}"}
-                    context = f"unknown removal type {request['type']}"
-                
-                result = self._process_single_request(
-                    request_id,
-                    operation_func,
-                    success_msg=f"Completed removal operation",
-                    error_context=context
-                )
-                
-                if result['success']:
-                    self._stats['elements_removed'] += result.get('removed_count', 1)
-                
-                processed_count += 1
-                self._stats['queued_removals'] -= 1
-                self._stats['completed_requests'] += 1
-            
-            # Note: Request cleanup now handled automatically by O(1) _store_completed_request method
-            # No manual cleanup needed - OrderedDict maintains bounded size automatically
-            
-            self._stats['last_operation_time'] = time.time()
-            
-            return {
-                'processed_count': processed_count,
-                'queue_lengths': {
-                    'elements': len(self._element_queue),
-                    'batches': len(self._batch_queue),
-                    'assets': len(self._asset_queue),
-                    'removals': len(self._removal_queue)
-                },
-                'completed_requests': len(self._completed_requests)
-            }
-            
-        except Exception as e:
-            logger.error(f"❌ Error processing queued requests: {e}")
-            return {
-                'processed_count': processed_count,
-                'error': str(e)
-            }
+        return self._queue_manager.process_queues(
+            element_processor=self._create_element_on_main_thread,
+            batch_processor=self._create_batch_on_main_thread,
+            asset_processor=self._process_asset_request,
+            removal_processor=self._process_removal_request
+        )
 
     def _create_element_on_main_thread(self, element: SceneElement) -> Dict[str, Any]:
         """Create element safely on Isaac Sim's main thread."""
@@ -602,46 +279,12 @@ class SceneBuilder:
         Returns:
             Result dictionary with request ID for status tracking
         """
-        try:
-            # Generate request ID
-            self._request_counter += 1
-            request_id = f"transform_{self._request_counter}_{int(time.time())}"
-            
-            # Add to queue - no USD operations here!
-            request_data = {
-                'request_id': request_id,
-                'type': 'transform',
-                'prim_path': prim_path,
-                'position': position,
-                'rotation': rotation,
-                'scale': scale,
-                'timestamp': time.time()
-            }
-            
-            self._asset_queue.append(request_data)  # Reuse asset queue for transforms
-            self._stats['queued_assets'] += 1
-            
-            logger.info(f"✅ Queued transform for '{prim_path}' (ID: {request_id})")
-            
-            return {
-                'success': True,
-                'request_id': request_id,
-                'prim_path': prim_path,
-                'position': position,
-                'rotation': rotation,
-                'scale': scale,
-                'status': 'queued',
-                'message': f"Transform for '{prim_path}' queued",
-                'queue_position': len(self._asset_queue)
-            }
-                
-        except Exception as e:
-            logger.error(f"❌ Error queuing transform: {e}")
-            return {
-                'success': False,
-                'error': str(e),
-                'prim_path': prim_path
-            }
+        return self._queue_manager.add_transform_request(
+            prim_path, 
+            list(position) if position else None,
+            list(rotation) if rotation else None, 
+            list(scale) if scale else None
+        )
 
     def _transform_asset_on_main_thread(self, prim_path: str, position: Optional[Tuple[float, float, float]] = None, 
                                        rotation: Optional[Tuple[float, float, float]] = None, 
@@ -788,6 +431,30 @@ class SceneBuilder:
                 'error': str(e),
                 'path': path
             }
+    
+    def _process_asset_request(self, request_type: str, request_data) -> Dict[str, Any]:
+        """Process asset-related requests for the queue manager."""
+        if request_type == 'place':
+            return self._place_asset_on_main_thread(request_data)
+        elif request_type == 'transform':
+            return self._transform_asset_on_main_thread(
+                request_data['prim_path'], 
+                request_data.get('position'), 
+                request_data.get('rotation'), 
+                request_data.get('scale')
+            )
+        else:
+            return {'success': False, 'error': f"Unknown asset request type: {request_type}"}
+    
+    def _process_removal_request(self, request_data: Dict) -> Dict[str, Any]:
+        """Process removal requests for the queue manager."""
+        request_type = request_data['type']
+        if request_type == 'remove_element':
+            return self._remove_element_on_main_thread(request_data['element_path'])
+        elif request_type == 'clear_path':
+            return self._clear_path_on_main_thread(request_data['path'])
+        else:
+            return {'success': False, 'error': f"Unknown removal type: {request_type}"}
 
 
 
@@ -795,7 +462,7 @@ class SceneBuilder:
                                   batch_transform: Optional[Dict[str, Tuple[float, float, float]]] = None) -> Dict[str, Any]:
         """
         Create a complete USD batch Xform with all its child elements.
-        Direct approach - no thread dispatch.
+        Queued approach using modular queue manager.
         
         Args:
             batch_name: Name of the batch Xform to create
@@ -806,43 +473,7 @@ class SceneBuilder:
         Returns:
             Result dictionary with USD creation details
         """
-        try:
-            # Generate request ID  
-            self._request_counter += 1
-            request_id = f"batch_{self._request_counter}_{int(time.time())}"
-            
-            # Add to batch queue - no USD operations here!
-            request_data = {
-                'request_id': request_id,
-                'type': 'batch',
-                'batch_name': batch_name,
-                'elements': elements,
-                'batch_transform': batch_transform,
-                'timestamp': time.time()
-            }
-            
-            self._batch_queue.append(request_data)
-            self._stats['queued_batches'] += 1
-            
-            logger.info(f"✅ Queued batch '{batch_name}' for creation (ID: {request_id})")
-            
-            result = {
-                'success': True,
-                'request_id': request_id,
-                'batch_name': batch_name,
-                'status': 'queued',
-                'message': f"Batch '{batch_name}' queued for creation",
-                'queue_position': len(self._batch_queue)
-            }
-            return result
-                
-        except Exception as e:
-            logger.error(f"❌ Error creating batch in scene: {e}")
-            return {
-                'success': False,
-                'error': str(e),
-                'batch_name': batch_name
-            }
+        return self._queue_manager.add_batch_request(batch_name, elements, batch_transform)
 
     def _create_batch_on_main_thread(self, batch_name: str, elements: List[Dict], 
                                      batch_transform: Optional[Dict[str, Tuple[float, float, float]]] = None) -> Dict[str, Any]:
@@ -920,8 +551,6 @@ class SceneBuilder:
                         'position': element.position
                     })
                     
-                    self._stats['elements_created'] += 1
-                    self._stats['total_prims_added'] += 1
             
             # Create SceneBatch object and store in _current_batches for tracking
             scene_batch = SceneBatch(
@@ -934,9 +563,6 @@ class SceneBuilder:
             )
             self._current_batches[batch_name] = scene_batch
             
-            # Update statistics
-            self._stats['batches_created'] += 1
-            self._stats['last_operation_time'] = time.time()
             
             logger.info(f"🎯 Created batch '{batch_name}' with {len(created_elements)} elements at {batch_path}")
             
@@ -1315,43 +941,24 @@ class SceneBuilder:
             }
 
     def get_request_status(self, request_id: str) -> Dict[str, Any]:
-        """Get status of a queued request."""
+        """Get status of a queued request using modular queue manager."""
         try:
-            # Check if completed
-            if request_id in self._completed_requests:
-                completed = self._completed_requests[request_id]
+            result = self._queue_manager.get_request_status(request_id)
+            if result:
                 return {
                     'success': True,
                     'request_id': request_id,
                     'status': 'completed',
-                    'completed_time': completed['completed_time'],
-                    'result': completed['result']
+                    'completed_time': result['completed_time'],
+                    'result': result['result']
                 }
-            
-            # Check if still in queue
-            for queue_name, queue in [('elements', self._element_queue), 
-                                    ('batches', self._batch_queue), 
-                                    ('assets', self._asset_queue),
-                                    ('removals', self._removal_queue)]:
-                for i, req in enumerate(queue):
-                    if req['request_id'] == request_id:
-                        return {
-                            'success': True,
-                            'request_id': request_id,
-                            'status': 'queued',
-                            'queue_position': i + 1,
-                            'queue_type': req['type'],
-                            'queue_name': queue_name
-                        }
-            
-            # Not found
-            return {
-                'success': False,
-                'request_id': request_id,
-                'status': 'not_found',
-                'error': f'Request {request_id} not found'
-            }
-            
+            else:
+                return {
+                    'success': False,
+                    'request_id': request_id,
+                    'status': 'not_found',
+                    'error': f'Request {request_id} not found'
+                }
         except Exception as e:
             return {
                 'success': False,
@@ -1359,9 +966,11 @@ class SceneBuilder:
             }
 
     def get_statistics(self) -> Dict[str, Any]:
-        """Get scene builder statistics."""
+        """Get scene builder statistics using modular queue manager."""
+        queue_status = self._queue_manager.get_queue_status()
         return {
-            **self._stats,
+            **queue_status['statistics'],
             'pending_batches': len(self._current_batches),
-            'pending_elements': sum(len(batch.elements) for batch in self._current_batches.values())
+            'pending_elements': sum(len(batch.elements) for batch in self._current_batches.values()),
+            'queue_status': queue_status['queue_lengths']
         }
