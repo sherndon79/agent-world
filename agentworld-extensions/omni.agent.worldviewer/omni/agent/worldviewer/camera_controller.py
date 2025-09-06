@@ -9,7 +9,6 @@ import logging
 import math
 from typing import Dict, List, Optional, Tuple, Union
 
-import omni.kit.viewport.utility as viewport_utils
 import omni.usd
 from omni.kit.viewport.utility import get_active_viewport_window
 from pxr import Gf, UsdGeom, Usd
