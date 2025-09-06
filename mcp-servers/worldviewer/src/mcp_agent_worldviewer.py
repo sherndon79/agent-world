@@ -393,14 +393,14 @@ class WorldViewerMCP:
                                     "items": {"type": "number"},
                                     "minItems": 3,
                                     "maxItems": 3,
-                                    "description": "Starting look-at target [x, y, z] (optional, overridden by start_rotation)"
+                                    "description": "Starting look-at target [x, y, z] (required for practical cinematography, overridden by start_rotation)"
                                 },
                                 "end_target": {
                                     "type": "array",
                                     "items": {"type": "number"},
                                     "minItems": 3,
                                     "maxItems": 3,
-                                    "description": "Ending look-at target [x, y, z] (optional)"
+                                    "description": "Ending look-at target [x, y, z] (required for practical cinematography)"
                                 },
                                 "speed": {
                                     "type": "number",
@@ -427,7 +427,7 @@ class WorldViewerMCP:
                                     "description": "Execution mode: auto (execute immediately in sequence) or manual (wait for play command)"
                                 }
                             },
-                            "required": ["start_position", "end_position"]
+                            "required": ["start_position", "end_position", "start_target", "end_target"]
                         }
                     ),
                     
@@ -456,14 +456,14 @@ class WorldViewerMCP:
                                     "items": {"type": "number"},
                                     "minItems": 3,
                                     "maxItems": 3,
-                                    "description": "Starting look-at target [x, y, z] (optional)"
+                                    "description": "Starting look-at target [x, y, z] (required for practical cinematography)"
                                 },
                                 "end_target": {
                                     "type": "array",
                                     "items": {"type": "number"},
                                     "minItems": 3,
                                     "maxItems": 3,
-                                    "description": "Ending look-at target [x, y, z] (optional)"
+                                    "description": "Ending look-at target [x, y, z] (required for practical cinematography)"
                                 },
                                 "speed": {
                                     "type": "number",
@@ -490,7 +490,7 @@ class WorldViewerMCP:
                                     "description": "Execution mode: auto (execute immediately in sequence) or manual (wait for play command)"
                                 }
                             },
-                            "required": ["start_position", "end_position"]
+                            "required": ["start_position", "end_position", "start_target", "end_target"]
                         }
                     ),
                     

@@ -15,6 +15,7 @@ from collections import deque
 from typing import Dict, List, Optional, Tuple, Deque
 from .movement_state import MovementState
 from .duration_calculator import calculate_distance, calculate_duration
+from .queue_status import QueueStatus, MovementTransition
 
 
 logger = logging.getLogger(__name__)
@@ -28,66 +29,115 @@ class QueueManager:
     MOVEMENT_TRANSITION_DELAY = 0.2  # Small delay between movements for capture sync
     
     def __init__(self):
-        # Queue state
-        self.queue_state = "idle"  # idle, running, paused, stopped
-        self.active_movement: Optional[MovementState] = None
+        # Initialize thread-safe status management
+        self.status = QueueStatus()
+        self.transition_manager = MovementTransition(self.status)
+        
+        # Queue data structures
         self.movement_queue: Deque[Tuple[str, str, Dict]] = deque()  # (movement_id, operation, params)
-        self.paused_movement: Optional[MovementState] = None
         
         # Timing and metrics
-        self.queue_start_time = 0.0
         self.total_queue_duration = 0.0
         
-        logger.info("QueueManager initialized")
+        logger.info("QueueManager initialized with thread-safe status management")
+    
+    # Backward compatibility properties
+    @property
+    def queue_state(self) -> str:
+        """Get queue state (backward compatibility)"""
+        return self.status.get_state()
+    
+    @queue_state.setter  
+    def queue_state(self, value: str):
+        """Set queue state (backward compatibility)"""
+        self.status.set_state(value)
+    
+    @property
+    def active_movement(self):
+        """Get active movement (backward compatibility)"""
+        return self.status.get_active_movement()
+    
+    @active_movement.setter
+    def active_movement(self, value):
+        """Set active movement (backward compatibility)"""
+        self.status.set_active_movement(value)
+    
+    @property
+    def paused_movement(self):
+        """Get paused movement (backward compatibility)"""
+        return self.status.get_paused_movement()
+    
+    @paused_movement.setter
+    def paused_movement(self, value):
+        """Set paused movement (backward compatibility)"""
+        self.status.set_paused_movement(value)
     
     def play_queue(self) -> Dict:
         """Start/resume queue processing"""
         try:
-            if self.queue_state == "running":
+            current_state = self.status.get_state()
+            if current_state == "running":
                 return {
                     'success': True,
                     'message': 'Queue is already running',
-                    'queue_state': self.queue_state
+                    'queue_state': current_state
                 }
             
-            if self.queue_state == "paused":
-                # Resume from paused state
-                if self.paused_movement:
-                    self.active_movement = self.paused_movement
-                    self.paused_movement = None
-                    logger.info("Resuming paused movement")
+            if current_state == "paused":
+                # Resume from paused state with timing adjustment
+                paused_movement = self.status.get_paused_movement()
+                if paused_movement:
+                    # Calculate pause duration and adjust start time
+                    resume_time = time.time()
+                    pause_duration = resume_time - self.pause_time if hasattr(self, 'pause_time') else 0
+                    
+                    # Restore movement and adjust start time to account for pause
+                    self.status.set_active_movement(paused_movement)
+                    paused_movement.start_time += pause_duration
+                    
+                    self.status.set_paused_movement(None)
+                    logger.info(f"Resuming paused movement after {pause_duration:.1f}s pause")
                 
-                self.queue_state = "running"
+                self.transition_manager.transition_to_state("running")
                 return {
                     'success': True, 
                     'message': 'Queue resumed from pause',
-                    'queue_state': self.queue_state
+                    'queue_state': self.status.get_state()
                 }
             
-            elif self.queue_state in ["idle", "stopped"]:
-                # Start fresh queue processing
-                if not self.movement_queue and not self.active_movement:
+            elif current_state in ["idle", "stopped", "pending"]:
+                # Start fresh queue processing or resume from pending state
+                active_movement = self.status.get_active_movement()
+                if not self.movement_queue and not active_movement:
                     return {
                         'success': False,
                         'error': 'No movements in queue to start',
-                        'queue_state': self.queue_state
+                        'queue_state': current_state
                     }
                 
-                self.queue_state = "running"
-                self.queue_start_time = time.time()
+                self.transition_manager.transition_to_state("running")
+                self.status.set_queue_start_time(time.time())
                 
-                logger.info(f"Queue started - {len(self.movement_queue)} movements queued")
+                if current_state == "pending":
+                    logger.info(f"Queue resumed from pending - {len(self.movement_queue)} movements queued")
+                    message = f'Queue resumed from pending with {len(self.movement_queue)} movements'
+                else:
+                    logger.info(f"Queue started - {len(self.movement_queue)} movements queued")
+                    message = f'Queue started with {len(self.movement_queue)} movements'
+                
                 return {
                     'success': True,
-                    'message': f'Queue started with {len(self.movement_queue)} movements',
-                    'queue_state': self.queue_state
+                    'message': message,
+                    'queue_state': self.status.get_state(),
+                    'active_count': 1 if active_movement else 0,
+                    'queued_count': len(self.movement_queue)
                 }
             
             else:
                 return {
                     'success': False,
-                    'error': f'Cannot start queue from state: {self.queue_state}',
-                    'queue_state': self.queue_state
+                    'error': f'Cannot start queue from state: {current_state}',
+                    'queue_state': current_state
                 }
                 
         except Exception as e:
@@ -95,31 +145,43 @@ class QueueManager:
             return {
                 'success': False,
                 'error': f'Failed to start queue: {str(e)}',
-                'queue_state': self.queue_state
+                'queue_state': self.status.get_state()
             }
     
     def pause_queue(self) -> Dict:
         """Pause queue processing (current movement continues, no new movements start)"""
         try:
-            if self.queue_state != "running":
+            current_state = self.status.get_state()
+            if current_state != "running":
                 return {
                     'success': False,
-                    'error': f'Cannot pause queue from state: {self.queue_state}',
-                    'queue_state': self.queue_state
+                    'error': f'Cannot pause queue from state: {current_state}',
+                    'queue_state': current_state
                 }
             
-            # Preserve current active movement for resume
-            if self.active_movement:
-                self.paused_movement = self.active_movement
-                logger.info(f"Pausing queue with active movement: {self.active_movement.movement_id}")
+            # Preserve current active movement for resume with timing adjustment
+            active_movement = self.status.get_active_movement()
+            if active_movement:
+                # Calculate elapsed time when pausing
+                current_time = time.time()
+                elapsed_time = current_time - active_movement.start_time
+                
+                # Store pause information for smooth resume
+                self.status.set_paused_movement(active_movement)
+                self.pause_time = current_time
+                self.elapsed_at_pause = elapsed_time
+                
+                logger.info(f"Pausing queue with active movement: {active_movement.movement_id} at {elapsed_time:.1f}s")
             
-            self.queue_state = "paused"
+            self.transition_manager.transition_to_state("paused")
             
             return {
                 'success': True,
                 'message': 'Queue paused - current movement continues, no new movements will start',
-                'queue_state': self.queue_state,
-                'active_movement_continues': self.active_movement is not None
+                'queue_state': self.status.get_state(),
+                'active_movement_continues': active_movement is not None,
+                'active_count': 1 if active_movement else 0,
+                'queued_count': len(self.movement_queue)
             }
             
         except Exception as e:
@@ -127,7 +189,7 @@ class QueueManager:
             return {
                 'success': False,
                 'error': f'Failed to pause queue: {str(e)}',
-                'queue_state': self.queue_state
+                'queue_state': self.status.get_state()
             }
     
     def stop_queue(self) -> Dict:
@@ -138,20 +200,22 @@ class QueueManager:
             self.movement_queue.clear()
             
             # Clear active movement
-            active_movement_id = self.active_movement.movement_id if self.active_movement else None
-            self.active_movement = None
-            self.paused_movement = None
+            active_movement = self.status.get_active_movement()
+            active_movement_id = active_movement.movement_id if active_movement else None
+            self.status.set_active_movement(None)
+            self.status.set_paused_movement(None)
             
-            self.queue_state = "stopped"
+            self.transition_manager.transition_to_state("stopped")
             
             logger.info(f"Queue stopped and cleared - removed {queue_size_before} queued movements")
             
             return {
                 'success': True,
                 'message': f'Queue stopped and cleared ({queue_size_before} movements removed)',
-                'queue_state': self.queue_state,
+                'queue_state': self.status.get_state(),
                 'cleared_active_movement': active_movement_id,
-                'cleared_queue_size': queue_size_before
+                'cleared_queue_size': queue_size_before,
+                'stopped_movements': queue_size_before + (1 if active_movement_id else 0)  # Total stopped (queued + active)
             }
             
         except Exception as e:

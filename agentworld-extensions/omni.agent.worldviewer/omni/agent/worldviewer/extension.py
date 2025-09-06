@@ -872,7 +872,7 @@ class AgentWorldViewerExtension(omni.ext.IExt):
                     op_display = operation.replace('_', ' ').title()
                     mode_symbol = "M" if mode == 'manual' else "A"
                     
-                    ui.Label(f"🎬 ACTIVE: {op_display} [{mode_symbol}] {duration:.1f}s - {details}", style={"color": 0xFF00AA00, "font_size": 12})
+                    ui.Label(f"ACTIVE: {op_display} [{mode_symbol}] {duration:.1f}s - {details}", style={"color": 0xFF00AA00, "font_size": 12})
                 
                 # Show queued shots
                 for i, shot in enumerate(queued_shots):

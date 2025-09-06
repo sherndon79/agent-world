@@ -359,16 +359,10 @@ class SynchronousCinematicController:
         # Initialize keyframe generator factory (Phase 3)
         self.keyframe_generator_factory = KeyframeGeneratorFactory(camera_controller)
         
-        # Legacy attributes for backward compatibility (Phase 2 - maintaining during transition)
-        self.active_movement = None  # Will sync with queue_manager.active_movement
-        self.movement_queue = deque()  # Will sync with queue_manager.movement_queue
+        # Pure modular system attributes
         self.movement_timer = None
         self.fps = self.DEFAULT_FPS
         self.frame_duration = 1.0 / self.fps  # Time per frame in seconds
-        
-        # Legacy queue control state (will sync with queue_manager.queue_state)
-        self._queue_state = 'idle'  # idle, running, paused, stopped
-        self._paused_movement = None  # Will sync with queue_manager.paused_movement
         
         # Easing function mapping
         self.easing_functions = {
@@ -408,11 +402,15 @@ class SynchronousCinematicController:
     
     def _update_movements(self):
         """Update the single active movement (sequential processing)"""
-        if not self.active_movement:
+        if not self.queue_manager.active_movement:
             return  # No active movement
+        
+        # Check if queue is paused - pause execution but keep active movement
+        if self.queue_manager.queue_state == 'paused':
+            return  # Skip execution while paused
             
         current_time = time.time()
-        movement = self.active_movement
+        movement = self.queue_manager.active_movement
         
         try:
             # Check if movement is complete
@@ -423,7 +421,7 @@ class SynchronousCinematicController:
                 logger.info(f"Completed cinematic movement: {movement.movement_id}")
                 
                 # Clear active movement and start next queued movement
-                self.active_movement = None
+                self.queue_manager.active_movement = None
                 self._start_next_queued_movement()
                 return
             
@@ -456,16 +454,16 @@ class SynchronousCinematicController:
                 final_frame.get('target')
             )
     
-    def _start_next_queued_movement(self):
+    def _start_next_queued_movement(self, manual_play=False):
         """Start the next movement in the queue with smooth transition"""
-        if not self.movement_queue:
+        if not self.queue_manager.movement_queue:
             # No queued movements - set state appropriately
-            if self._queue_state == 'running':
-                self._queue_state = 'idle'
+            if self.queue_manager.queue_state == 'running':
+                self.queue_manager.transition_manager.transition_to_state('idle')
             return
         
         # Don't start next movement if queue is stopped
-        if self._queue_state == 'stopped':
+        if self.queue_manager.queue_state == 'stopped':
             logger.info(f"Queue is stopped, not starting next movement")
             return
         
@@ -473,23 +471,44 @@ class SynchronousCinematicController:
         # This handles the case where auto movements follow manual movements
         
         # Get next movement from queue
-        next_movement_data = self.movement_queue.popleft()
+        next_movement_data = self.queue_manager.movement_queue.popleft()
         movement_id, operation, params = next_movement_data
         
         # Check execution mode
         execution_mode = params.get('execution_mode', 'auto')
         
-        if execution_mode == 'manual':
-            # Put movement back at front of queue and wait for manual play
-            self.movement_queue.appendleft((movement_id, operation, params))
+        if execution_mode == 'manual' and not manual_play:
+            # Put movement back at front of queue and wait for manual play (auto-flow)
+            self.queue_manager.movement_queue.appendleft((movement_id, operation, params))
             logger.info(f"Next movement {movement_id} is in manual mode - waiting for play command")
-            self._queue_state = 'paused'  # Set to paused to wait for manual play
+            # Use transition manager for thread-safe state change - pending indicates waiting for manual trigger
+            if self.queue_manager.transition_manager.transition_to_state('pending'):
+                logger.info(f"Queue transitioned to pending state - waiting for manual trigger")
+            else:
+                # Fallback to direct state change if transition validation fails
+                self.queue_manager.status.set_state('pending')
+                logger.info(f"Queue set to pending state for manual movement (direct)")
             return
-        elif self._queue_state == 'paused':
+        elif execution_mode == 'manual' and manual_play:
+            # Manual movement triggered by play button - execute it
+            logger.info(f"Starting manual movement via play button: {movement_id} ({operation})")
+            # Ensure we're in running state for manual execution (only transition if not already running)
+            current_state = self.queue_manager.queue_state
+            if current_state != 'running':
+                if self.queue_manager.transition_manager.transition_to_state('running'):
+                    logger.info(f"Queue transitioned to running state for manual execution")
+            else:
+                logger.debug(f"Queue already in running state, no transition needed")
+        elif self.queue_manager.queue_state == 'paused' and execution_mode == 'auto':
             # If we're paused but next movement is auto, transition to running
             # This happens when auto movements follow manual movements
-            logger.info(f"Transitioning from paused to running for auto movement {movement_id}")
-            self._queue_state = 'running'
+            logger.info(f"Auto movement following manual - transitioning from paused to running")
+            if self.queue_manager.transition_manager.transition_to_state('running'):
+                logger.info(f"Queue transitioned to running for auto movement {movement_id}")
+            else:
+                logger.warning(f"Failed to transition to running state for auto movement {movement_id}")
+                # Don't execute if we can't transition properly
+                return
         
         # Add smooth transition from current camera position if needed
         params = self._add_smooth_transition(params)
@@ -547,41 +566,59 @@ class SynchronousCinematicController:
                 if not (self.MIN_DURATION <= duration <= self.MAX_DURATION):
                     raise ValueError(f"Duration must be between {self.MIN_DURATION} and {self.MAX_DURATION} seconds")
             
-            # Check if queue is stopped
-            if self._queue_state == 'stopped':
+            # Check if queue is stopped using modular queue system
+            if self.queue_manager.queue_state == 'stopped':
                 # Reset to idle when new movements are added to stopped queue
-                self._queue_state = 'idle'
+                self.queue_manager.transition_manager.transition_to_state('idle')
             
-            # Check queue capacity (prevent infinite queueing)
-            total_queued = len(self.movement_queue) + (1 if self.active_movement else 0)
+            # Check queue capacity using modular queue system (prevent infinite queueing)
+            total_queued = len(self.queue_manager.movement_queue) + (1 if self.queue_manager.active_movement else 0)
             if total_queued >= self.MAX_QUEUE_SIZE:
                 raise ValueError(f"Movement queue full ({total_queued}/{self.MAX_QUEUE_SIZE}). Too many movements queued. Use 'stop_movement' API to cancel queued movements.")
             
             # Get execution mode (auto by default)
             execution_mode = params.get('execution_mode', 'auto')
             
+            # Use modular queue system (Phase 3 integration fix)
+            movement_data = {
+                'movement_id': movement_id,
+                'operation': operation,
+                'params': params,
+                'execution_mode': execution_mode
+            }
+            
             # Manual movements are always queued and require explicit play command
             if execution_mode == 'manual':
-                logger.info(f"Queueing manual movement: {movement_id} ({operation}). Position in queue: {len(self.movement_queue) + 1}")
-                self.movement_queue.append((movement_id, operation, params))
+                self.queue_manager.add_movement(movement_id, operation, params)
+                logger.info(f"Queueing manual movement: {movement_id} ({operation}). Position in queue: {len(self.queue_manager.movement_queue)}")
                 
-                # If queue was idle, set to running but manual movements will pause queue
-                if self._queue_state == 'idle':
-                    self._queue_state = 'running'
+                # Keep queue in idle state for manual movements - this will show as 'pending' in status
+                # Manual movements require explicit play command to transition to 'running'
                     
             # Auto movements: start immediately only if no active movement, no queue, and not paused/stopped
-            elif self.active_movement is None and len(self.movement_queue) == 0 and self._queue_state not in ['paused', 'stopped']:
+            elif self.queue_manager.active_movement is None and len(self.queue_manager.movement_queue) == 0 and self.queue_manager.queue_state not in ['paused', 'stopped']:
                 logger.info(f"Starting movement immediately: {movement_id} ({operation}) - auto mode")
-                self._queue_state = 'running'
+                self.queue_manager.transition_manager.transition_to_state('running')
                 self._start_movement_immediately(movement_id, operation, params)
             else:
                 # Queue auto movement for later
-                logger.info(f"Queueing auto movement: {movement_id} ({operation}). Position in queue: {len(self.movement_queue) + 1}")
-                self.movement_queue.append((movement_id, operation, params))
+                self.queue_manager.add_movement(movement_id, operation, params)
+                logger.info(f"Queueing auto movement: {movement_id} ({operation}). Position in queue: {len(self.queue_manager.movement_queue)}")
                 
-                # If queue was idle, set to running
-                if self._queue_state == 'idle':
-                    self._queue_state = 'running'
+                # Set queue to running state if idle (for auto movements)
+                # Only transition to running if first movement in queue is not manual
+                if self.queue_manager.queue_state == 'idle':
+                    # Check if first movement in queue is manual
+                    if self.queue_manager.movement_queue:
+                        first_movement_id, first_operation, first_params = self.queue_manager.movement_queue[0]
+                        first_execution_mode = first_params.get('execution_mode', 'auto')
+                        if first_execution_mode != 'manual':
+                            self.queue_manager.transition_manager.transition_to_state('running')
+                        else:
+                            logger.info(f"Queue remains in idle state - first movement is manual")
+                    else:
+                        # Empty queue, safe to transition to running
+                        self.queue_manager.transition_manager.transition_to_state('running')
             
         except Exception as e:
             logger.error(f"Failed to start movement {movement_id}: {e}")
@@ -627,7 +664,7 @@ class SynchronousCinematicController:
             )
             
             # Set as the single active movement
-            self.active_movement = movement
+            self.queue_manager.active_movement = movement
             logger.info(f"Started cinematic movement: {movement_id} ({operation})")
             
         except Exception as e:
@@ -1319,27 +1356,27 @@ class SynchronousCinematicController:
             logger.warning(f"Could not get current camera position: {e}")
         
         # Stop active movement
-        if self.active_movement:
-            stopped_movement_id = self.active_movement.movement_id
-            operation = self.active_movement.operation
+        if self.queue_manager.active_movement:
+            stopped_movement_id = self.queue_manager.active_movement.movement_id
+            operation = self.queue_manager.active_movement.operation
             progress = 0.0
             
             # Calculate progress if possible
             try:
-                elapsed = time.time() - self.active_movement.start_time
-                progress = min(elapsed / self.active_movement.duration, 1.0)
+                elapsed = time.time() - self.queue_manager.active_movement.start_time
+                progress = min(elapsed / self.queue_manager.active_movement.duration, 1.0)
             except:
                 pass
             
             logger.info(f"Stopping active movement: {stopped_movement_id} ({operation}) at {progress*100:.1f}% progress")
-            self.active_movement = None
+            self.queue_manager.active_movement = None
             stopped_count += 1
         
         # Clear entire queue
-        if self.movement_queue:
-            queue_count = len(self.movement_queue)
+        if self.queue_manager.movement_queue:
+            queue_count = len(self.queue_manager.movement_queue)
             logger.info(f"Clearing entire queue: {queue_count} movements")
-            self.movement_queue.clear()
+            self.queue_manager.movement_queue.clear()
             stopped_count += queue_count
         
         # Build response with position details
@@ -1374,8 +1411,8 @@ class SynchronousCinematicController:
     def get_movement_status(self, movement_id: str) -> Dict:
         """Get status of an active or queued movement"""
         # Check active movement
-        if self.active_movement and self.active_movement.movement_id == movement_id:
-            movement = self.active_movement
+        if self.queue_manager.active_movement and self.queue_manager.active_movement.movement_id == movement_id:
+            movement = self.queue_manager.active_movement
             elapsed = time.time() - movement.start_time
             progress = min(elapsed / movement.duration, 1.0)
             
@@ -1391,7 +1428,7 @@ class SynchronousCinematicController:
             }
         
         # Check queued movements
-        for i, (queued_id, operation, params) in enumerate(self.movement_queue):
+        for i, (queued_id, operation, params) in enumerate(self.queue_manager.movement_queue):
             if queued_id == movement_id:
                 return {
                     'success': True,
@@ -1411,20 +1448,20 @@ class SynchronousCinematicController:
         movements = []
         
         # Add active movement
-        if self.active_movement:
-            elapsed = time.time() - self.active_movement.start_time
-            progress = min(elapsed / self.active_movement.duration, 1.0)
+        if self.queue_manager.active_movement:
+            elapsed = time.time() - self.queue_manager.active_movement.start_time
+            progress = min(elapsed / self.queue_manager.active_movement.duration, 1.0)
             
             movements.append({
-                'movement_id': self.active_movement.movement_id,
-                'operation': self.active_movement.operation,
+                'movement_id': self.queue_manager.active_movement.movement_id,
+                'operation': self.queue_manager.active_movement.operation,
                 'status': 'active',
                 'progress': progress,
                 'queue_position': 0
             })
         
         # Add queued movements
-        for i, (movement_id, operation, params) in enumerate(self.movement_queue):
+        for i, (movement_id, operation, params) in enumerate(self.queue_manager.movement_queue):
             movements.append({
                 'movement_id': movement_id,
                 'operation': operation,
@@ -1436,8 +1473,8 @@ class SynchronousCinematicController:
         return {
             'success': True,
             'movements': movements,  # Changed from 'active_movements' to 'movements'
-            'active_count': 1 if self.active_movement else 0,
-            'queued_count': len(self.movement_queue),
+            'active_count': 1 if self.queue_manager.active_movement else 0,
+            'queued_count': len(self.queue_manager.movement_queue),
             'total_count': len(movements)
         }
     
@@ -1456,27 +1493,32 @@ class SynchronousCinematicController:
             
             # Get active shot info
             active_shot = None
-            if self.active_movement:
-                elapsed = time.time() - self.active_movement.start_time
-                progress = min(elapsed / self.active_movement.duration, 1.0)
-                remaining_time = max(0, self.active_movement.duration - elapsed)
+            if self.queue_manager.active_movement:
+                elapsed = time.time() - self.queue_manager.active_movement.start_time
+                progress = min(elapsed / self.queue_manager.active_movement.duration, 1.0)
+                remaining_time = max(0, self.queue_manager.active_movement.duration - elapsed)
                 
                 active_shot = {
-                    'movement_id': self.active_movement.movement_id,
-                    'operation': self.active_movement.operation,
+                    'movement_id': self.queue_manager.active_movement.movement_id,
+                    'operation': self.queue_manager.active_movement.operation,
                     'progress': progress,
                     'remaining_time': remaining_time,
-                    'total_duration': self.active_movement.duration,
-                    'execution': self.active_movement.params.get('execution', 'auto')
+                    'total_duration': self.queue_manager.active_movement.duration,
+                    'execution': self.queue_manager.active_movement.params.get('execution', 'auto'),
+                    'params': self.queue_manager.active_movement.params  # Include full params for UI display
                 }
             
             response['active_shot'] = active_shot
+            
+            # Also provide active_shots array format for UI compatibility
+            active_shots = [active_shot] if active_shot else []
+            response['active_shots'] = active_shots
             
             # Get queued shots info
             queued_shots = []
             estimated_start_time = active_shot['remaining_time'] if active_shot else 0
             
-            for i, (movement_id, operation, params) in enumerate(self.movement_queue):
+            for i, (movement_id, operation, params) in enumerate(self.queue_manager.movement_queue):
                 # Calculate duration for display (same logic as movement generation)
                 if 'start_position' in params and 'end_position' in params:
                     start_pos = params['start_position']
@@ -1530,8 +1572,9 @@ class SynchronousCinematicController:
             # Delegate to modular queue manager
             result = self.queue_manager.play_queue()
             
-            # Sync legacy state attributes for backward compatibility
-            self._sync_queue_state_from_manager()
+            # If queue was successfully started and we have movements to process, start execution
+            if result.get('success') and self.queue_manager.queue_state == 'running' and not self.queue_manager.active_movement and self.queue_manager.movement_queue:
+                self._start_next_queued_movement(manual_play=True)
             
             return result
             
@@ -1539,45 +1582,13 @@ class SynchronousCinematicController:
             logger.error(f"Error in play_queue delegation: {e}")
             return {'success': False, 'error': str(e)}
     
-    def _sync_queue_state_from_manager(self):
-        """Sync legacy state attributes from modular queue manager for backward compatibility"""
-        try:
-            # Sync queue state
-            self._queue_state = self.queue_manager.queue_state
-            self.active_movement = self.queue_manager.active_movement
-            self._paused_movement = self.queue_manager.paused_movement
-            
-            # Sync movement queue
-            self.movement_queue.clear()
-            self.movement_queue.extend(self.queue_manager.movement_queue)
-            
-        except Exception as e:
-            logger.error(f"Error syncing queue state: {e}")
     
-    def _sync_queue_state_to_manager(self):
-        """Sync legacy state attributes to modular queue manager"""
-        try:
-            # This would be used when legacy methods modify state
-            self.queue_manager.queue_state = self._queue_state
-            self.queue_manager.active_movement = self.active_movement
-            self.queue_manager.paused_movement = self._paused_movement
-            
-            # Sync movement queue
-            self.queue_manager.movement_queue.clear()
-            self.queue_manager.movement_queue.extend(self.movement_queue)
-            
-        except Exception as e:
-            logger.error(f"Error syncing to queue manager: {e}")
     
     def pause_queue(self) -> Dict:
         """Pause queue processing (current movement continues, no new movements start)"""
         try:
             # Delegate to modular queue manager
             result = self.queue_manager.pause_queue()
-            
-            # Sync legacy state attributes for backward compatibility  
-            self._sync_queue_state_from_manager()
-            
             return result
             
         except Exception as e:
@@ -1589,30 +1600,12 @@ class SynchronousCinematicController:
         try:
             # Delegate to modular queue manager
             result = self.queue_manager.stop_queue()
-            
-            # Sync legacy state attributes for backward compatibility
-            self._sync_queue_state_from_manager()
-            
             return result
             
         except Exception as e:
             logger.error(f"Error in stop_queue delegation: {e}")
             return {'success': False, 'error': str(e)}
     
-    def get_queue_status(self) -> Dict:
-        """Get comprehensive queue status with timing information"""
-        try:
-            # Delegate to modular queue manager
-            result = self.queue_manager.get_queue_status()
-            
-            # Sync legacy state attributes for backward compatibility
-            self._sync_queue_state_from_manager()
-            
-            return result
-            
-        except Exception as e:
-            logger.error(f"Error in get_queue_status delegation: {e}")
-            return {'success': False, 'error': str(e)}
     
     def _get_actual_queue_state(self) -> str:
         """Determine actual queue state from current conditions"""
