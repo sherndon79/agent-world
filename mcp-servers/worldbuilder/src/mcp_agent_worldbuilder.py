@@ -1028,20 +1028,21 @@ class WorldBuilderMCP:
             )
             
             if result.get("success"):
+                # Transform parameters from request for display
                 transform_info = []
-                if result.get("position"):
-                    transform_info.append(f"• Position: {result['position']}")
-                if result.get("rotation"):
-                    transform_info.append(f"• Rotation: {result['rotation']}")
-                if result.get("scale"):
-                    transform_info.append(f"• Scale: {result['scale']}")
+                if "position" in args:
+                    transform_info.append(f"• Position: {args['position']}")
+                if "rotation" in args:
+                    transform_info.append(f"• Rotation: {args['rotation']}")
+                if "scale" in args:
+                    transform_info.append(f"• Scale: {args['scale']}")
                 
                 return [types.TextContent(
                     type="text",
                     text=f"✅ Asset transformed successfully!\n" +
-                         f"• Path: {result.get('prim_path', 'Unknown')}\n" +
+                         f"• Path: {args['prim_path']}\n" +
                          f"• Request ID: {result.get('request_id', 'Unknown')}\n" +
-                         f"• Status: {result.get('status', 'Unknown')}\n" +
+                         f"• Message: {result.get('message', 'Transform completed')}\n" +
                          ("\n".join(transform_info) if transform_info else "")
                 )]
             else:
@@ -1517,11 +1518,11 @@ class WorldBuilderMCP:
             )
             
             if result.get('success'):
-                aligned_count = result.get('aligned_count', 0)
+                aligned_count = result.get('successful_alignments', 0)
                 axis_used = result.get('axis', axis)
                 alignment_used = result.get('alignment', alignment)
                 spacing_used = result.get('spacing')
-                transformations = result.get('transformations', [])
+                transformations = result.get('alignment_results', [])
                 
                 axis_names = {'x': 'X (left-right)', 'y': 'Y (up-down)', 'z': 'Z (forward-back)'}
                 axis_display = axis_names.get(axis_used, axis_used)

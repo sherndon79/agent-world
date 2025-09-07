@@ -40,7 +40,6 @@ def build_openapi_spec(port: int) -> Dict[str, Any]:
             '/clear_path': {'post': {'summary': 'Clear all elements at path', 'responses': {'200': {'description': 'OK'}}}},
             '/list_elements': {'get': {'summary': 'List elements at path', 'responses': {'200': {'description': 'OK'}}}},
             '/batch_info': {'get': {'summary': 'Get batch info', 'responses': {'200': {'description': 'OK'}}}},
-            '/clear_batch': {'post': {'summary': 'Clear a batch', 'responses': {'200': {'description': 'OK'}}}},
             '/request_status': {'get': {'summary': 'Get request processing status', 'responses': {'200': {'description': 'OK'}}}},
             '/query/objects_by_type': {'get': {'summary': 'Query objects by type', 'responses': {'200': {'description': 'OK'}}}},
             '/query/objects_in_bounds': {'get': {'summary': 'Query objects in bounds', 'responses': {'200': {'description': 'OK'}}}},

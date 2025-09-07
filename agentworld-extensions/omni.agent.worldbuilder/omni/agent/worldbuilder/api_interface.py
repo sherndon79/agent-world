@@ -425,11 +425,10 @@ class HTTPAPIInterface:
 
     # Utility functions restored from backup
     def _calculate_bounds(self, object_paths: list):
-        """Calculate combined bounding box for multiple objects."""
+        """Calculate combined bounding box using the reliable BoundsCalculator."""
         try:
             import omni.usd
-            from pxr import Usd, UsdGeom
-            import math
+            from .bounds_calculator import BoundsCalculator
             
             context = omni.usd.get_context()
             stage = context.get_stage()
@@ -440,66 +439,31 @@ class HTTPAPIInterface:
             if not object_paths:
                 return {'success': False, 'error': 'No objects provided'}
             
-            # Collect all object positions and bounds
-            all_bounds = []
-            valid_objects = []
+            # Use the same reliable bounds calculation as the UI
+            bounds_calculator = BoundsCalculator()
+            bounds_data = bounds_calculator.calculate_selection_bounds(stage, object_paths)
             
-            for obj_path in object_paths:
-                try:
-                    prim = stage.GetPrimAtPath(obj_path)
-                    if not prim or not prim.IsValid():
-                        logger.warning(f"Invalid object path: {obj_path}")
-                        continue
-                    
-                    # Get bounding box
-                    bbox_cache = UsdGeom.BBoxCache(Usd.TimeCode.Default(), ['default'])
-                    bound = bbox_cache.ComputeWorldBound(prim)
-                    
-                    # Check if bounding box is empty using USD API
-                    if not bound.GetRange().IsEmpty():
-                        bbox_range = bound.ComputeAlignedRange()
-                        min_point = bbox_range.GetMin()
-                        max_point = bbox_range.GetMax()
-                        
-                        bounds = {
-                            'min': [float(min_point[0]), float(min_point[1]), float(min_point[2])],
-                            'max': [float(max_point[0]), float(max_point[1]), float(max_point[2])]
-                        }
-                        all_bounds.append(bounds)
-                        valid_objects.append(obj_path)
-                
-                except Exception as e:
-                    logger.warning(f"Error processing object {obj_path}: {e}")
-                    continue
-            
-            if not all_bounds:
+            if not bounds_data:
                 return {
                     'success': False,
                     'error': 'No valid objects with bounds found',
                     'timestamp': datetime.utcnow().isoformat()
                 }
             
-            # Calculate combined bounds
-            min_x = min(bounds['min'][0] for bounds in all_bounds)
-            min_y = min(bounds['min'][1] for bounds in all_bounds)
-            min_z = min(bounds['min'][2] for bounds in all_bounds)
-            max_x = max(bounds['max'][0] for bounds in all_bounds)
-            max_y = max(bounds['max'][1] for bounds in all_bounds)
-            max_z = max(bounds['max'][2] for bounds in all_bounds)
-            
+            # Format results to match expected API format
             combined_bounds = {
-                'min': [min_x, min_y, min_z],
-                'max': [max_x, max_y, max_z],
-                'center': [(min_x + max_x) / 2, (min_y + max_y) / 2, (min_z + max_z) / 2],
-                'size': [max_x - min_x, max_y - min_y, max_z - min_z],
-                'volume': (max_x - min_x) * (max_y - min_y) * (max_z - min_z)
+                'min': bounds_data['min'],
+                'max': bounds_data['max'], 
+                'center': bounds_data['center'],
+                'size': bounds_data['size'],
+                'volume': bounds_data['size'][0] * bounds_data['size'][1] * bounds_data['size'][2]
             }
             
             return {
                 'success': True,
                 'bounds': combined_bounds,
-                'objects_processed': valid_objects,
-                'object_count': len(valid_objects),
+                'objects_processed': object_paths,
+                'object_count': len(object_paths),
                 'timestamp': datetime.utcnow().isoformat()
             }
             
@@ -631,7 +595,7 @@ class HTTPAPIInterface:
             if axis not in ['x', 'y', 'z']:
                 return {'success': False, 'error': "axis must be 'x', 'y', or 'z'"}
             
-            # Get object information
+            # Get object information using proper Omniverse USD methods
             objects = []
             for obj_path in object_paths:
                 prim = stage.GetPrimAtPath(obj_path)
@@ -639,16 +603,26 @@ class HTTPAPIInterface:
                     logger.warning(f"Invalid object path: {obj_path}")
                     continue
                 
-                position = self._get_object_position(prim)
-                if position:
+                try:
+                    # Use Omniverse-specific method (most reliable)
+                    world_transform = omni.usd.get_world_transform_matrix(prim)
+                    translation = world_transform.ExtractTranslation()
+                    
                     objects.append({
                         'path': obj_path,
                         'prim': prim,
-                        'position': list(position)
+                        'position': [float(translation[0]), float(translation[1]), float(translation[2])],
+                        'world_transform': world_transform
                     })
+                    logger.info(f"Got position for {obj_path}: {[float(translation[0]), float(translation[1]), float(translation[2])]}")
+                    
+                except Exception as e:
+                    logger.warning(f"Could not get transform for object {obj_path}: {e}")
+                    continue
             
             if len(objects) < 2:
-                return {'success': False, 'error': 'Not enough valid objects found for alignment'}
+                logger.warning(f"Only found {len(objects)} valid objects out of {len(object_paths)} provided")
+                return {'success': False, 'error': f'Not enough valid objects found for alignment. Found {len(objects)} out of {len(object_paths)} objects.'}
             
             # Use first object as reference
             reference_pos = objects[0]['position']
@@ -676,11 +650,15 @@ class HTTPAPIInterface:
                             obj['path'], tuple(new_pos), None, None
                         )
                         
+                        transform_success = transform_result.get('success', False)
+                        logger.info(f"Transform result for {obj['path']}: {transform_result}")
+                        logger.info(f"Transform success: {transform_success}")
+                        
                         alignment_results.append({
                             'object': obj['path'],
                             'old_position': current_pos,
                             'new_position': new_pos,
-                            'transformed': transform_result.get('success', False)
+                            'transformed': transform_success
                         })
                     
                     except Exception as e:

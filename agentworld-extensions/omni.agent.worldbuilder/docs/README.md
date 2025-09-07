@@ -28,7 +28,6 @@ Agent WorldBuilder provides advanced scene construction capabilities with spatia
 - `GET /get_scene` - Complete scene structure (recursive)
 - `GET /list_elements` - Flat element listing
 - `POST /remove_element` - Remove scene elements
-- `POST /clear_batch` - Clear object batches
 
 ### Spatial Queries
 - `GET /query/objects_by_type` - Query by semantic type

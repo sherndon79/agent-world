@@ -14,6 +14,7 @@ import omni.ui as ui
 
 from .config import get_config
 from .http_api_interface import HTTPAPIInterface
+from .bounds_calculator import BoundsCalculator
 
 
 logger = logging.getLogger(__name__)
@@ -34,6 +35,9 @@ class AgentWorldBuilderExtension(omni.ext.IExt):
         self._main_thread_id = threading.get_ident()
         self._shutdown_event = threading.Event()
         self._http_shutdown_complete = threading.Event()
+        
+        # Bounds calculator for selection display
+        self._bounds_calculator = BoundsCalculator()
         
         # Then attempt risky operations in on_startup()
         # Protected constructor pattern - don't do heavy initialization here
@@ -288,6 +292,14 @@ class AgentWorldBuilderExtension(omni.ext.IExt):
                         self._scene_elements_label = ui.Label("Scene Elements: 0")
                         self._api_requests_label = ui.Label("Requests: 0 | Errors: 0")
                 
+                # Selection Bounds section
+                with ui.CollapsableFrame("Selection Bounds", collapsed=False, height=0):
+                    with ui.VStack(spacing=1):
+                        self._selection_status_label = ui.Label("Selection: None")
+                        self._bounds_center_label = ui.Label("Center: [0, 0, 0]")
+                        self._bounds_size_label = ui.Label("Size: 0×0×0")
+                        self._bounds_min_label = ui.Label("Min: [0, 0, 0]") 
+                        self._bounds_max_label = ui.Label("Max: [0, 0, 0]")
                 
 
 
@@ -318,6 +330,9 @@ class AgentWorldBuilderExtension(omni.ext.IExt):
         # Get current scene element count from USD stage
         scene_element_count = self._get_scene_element_count()
         self._scene_elements_label.text = f"Scene Elements: {scene_element_count}"
+        
+        # Update selection bounds display
+        self._update_selection_bounds()
 
     def _get_scene_element_count(self) -> int:
         """Get the current number of scene elements from the USD stage."""
@@ -345,6 +360,76 @@ class AgentWorldBuilderExtension(omni.ext.IExt):
         except Exception as e:
             logger.error(f"Error counting scene elements: {e}")
             return 0
+
+    def _update_selection_bounds(self):
+        """Update selection bounds display with current USD selection."""
+        try:
+            import omni.usd
+            
+            # Get current selection
+            usd_context = omni.usd.get_context()
+            if not usd_context:
+                self._update_bounds_labels("Selection: No USD context", None)
+                return
+            
+            selection = usd_context.get_selection()
+            current_selection = selection.get_selected_prim_paths()
+            
+            # Check if selection changed to avoid unnecessary recalculation
+            if not self._bounds_calculator.has_selection_changed(current_selection):
+                return
+            
+            # Handle no selection case
+            if not current_selection:
+                self._update_bounds_labels("Selection: None", None)
+                return
+            
+            # Get stage and calculate bounds
+            stage = usd_context.get_stage()
+            if not stage:
+                self._update_bounds_labels("Selection: No stage", None)
+                return
+            
+            # Calculate combined bounds using the dedicated calculator
+            bounds_data = self._bounds_calculator.calculate_selection_bounds(stage, current_selection)
+            
+            # Update UI labels
+            count = len(current_selection)
+            status_text = f"Selection: {count} object{'s' if count > 1 else ''}"
+            self._update_bounds_labels(status_text, bounds_data)
+            
+        except Exception as e:
+            logger.debug(f"Error updating selection bounds: {e}")
+            self._update_bounds_labels("Selection: Error", None)
+    
+    
+    def _update_bounds_labels(self, status_text, bounds_data):
+        """Update UI labels with bounds information."""
+        try:
+            if not hasattr(self, '_selection_status_label'):
+                return
+            
+            self._selection_status_label.text = status_text
+            
+            if bounds_data:
+                center = bounds_data['center']
+                size = bounds_data['size']
+                min_bounds = bounds_data['min']
+                max_bounds = bounds_data['max']
+                
+                self._bounds_center_label.text = f"Center: [{center[0]:.2f}, {center[1]:.2f}, {center[2]:.2f}]"
+                self._bounds_size_label.text = f"Size: {size[0]:.2f}×{size[1]:.2f}×{size[2]:.2f}"
+                self._bounds_min_label.text = f"Min: [{min_bounds[0]:.2f}, {min_bounds[1]:.2f}, {min_bounds[2]:.2f}]"
+                self._bounds_max_label.text = f"Max: [{max_bounds[0]:.2f}, {max_bounds[1]:.2f}, {max_bounds[2]:.2f}]"
+            else:
+                # Clear bounds when no selection or error
+                self._bounds_center_label.text = "Center: [0, 0, 0]"
+                self._bounds_size_label.text = "Size: 0×0×0"
+                self._bounds_min_label.text = "Min: [0, 0, 0]"
+                self._bounds_max_label.text = "Max: [0, 0, 0]"
+                
+        except Exception as e:
+            logger.debug(f"Error updating bounds labels: {e}")
 
     @property
     def window(self) -> Optional[ui.Window]:
