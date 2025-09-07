@@ -379,25 +379,8 @@ class WorldBuilderMCP:
                     }
                 ),
                 
-                Tool(
-                    name="worldbuilder_clear_batch",
-                    description="Clear/remove a specific batch and all its elements from the scene",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {
-                            "batch_name": {
-                                "type": "string",
-                                "description": "Name of the batch to clear"
-                            },
-                            "confirm": {
-                                "type": "boolean",
-                                "description": "Confirmation flag for destructive operation",
-                                "default": False
-                            }
-                        },
-                        "required": ["batch_name", "confirm"]
-                    }
-                ),
+                # worldbuilder_clear_batch removed - use worldbuilder_clear_path with "/World/batch_name" instead
+                # This eliminates dual-state complexity and uses USD stage as single source of truth
                 
                 Tool(
                     name="worldbuilder_request_status",
@@ -600,8 +583,7 @@ class WorldBuilderMCP:
                     return await self._transform_asset(arguments)
                 elif name == "worldbuilder_batch_info":
                     return await self._batch_info(arguments)
-                elif name == "worldbuilder_clear_batch":
-                    return await self._clear_batch(arguments)
+                # worldbuilder_clear_batch removed - use worldbuilder_clear_path instead
                 elif name == "worldbuilder_request_status":
                     return await self._request_status(arguments)
                 elif name == "worldbuilder_query_objects_by_type":
@@ -845,7 +827,12 @@ class WorldBuilderMCP:
             result = await self.client.get('/get_scene', timeout=10)
             
             if result.get("success"):
-                    scene_data = result.get("contents", {})
+                    # Extract the full result structure - extension returns hierarchy, statistics, metadata
+                    scene_data = {
+                        "hierarchy": result.get("hierarchy", {}),
+                        "statistics": result.get("statistics", {}),
+                        "metadata": result.get("metadata", {})
+                    }
                     formatted_scene = json.dumps(scene_data, indent=2)
                     return [types.TextContent(
                         type="text",
@@ -1081,25 +1068,49 @@ class WorldBuilderMCP:
             
             if result.get('success'):
                     element_count = result.get('element_count', 0)
-                    elements = result.get('elements', [])
+                    batch_path = result.get('batch_path', 'Unknown')
+                    created_at = result.get('created_at')
+                    source = result.get('source', 'unknown')
+                    element_names = result.get('element_names', [])
+                    child_elements = result.get('child_elements', [])
                     
-                    # Format element details
+                    # Format creation time
+                    import datetime
+                    created_str = "Unknown"
+                    if created_at:
+                        try:
+                            created_str = datetime.datetime.fromtimestamp(created_at).strftime("%Y-%m-%d %H:%M:%S")
+                        except:
+                            created_str = str(created_at)
+                    
+                    # Format child element details (from stage discovery)
                     element_details = []
-                    for elem in elements:
-                        pos = elem.get('position', [0, 0, 0])
+                    for elem in child_elements:
                         element_details.append(
                             f"  - **{elem.get('name', 'Unknown')}** ({elem.get('type', 'Unknown')})\n"
-                            f"    Position: [{pos[0]:.2f}, {pos[1]:.2f}, {pos[2]:.2f}]"
+                            f"    Path: {elem.get('path', 'Unknown')}"
                         )
                     
-                    element_text = "\n".join(element_details) if element_details else "  (No elements)"
+                    # Fallback to old format for memory-tracked batches
+                    if not element_details and result.get('elements'):
+                        for elem in result.get('elements', []):
+                            pos = elem.get('position', [0, 0, 0])
+                            element_details.append(
+                                f"  - **{elem.get('name', 'Unknown')}** ({elem.get('type', 'Unknown')})\n"
+                                f"    Position: [{pos[0]:.2f}, {pos[1]:.2f}, {pos[2]:.2f}]"
+                            )
+                    
+                    element_text = "\n".join(element_details) if element_details else "  (No elements found)"
                     
                     return [types.TextContent(
                         type="text",
                         text=f"✅ **Batch Information: {batch_name}**\n" +
+                             f"• Batch Path: `{batch_path}`\n" +
                              f"• Element Count: {element_count}\n" +
-                             f"• Batch Name: {result.get('batch_name', batch_name)}\n\n" +
-                             f"**Elements:**\n{element_text}"
+                             f"• Created: {created_str}\n" +
+                             f"• Data Source: {source}\n" +
+                             f"• Element Names: {', '.join(element_names) if element_names else 'None'}\n\n" +
+                             f"**Child Elements:**\n{element_text}"
                     )]
             else:
                 return [types.TextContent(type="text", text=f"❌ Failed to get batch info: {result.get('error', 'Unknown error')}")]
@@ -1107,34 +1118,8 @@ class WorldBuilderMCP:
         except aiohttp.ClientError as e:
             return [types.TextContent(type="text", text=f"❌ Connection error: {str(e)}. Is Isaac Sim running?")]
     
-    async def _clear_batch(self, args: Dict[str, Any]) -> List[types.TextContent]:
-        """Clear/remove a specific batch and all its elements from the scene."""
-        try:
-            batch_name = args.get('batch_name')
-            confirm = args.get('confirm', False)
-            
-            if not batch_name:
-                return [types.TextContent(type="text", text="❌ Error: batch_name is required")]
-            
-            if not confirm:
-                return [types.TextContent(type="text", text="❌ Error: confirm=true required for destructive operation")]
-            
-            await self._initialize_client()
-            result = await self.client.post("/clear_batch", json={'batch_name': batch_name, 'confirm': confirm})
-            
-            if result.get('success'):
-                    cleared_count = result.get('cleared_count', 0)
-                    return [types.TextContent(
-                        type="text",
-                        text=f"✅ **Batch Cleared Successfully**\n" +
-                             f"• Batch: {batch_name}\n" +
-                             f"• Elements Removed: {cleared_count}"
-                    )]
-            else:
-                return [types.TextContent(type="text", text=f"❌ Failed to clear batch: {result.get('error', 'Unknown error')}")]
-                
-        except aiohttp.ClientError as e:
-            return [types.TextContent(type="text", text=f"❌ Connection error: {str(e)}. Is Isaac Sim running?")]
+    # _clear_batch method removed - use _clear_path with "/World/batch_name" instead  
+    # This approach uses USD stage as single source of truth without dual-state complexity
     
     async def _request_status(self, args: Dict[str, Any]) -> List[types.TextContent]:
         """Get status of ongoing operations and request queue."""
