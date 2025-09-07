@@ -60,11 +60,13 @@ class ElementFactory:
                     'error': f"Failed to create {element.primitive_type.value} primitive"
                 }
             
-            # Set element transform
-            if hasattr(prim, 'GetXformOpOrderAttr'):  # It's an Xformable
+            # Set element transform - geometry objects like UsdGeom.Cube are Xformables
+            if hasattr(prim, 'GetXformOpOrderAttr'):  # It's an Xformable (geometry object)
                 self._set_transform(prim, element.position, element.rotation, element.scale)
+            else:
+                logger.warning(f"❌ Geometry object is not Xformable - cannot set transform")
             
-            # Set color
+            # Set color - pass the geometry object for color setting
             self._set_color(prim, element.color)
             
             return {
@@ -103,7 +105,7 @@ class ElementFactory:
         cube = UsdGeom.Cube.Define(stage, path)
         if cube:
             cube.GetSizeAttr().Set(1.0)  # Default 1x1x1 cube
-            return cube.GetPrim()
+            return cube  # Return the geometry object, not the prim
         return None
     
     def _create_sphere_primitive(self, stage: Usd.Stage, path: str) -> Optional[UsdGeom.Sphere]:
@@ -111,7 +113,7 @@ class ElementFactory:
         sphere = UsdGeom.Sphere.Define(stage, path)
         if sphere:
             sphere.GetRadiusAttr().Set(0.5)  # Default radius 0.5
-            return sphere.GetPrim()
+            return sphere
         return None
     
     def _create_cylinder_primitive(self, stage: Usd.Stage, path: str) -> Optional[UsdGeom.Cylinder]:
@@ -120,7 +122,7 @@ class ElementFactory:
         if cylinder:
             cylinder.GetRadiusAttr().Set(0.5)   # Default radius 0.5
             cylinder.GetHeightAttr().Set(1.0)   # Default height 1.0
-            return cylinder.GetPrim()
+            return cylinder
         return None
     
     def _create_plane_primitive(self, stage: Usd.Stage, path: str) -> Optional[UsdGeom.Mesh]:
@@ -135,7 +137,7 @@ class ElementFactory:
             mesh.GetPointsAttr().Set(points)
             mesh.GetFaceVertexIndicesAttr().Set(face_vertex_indices)
             mesh.GetFaceVertexCountsAttr().Set(face_vertex_counts)
-            return mesh.GetPrim()
+            return mesh
         return None
     
     def _create_cone_primitive(self, stage: Usd.Stage, path: str) -> Optional[UsdGeom.Cone]:
@@ -144,7 +146,7 @@ class ElementFactory:
         if cone:
             cone.GetRadiusAttr().Set(0.5)   # Default radius 0.5
             cone.GetHeightAttr().Set(1.0)   # Default height 1.0
-            return cone.GetPrim()
+            return cone
         return None
     
     def _set_transform(self, xformable: UsdGeom.Xformable, 
@@ -156,23 +158,16 @@ class ElementFactory:
             # Clear existing transforms to ensure clean state
             xformable.ClearXformOpOrder()
             
-            # Add transform operations in TRS order (Translate, Rotate, Scale)
-            # This is the standard USD convention for transform composition
+            # Add transform operations in TRS order - ALWAYS add all three
+            # This matches the working backup implementation
+            translate_op = xformable.AddTranslateOp()
+            rotate_xyz_op = xformable.AddRotateXYZOp()
+            scale_op = xformable.AddScaleOp()
             
-            # Translation
-            if any(position):
-                translate_op = xformable.AddTranslateOp()
-                translate_op.Set(Gf.Vec3d(*position))
-            
-            # Rotation (convert degrees to radians and apply as Euler XYZ)
-            if any(rotation):
-                rotate_op = xformable.AddRotateXYZOp()
-                rotate_op.Set(Gf.Vec3f(*rotation))  # USD expects degrees for Euler rotations
-            
-            # Scale
-            if any(s != 1.0 for s in scale):
-                scale_op = xformable.AddScaleOp()
-                scale_op.Set(Gf.Vec3f(*scale))
+            # Set values
+            translate_op.Set(Gf.Vec3d(position[0], position[1], position[2]))
+            rotate_xyz_op.Set(Gf.Vec3f(rotation[0], rotation[1], rotation[2]))
+            scale_op.Set(Gf.Vec3f(scale[0], scale[1], scale[2]))
                 
         except Exception as e:
             logger.error(f"❌ Error setting transform: {e}")

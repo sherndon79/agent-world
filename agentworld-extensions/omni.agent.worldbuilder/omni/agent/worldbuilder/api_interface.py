@@ -5,7 +5,6 @@ HTTP API interface for WorldBuilder communication.
 import sys
 import logging
 from pathlib import Path
-import logging
 import socket
 import struct
 import threading

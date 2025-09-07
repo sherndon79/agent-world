@@ -85,7 +85,7 @@ class WorldBuilderHTTPHandler(WorldHTTPHandler):
             'place_asset': self._handle_place_asset,
             'transform_asset': self._handle_transform_asset,
             'batch_info': self._handle_batch_info,
-            'clear_batch': self._handle_clear_batch,
+            'list_batches': self._handle_list_batches,
             'request_status': self._handle_request_status,
             'remove_element': self._handle_remove_element,
             'clear_path': self._handle_clear_path,
@@ -104,7 +104,7 @@ class WorldBuilderHTTPHandler(WorldHTTPHandler):
             'transform/align_objects': self._handle_align_objects,
         }
     
-    # Removed legacy request handlers; unified base handles parsing, auth, and dispatch
+    # HTTP request handlers - unified base handles parsing, auth, and dispatch
     
     def _handle_stats(self, method: str = 'GET', request_data: dict | None = None):
         """Handle stats request."""
@@ -298,9 +298,7 @@ class WorldBuilderHTTPHandler(WorldHTTPHandler):
         except Exception as e:
             return f"# Error generating metrics: {e}\n"
     
-    # Removed legacy OpenAPI/send/auth helpers; unified base handles them
-    
-    # Placeholder methods for other endpoints - implement based on existing logic
+    # HTTP response helpers handled by unified base class
     def _handle_create_batch(self, method: str, request_data: dict):
         """Handle create batch request.""" 
         try:
@@ -375,24 +373,15 @@ class WorldBuilderHTTPHandler(WorldHTTPHandler):
         except Exception as e:
             return {'success': False, 'error': f'Batch info error: {e}'}
     
-    def _handle_clear_batch(self, method: str, request_data: dict):
-        """Handle clear batch request."""
+    def _handle_list_batches(self, method: str, request_data: dict):
+        """Handle list batches request using stage discovery."""
         try:
-            if method != 'POST':
-                return {'success': False, 'error': 'clear_batch requires POST method'}
+            if method != 'GET':
+                return {'success': False, 'error': 'list_batches requires GET method'}
             
-            batch_name = request_data.get('batch_name', '')
-            confirm = request_data.get('confirm', False)
-            
-            if not batch_name:
-                return {'success': False, 'error': 'batch_name is required'}
-            
-            if not confirm:
-                return {'success': False, 'error': 'confirm parameter must be true for destructive operation'}
-            
-            return self.api_interface._scene_builder.clear_batch(batch_name)
+            return self.api_interface._scene_builder.list_batches()
         except Exception as e:
-            return {'success': False, 'error': f'Clear batch error: {e}'}
+            return {'success': False, 'error': f'List batches error: {e}'}
     
     def _handle_request_status(self, method: str, request_data: dict):
         """Handle request status check."""

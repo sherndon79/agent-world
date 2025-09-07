@@ -35,6 +35,7 @@ from .scene.queue_manager import WorldBuilderQueueManager
 from .scene.element_factory import ElementFactory
 from .scene.asset_manager import AssetManager
 from .scene.cleanup_operations import CleanupOperations
+from .scene.batch_manager import BatchManager
 
 logger = logging.getLogger(__name__)
 
@@ -50,13 +51,13 @@ class SceneBuilder:
     def __init__(self):
         """Initialize scene builder with modular architecture."""
         self._usd_context = omni.usd.get_context()
-        self._current_batches: Dict[str, SceneBatch] = {}
         
         # Initialize modular components
         self._queue_manager = WorldBuilderQueueManager()
         self._element_factory = ElementFactory(self._usd_context)
         self._asset_manager = AssetManager(self._usd_context)
         self._cleanup_operations = CleanupOperations(self._usd_context)
+        self._batch_manager = BatchManager(self._usd_context, self._element_factory)
         
         logger.info("🏗️ Scene Builder initialized with modular architecture")
     
@@ -167,107 +168,9 @@ class SceneBuilder:
     def _create_batch_on_main_thread(self, batch_name: str, elements: List[Dict], 
                                      batch_transform: Optional[Dict[str, Tuple[float, float, float]]] = None) -> Dict[str, Any]:
         """
-        Create batch in scene - MUST run on main thread for USD operations.
-        Uses modular element factory for individual element creation.
+        Create batch in scene using modular batch manager.
         """
-        try:
-            # Get USD stage
-            stage = self._usd_context.get_stage()
-            if not stage:
-                return {
-                    'success': False,
-                    'error': "No USD stage available. Please create or open a stage first."
-                }
-            
-            # Parse elements from request data
-            scene_elements = []
-            for elem_data in elements:
-                element = SceneElement(
-                    name=elem_data.get('name', f'element_{int(time.time())}'),
-                    primitive_type=PrimitiveType(elem_data.get('element_type', 'cube')),
-                    position=tuple(elem_data.get('position', [0.0, 0.0, 0.0])),
-                    rotation=tuple(elem_data.get('rotation', [0.0, 0.0, 0.0])),
-                    scale=tuple(elem_data.get('scale', [1.0, 1.0, 1.0])),
-                    color=tuple(elem_data.get('color', [0.5, 0.5, 0.5])),
-                    metadata=elem_data.get('metadata', {})
-                )
-                scene_elements.append(element)
-            
-            # Set default batch transform
-            batch_position = (0.0, 0.0, 0.0)
-            batch_rotation = (0.0, 0.0, 0.0) 
-            batch_scale = (1.0, 1.0, 1.0)
-            
-            # Apply batch transform if provided
-            if batch_transform:
-                batch_position = batch_transform.get('position', batch_position)
-                batch_rotation = batch_transform.get('rotation', batch_rotation)
-                batch_scale = batch_transform.get('scale', batch_scale)
-            
-            # Create batch Xform parent
-            batch_path = f"/World/{self._sanitize_usd_name(batch_name)}"
-            batch_xform = UsdGeom.Xform.Define(stage, batch_path)
-            if not batch_xform:
-                return {
-                    'success': False,
-                    'error': f"Failed to create batch Xform at {batch_path}"
-                }
-            
-            # Apply batch transform
-            self._set_transform(batch_xform, batch_position, batch_rotation, batch_scale)
-            
-            # Create all elements in the batch using element factory
-            created_elements = []
-            for element in scene_elements:
-                # Temporarily adjust element name to include batch path
-                original_name = element.name
-                element.name = f"{self._sanitize_usd_name(batch_name)}/{original_name}"
-                
-                # Use element factory to create the element
-                result = self._element_factory.create_element(element)
-                
-                # Restore original name
-                element.name = original_name
-                
-                if result['success']:
-                    created_elements.append({
-                        'name': original_name,
-                        'type': element.primitive_type.value,
-                        'path': result['usd_path'],
-                        'position': element.position
-                    })
-                else:
-                    logger.warning(f"⚠️ Failed to create element '{original_name}' in batch: {result.get('error')}")
-            
-            # Create SceneBatch object and store in _current_batches for tracking
-            scene_batch = SceneBatch(
-                batch_name=batch_name,
-                elements=scene_elements,
-                batch_position=batch_position,
-                batch_rotation=batch_rotation,
-                batch_scale=batch_scale,
-                metadata={'path': batch_path, 'created_at': time.time()}
-            )
-            self._current_batches[batch_name] = scene_batch
-            
-            logger.info(f"🎯 Created batch '{batch_name}' with {len(created_elements)} elements at {batch_path}")
-            
-            return {
-                'success': True,
-                'batch_name': batch_name,
-                'batch_path': batch_path,
-                'elements_created': len(created_elements),
-                'elements': created_elements,
-                'message': f"Created batch '{batch_name}' with {len(created_elements)} elements"
-            }
-            
-        except Exception as e:
-            logger.error(f"❌ Error in batch creation: {e}")
-            return {
-                'success': False,
-                'error': str(e),
-                'batch_name': batch_name
-            }
+        return self._batch_manager.create_batch(batch_name, elements, batch_transform)
     
     def _set_transform(self, xformable: UsdGeom.Xformable, 
                       position: Tuple[float, float, float],
@@ -298,7 +201,7 @@ class SceneBuilder:
     # SCENE INSPECTION AND STATISTICS
     # =============================================================================
 
-    def get_scene_contents(self, include_metadata: bool = True) -> Dict[str, Any]:
+    def get_scene_contents(self, path: str = "/World", include_metadata: bool = True) -> Dict[str, Any]:
         """
         Get comprehensive scene contents using traversal.
         This method should be called from main thread for USD stage access.
@@ -312,38 +215,50 @@ class SceneBuilder:
                     'error': "No USD stage available. Cannot inspect scene contents."
                 }
             
-            # Get world prim as root
-            world_prim = stage.GetPrimAtPath("/World")
-            if not world_prim.IsValid():
+            # Get root prim at specified path
+            root_prim = stage.GetPrimAtPath(path)
+            if not root_prim.IsValid():
                 return {
                     'success': False, 
-                    'error': "/World prim not found in scene"
+                    'error': f"Path '{path}' not found in scene"
                 }
             
+            # Debug: Check if root prim has children
+            children = list(root_prim.GetChildren())
+            logger.info(f"🔍 Debug: Root prim '{path}' has {len(children)} children")
+            for child in children:
+                logger.info(f"  - Child: {child.GetPath()} (Type: {child.GetTypeName()})")
+            
             # Inspect scene hierarchy
-            scene_data = self._inspect_prim_recursive(world_prim, 0, max_depth=10)
+            scene_data = self._inspect_prim_recursive(root_prim, 0, max_depth=10)
+            logger.info(f"🔍 Debug: Scene data structure: {scene_data}")
             
             # Generate statistics
-            stats = self._generate_scene_statistics(world_prim)
+            stats = self._generate_scene_statistics(root_prim)
             
             result = {
                 'success': True,
-                'scene_root': '/World',
+                'scene_root': path,
                 'hierarchy': scene_data,
                 'statistics': stats,
                 'timestamp': time.time()
             }
             
             if include_metadata:
+                # Use stage discovery instead of dual-state tracking
+                discovered_batches = self._batch_manager.discover_batches_from_stage()
                 result['metadata'] = {
-                    'current_batches': len(self._current_batches),
-                    'batch_names': list(self._current_batches.keys())
+                    'current_batches': len(discovered_batches),
+                    'batch_names': list(discovered_batches.keys()),
+                    'stage_based_discovery': True
                 }
             
             return result
             
         except Exception as e:
             logger.error(f"❌ Error getting scene contents: {e}")
+            import traceback
+            logger.error(f"❌ Traceback: {traceback.format_exc()}")
             return {
                 'success': False,
                 'error': str(e)
@@ -361,6 +276,21 @@ class SceneBuilder:
             'active': prim.IsActive(),
             'children': []
         }
+        
+        # Check if this Xform is a batch by looking for WorldBuilder metadata
+        if prim.GetTypeName() == "Xform":
+            is_batch_attr = prim.GetAttribute("worldbuilder:is_batch")
+            if is_batch_attr and is_batch_attr.Get():
+                prim_data['is_batch'] = True
+                batch_name_attr = prim.GetAttribute("worldbuilder:batch_name")
+                if batch_name_attr:
+                    prim_data['batch_name'] = batch_name_attr.Get()
+                created_at_attr = prim.GetAttribute("worldbuilder:batch_created_at") 
+                if created_at_attr:
+                    prim_data['batch_created_at'] = created_at_attr.Get()
+                element_count_attr = prim.GetAttribute("worldbuilder:batch_element_count")
+                if element_count_attr:
+                    prim_data['batch_element_count'] = element_count_attr.Get()
         
         # Add geometric info for geometric prims
         if prim.IsA(UsdGeom.Gprim):
@@ -383,7 +313,7 @@ class SceneBuilder:
         
         return prim_data
 
-    def _generate_scene_statistics(self, world_prim: Usd.Prim) -> Dict[str, Any]:
+    def _generate_scene_statistics(self, root_prim: Usd.Prim) -> Dict[str, Any]:
         """Generate scene statistics from USD traversal."""
         stats = {
             'total_prims': 0,
@@ -393,16 +323,16 @@ class SceneBuilder:
         }
         
         # Traverse and count
-        for prim in world_prim.GetAllDescendants():
+        for child in root_prim.GetChildren():
             stats['total_prims'] += 1
             
-            if prim.IsActive():
+            if child.IsActive():
                 stats['active_prims'] += 1
             
-            prim_type = prim.GetTypeName()
+            prim_type = child.GetTypeName()
             stats['prim_types'][prim_type] = stats['prim_types'].get(prim_type, 0) + 1
             
-            if prim.IsA(UsdGeom.Gprim):
+            if child.IsA(UsdGeom.Gprim):
                 stats['geometric_prims'] += 1
         
         return stats
@@ -420,25 +350,25 @@ class SceneBuilder:
                 return {'success': False, 'error': "/World prim not found"}
             
             # Traverse and collect elements
-            for prim in world_prim.GetAllDescendants():
-                if not prim.IsActive():
+            for child in world_prim.GetChildren():
+                if not child.IsActive():
                     continue
                     
-                prim_type = prim.GetTypeName()
+                prim_type = child.GetTypeName()
                 if filter_type and prim_type != filter_type:
                     continue
                 
                 element_info = {
-                    'name': prim.GetName(),
-                    'path': str(prim.GetPath()),
+                    'name': child.GetName(),
+                    'path': str(child.GetPath()),
                     'type': prim_type,
-                    'is_geometric': prim.IsA(UsdGeom.Gprim)
+                    'is_geometric': child.IsA(UsdGeom.Gprim)
                 }
                 
                 # Get transform info if it's an Xformable
-                if prim.IsA(UsdGeom.Xformable):
+                if child.IsA(UsdGeom.Xformable):
                     try:
-                        xformable = UsdGeom.Xformable(prim)
+                        xformable = UsdGeom.Xformable(child)
                         local_matrix = xformable.GetLocalTransformation()
                         translation = local_matrix.ExtractTranslation()
                         element_info['position'] = [translation[0], translation[1], translation[2]]
@@ -483,12 +413,54 @@ class SceneBuilder:
                 'error': str(e)
             }
 
+    def get_batch_info(self, batch_name: str) -> Dict[str, Any]:
+        """Get detailed information about a specific batch using modular batch manager."""
+        return self._batch_manager.get_batch_info(batch_name)
+    
+    def discover_batches_from_stage(self) -> Dict[str, Any]:
+        """Discover all batches from USD stage metadata."""
+        try:
+            discovered_batches = self._batch_manager.discover_batches_from_stage()
+            return {
+                'success': True,
+                'discovered_batches': discovered_batches,
+                'batch_count': len(discovered_batches),
+                'batch_names': list(discovered_batches.keys())
+            }
+        except Exception as e:
+            logger.error(f"❌ Error discovering batches from stage: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'discovered_batches': {},
+                'batch_count': 0
+            }
+    
+    def list_batches(self) -> Dict[str, Any]:
+        """List all batches using stage discovery with fallback to memory tracking."""
+        return self._batch_manager.list_batches()
+    
+    # clear_batch method removed - use clear_path("/World/batch_name") instead
+    # This eliminates dual-state complexity and uses USD stage as single source of truth
+    
+    @property
+    def _current_batches(self):
+        """Property for backward compatibility with http_handler."""
+        return self._batch_manager.current_batches
+    
+    def list_elements_at_path(self, path: str = "/World") -> Dict[str, Any]:
+        """List elements at path using modular scene inspection."""
+        return self.list_elements_in_scene()
+
     def get_statistics(self) -> Dict[str, Any]:
-        """Get scene builder statistics using modular queue manager."""
+        """Get scene builder statistics using modular managers."""
         queue_status = self._queue_manager.get_queue_status()
+        batch_stats = self._batch_manager.get_batch_statistics()
+        
         return {
             **queue_status['statistics'],
-            'pending_batches': len(self._current_batches),
-            'pending_elements': sum(len(batch.elements) for batch in self._current_batches.values()),
-            'queue_status': queue_status['queue_lengths']
+            'pending_batches': batch_stats['total_batches'],
+            'pending_elements': batch_stats['total_elements'],
+            'queue_status': queue_status['queue_lengths'],
+            'batch_statistics': batch_stats
         }
