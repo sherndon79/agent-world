@@ -10,7 +10,7 @@ from collections import deque
 from .http_handler import WorldRecorderHTTPHandler
 from .security import SecurityManager
 from .config import WorldRecorderConfig
-from agent_world_metrics import WorldExtensionMetrics
+from agent_world_metrics import setup_worldrecorder_metrics
 
 # Import centralized logging
 try:
@@ -40,7 +40,7 @@ class HTTPAPIInterface:
         self.port = (port or 0) or self._config.server_port
         # Unified security / metrics
         self.security_manager = SecurityManager()
-        self.metrics = WorldExtensionMetrics('worldrecorder')
+        self.metrics = setup_worldrecorder_metrics()
         
         # Main-thread task queue (process on Kit update stream)
         self._main_queue: deque[tuple[Callable[[], Any], threading.Event, list]] = deque()
