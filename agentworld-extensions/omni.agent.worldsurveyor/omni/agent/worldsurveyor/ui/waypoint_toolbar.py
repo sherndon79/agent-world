@@ -2,13 +2,19 @@
 """
 Waypoint Toolbar Integration for Isaac Sim
 
-Provides a toolbar button with dropdown menu for quick waypoint capture.
+Provides a toolbar button for quick waypoint capture with scroll wheel type selection.
 Integrates with the main Isaac Sim toolbar alongside select/move/rotate tools.
 """
 
 import logging
 from typing import Optional, Dict, Any, List
 from carb.input import KeyboardInput as Key
+
+from .waypoint_types import WaypointTypeRegistry
+from .crosshair_handler import CrosshairInteractionHandler
+from .input_handler import WaypointInputHandler
+from .waypoint_capture import WaypointCaptureHandler
+from .ui_components import UIComponentsHandler
 
 try:
     import omni.ui as ui
@@ -35,18 +41,12 @@ _GLOBAL_TOOLBAR_MANAGER = None
 
 class WaypointCaptureToolbar(WidgetGroup):
     """
-    Waypoint capture toolbar widget with dropdown menu for waypoint types.
+    Waypoint capture toolbar widget with scroll wheel type selection.
     Integrates with Isaac Sim's main toolbar for quick waypoint creation.
     """
     
-    WAYPOINT_TYPES = [
-        {"id": "camera_position", "name": "Camera Position", "description": "Capture current camera view"},
-        {"id": "directional_lighting", "name": "Directional Lighting", "description": "Light source position and direction"},
-        {"id": "point_of_interest", "name": "Point of Interest", "description": "Mark interesting location"},
-        {"id": "observation_point", "name": "Observation Point", "description": "Good viewing position"},
-        {"id": "target_location", "name": "Target Location", "description": "Goal or destination"},
-        {"id": "walkable_area", "name": "Walkable Area", "description": "Navigable space"}
-    ]
+    # Waypoint types now managed by dedicated feature module
+    WAYPOINT_TYPES = WaypointTypeRegistry.get_all_types()
     
     def __init__(self, waypoint_manager):
         """
@@ -59,7 +59,7 @@ class WaypointCaptureToolbar(WidgetGroup):
         super().__init__()
         
         # Load configuration first to access debug flags
-        from .config import get_config
+        from ..config import get_config
         self._config = get_config()
         
         # DEBUG: Track widget creation
@@ -72,22 +72,28 @@ class WaypointCaptureToolbar(WidgetGroup):
         self.waypoint_manager = waypoint_manager
         
         self._toolbar_button = None
-        self._dropdown_menu = None
         self._is_capture_mode = False
         self._selected_waypoint_type = "camera_position"
-        self._hotkey = None
         self._click_subscription = None
         
         # UI references
         self._main_button = None
-        self._dropdown_button = None
-        self._dropdown_window = None
-        self._dropdown_visible = False
         self._is_active = False
         self._toolbar_instance = None
         
-        # Crosshair waypoint tracking for removal
-        self._last_crosshair_waypoint_id = None  # Cache of most recent waypoint ID
+        # Initialize crosshair interaction handler
+        self._crosshair_handler = CrosshairInteractionHandler(
+            waypoint_manager, self, self._config
+        )
+        
+        # Initialize input handler for hotkeys and scroll wheel
+        self._input_handler = WaypointInputHandler(self, self._config)
+        
+        # Initialize waypoint capture handler
+        self._capture_handler = WaypointCaptureHandler(waypoint_manager, self, self._config)
+        
+        # Initialize UI components handler
+        self._ui_handler = UIComponentsHandler(self, self._config)
         
         if self._config.debug_mode:
             logger.info("WaypointCaptureToolbar initialized")
@@ -117,24 +123,27 @@ class WaypointCaptureToolbar(WidgetGroup):
                 self._click_subscription.unsubscribe()
             self._click_subscription = None
             
-            # Clean dropdown window
-            if self._dropdown_window:
-                self._dropdown_window.destroy()
-            self._dropdown_window = None
             
-            # Clean hotkey (following pattern: clean() then set to None)
-            if self._hotkey:
-                self._hotkey.clean()
-            self._hotkey = None
+            # Clean up input handler
+            if hasattr(self, '_input_handler') and self._input_handler:
+                self._input_handler.cleanup()
+                self._input_handler = None
+                
+            # Clean up capture handler
+            if hasattr(self, '_capture_handler'):
+                self._capture_handler = None
+                
+            # Clean up UI handler
+            if hasattr(self, '_ui_handler') and self._ui_handler:
+                self._ui_handler.cleanup_ui_components()
+                self._ui_handler = None
             
             # Clean up viewport interactions
             self.cleanup()
             
             # Nullify ALL references (following pattern)
             self._main_button = None
-            self._dropdown_button = None
             self._toolbar_button = None
-            self._dropdown_visible = False
             self._is_active = False
             self._toolbar_instance = None
             self.waypoint_manager = None
@@ -176,7 +185,7 @@ class WaypointCaptureToolbar(WidgetGroup):
         try:
             # Create main waypoint capture button only
             # Note: For now, simplifying to just the main button to avoid toolbar integration issues
-            # The dropdown can be accessed via right-click or a separate method
+            # Button handles waypoint capture mode toggle
             self._main_button = ui.ToolButton(
                 name="waypoint_capture",
                 width=default_size,
@@ -196,12 +205,9 @@ class WaypointCaptureToolbar(WidgetGroup):
             
             self._is_active = False
             
-            # Add right-click functionality for dropdown
-            # For now, we'll use the main button click to cycle through modes
+            # Main button click toggles waypoint capture mode
             
-            # Setup hotkey for quick camera capture (disabled by default; enable via config)
-            if getattr(self._config, 'hotkey_enabled', False):
-                self._setup_hotkey()
+            # Input handler manages hotkeys automatically
             
             # Create distance input field that allows typing exact values
             self._distance_slider = ui.FloatField(
@@ -228,35 +234,13 @@ class WaypointCaptureToolbar(WidgetGroup):
             logger.error(f"Error creating waypoint capture toolbar: {e}")
             return None
     
-    def _setup_hotkey(self):
-        """Setup keyboard hotkey for quick waypoint capture."""
-        try:
-            # Use Hotkey API with a globally unique action name to avoid collisions
-            action_name = "omni.agent.worldsurveyor.waypoint_capture_x"
-            if self._hotkey:
-                return
-            self._hotkey = Hotkey(action_name, Key.X, self._on_hotkey_pressed, lambda: True)
-            self._dinfo("Waypoint capture hotkey (X) registered under a unique action name")
-        except Exception as e:
-            logger.error(f"Error setting up hotkey: {e}")
-            # Continue without hotkey if it fails
-            self._hotkey = None
-    
-    def _on_hotkey_pressed(self):
-        """Handle hotkey press for quick waypoint capture."""
-        try:
-            # Capture waypoint of current selected type
-            if self._selected_waypoint_type in ["camera_position", "directional_lighting"]:
-                self._capture_camera_waypoint()
-            else:
-                # For other types, capture at camera position but with different type
-                self._capture_camera_waypoint()
-            self._dinfo(f"Quick waypoint capture via hotkey: {self._selected_waypoint_type}")
-        except Exception as e:
-            logger.error(f"Error in hotkey capture: {e}")
     
     def _on_scroll_wheel(self, x, y, modifier):
-        """Handle scroll wheel over waypoint button to cycle types (only when active)."""
+        """Handle scroll wheel - delegate to input handler."""
+        self._input_handler.handle_scroll_wheel(x, y, modifier)
+    
+    def handle_scroll_type_change(self, y):
+        """Handle scroll wheel type change (callback for input handler)."""
         try:
             # Debug logging
             self._dinfo(f"🔄 Scroll wheel event: active={self._is_active}, y={y}")
@@ -264,7 +248,7 @@ class WaypointCaptureToolbar(WidgetGroup):
             # Only allow scrolling when tool is active
             if not self._is_active:
                 self._dinfo("⚠️ Scroll ignored - tool not active. Click camera button first!")
-                self._show_capture_feedback("Activate waypoint tool first (click camera button)")
+                self.show_capture_feedback("Activate waypoint tool first (click camera button)")
                 return
                 
             # Get current index
@@ -285,54 +269,42 @@ class WaypointCaptureToolbar(WidgetGroup):
                 self._main_button.tooltip = f"Waypoint Capture Tool - Capture: Click - Scroll Current: {current_name}"
             
             self._dinfo(f"Scroll changed waypoint type to: {self._selected_waypoint_type}")
-            self._show_capture_feedback(f"Selected: {current_name}")
+            self.show_capture_feedback(f"Selected: {current_name}")
             
         except Exception as e:
             logger.error(f"Error handling scroll wheel: {e}")
+            
+    def handle_hotkey_capture(self):
+        """Handle hotkey capture (callback for input handler)."""
+        try:
+            # Delegate to capture handler
+            self._capture_handler.capture_camera_waypoint(self._selected_waypoint_type)
+            self._dinfo(f"Quick waypoint capture via hotkey: {self._selected_waypoint_type}")
+        except Exception as e:
+            logger.error(f"Error in hotkey capture: {e}")
     
     def _on_distance_changed(self, model):
-        """Handle distance slider value changes with interval snapping."""
-        try:
-            # Get raw slider value
-            raw_value = model.get_value_as_float()
-            
-            if self._config.debug_mode:
-                logger.info(f"🔄 Distance slider changed: {raw_value:.2f}")
-            
-            # Ensure value stays within bounds (no interval snapping for text input)
-            min_val = self._config.waypoint_distance_min
-            max_val = self._config.waypoint_distance_max
-            clamped_value = max(min_val, min(max_val, raw_value))
-            
-            # Only update if we had to clamp the value to prevent invalid float warnings
-            if abs(raw_value - clamped_value) > 0.001:
-                model.set_value(clamped_value)
-                raw_value = clamped_value
-            
-            # Distance label removed - slider value is sufficient for user feedback
-            
-            # Update tooltip with current distance
-            if hasattr(self, '_main_button') and self._main_button:
-                current_type = self._get_current_type_name()
-                self._main_button.tooltip = f"Waypoint Capture Tool - Capture: Click - Scroll Current: {current_type} - Distance: {raw_value:.1f}u"
-                
-        except Exception as e:
-            logger.error(f"Error handling distance change: {e}")
+        """Handle distance slider value changes - delegate to UI handler."""
+        self._ui_handler.handle_distance_change(model)
     
     def _on_toolbar_button_toggled(self, model):
-        """Handle main toolbar button toggle - enables/disables waypoint tool."""
+        """Handle main toolbar button toggle - delegate to UI handler."""
+        self._ui_handler.handle_toolbar_button_toggled(model)
+    
+    def handle_button_toggle(self, is_active: bool):
+        """Handle button toggle state change (callback for UI handler)."""
         try:
-            self._is_active = model.get_value_as_bool()
+            self._is_active = is_active
             current_name = self._get_current_type_name()
             
             if self._is_active:
                 self._dinfo(f"Waypoint capture tool ACTIVATED - Type: {self._selected_waypoint_type}")
-                self._show_capture_feedback(f"Waypoint tool active: {current_name}")
+                self.show_capture_feedback(f"Waypoint tool active: {current_name}")
                 # Acquire toolbar context like other tools
                 self._acquire_toolbar_context()
             else:
                 self._dinfo("Waypoint capture tool DEACTIVATED")
-                self._show_capture_feedback("Waypoint tool deactivated")
+                self.show_capture_feedback("Waypoint tool deactivated")
                 # Release toolbar context
                 self._release_toolbar_context()
                 
@@ -340,7 +312,11 @@ class WaypointCaptureToolbar(WidgetGroup):
             logger.error(f"Error handling toolbar button toggle: {e}")
     
     def _on_toolbar_button_clicked(self):
-        """Handle direct button clicks to toggle active state manually."""
+        """Handle direct button clicks - delegate to UI handler."""
+        self._ui_handler.handle_toolbar_button_clicked()
+    
+    def handle_button_click(self):
+        """Handle button click event (callback for UI handler)."""
         try:
             # Toggle the active state manually since ToolButton might not handle toggle properly
             self._is_active = not self._is_active
@@ -352,14 +328,14 @@ class WaypointCaptureToolbar(WidgetGroup):
             
             if self._is_active:
                 self._dinfo(f"Waypoint capture tool ACTIVATED via click - Type: {self._selected_waypoint_type}")
-                self._show_capture_feedback(f"Waypoint tool active: {current_name}")
+                self.show_capture_feedback(f"Waypoint tool active: {current_name}")
                 # Acquire toolbar context like other tools
                 self._acquire_toolbar_context()
                 # Enter capture mode for viewport clicks
                 self._enter_capture_mode()
             else:
                 self._dinfo("Waypoint capture tool DEACTIVATED via click")
-                self._show_capture_feedback("Waypoint tool deactivated")
+                self.show_capture_feedback("Waypoint tool deactivated")
                 # Release toolbar context
                 self._release_toolbar_context()
                 # Exit capture mode
@@ -391,101 +367,9 @@ class WaypointCaptureToolbar(WidgetGroup):
         except Exception as e:
             logger.error(f"Error releasing toolbar context: {e}")
     
-    def _toggle_dropdown(self):
-        """Toggle the waypoint type dropdown menu."""
-        try:
-            if self._dropdown_visible:
-                self._hide_dropdown()
-            else:
-                self._show_dropdown()
-        except Exception as e:
-            logger.error(f"Error toggling dropdown: {e}")
-    
-    def _show_dropdown(self):
-        """Show the waypoint type selection dropdown."""
-        if not UI_AVAILABLE:
-            return
-            
-        try:
-            if self._dropdown_window:
-                self._dropdown_window.destroy()
-            
-            # Calculate position relative to toolbar button
-            self._dropdown_window = ui.Window(
-                title="Select Waypoint Type",
-                width=200,
-                height=150,
-                flags=ui.WINDOW_FLAGS_NO_TITLE_BAR | ui.WINDOW_FLAGS_NO_RESIZE,
-                auto_resize=True
-            )
-            
-            with self._dropdown_window.frame:
-                with ui.VStack(spacing=2):
-                    for waypoint_type in self.WAYPOINT_TYPES:
-                        with ui.HStack():
-                            button = ui.Button(
-                                text=waypoint_type["name"],
-                                height=25,
-                                tooltip=waypoint_type["description"]
-                            )
-                            
-                            # Create closure to capture waypoint_type
-                            def make_callback(wtype):
-                                return lambda: self._select_waypoint_type(wtype["id"])
-                            
-                            button.set_clicked_fn(make_callback(waypoint_type))
-                            
-                            # Highlight current selection
-                            if waypoint_type["id"] == self._selected_waypoint_type:
-                                button.style_type_name_override = "Button.Label"
-            
-            self._dropdown_visible = True
-            self._dinfo("Waypoint type dropdown shown")
-            
-        except Exception as e:
-            logger.error(f"Error showing dropdown: {e}")
-    
-    def _hide_dropdown(self):
-        """Hide the waypoint type dropdown menu."""
-        try:
-            if self._dropdown_window:
-                # Simple immediate destruction - avoiding async issues
-                self._dropdown_window.destroy()
-                self._dropdown_window = None
-            self._dropdown_visible = False
-            self._dinfo("Waypoint type dropdown hidden")
-        except Exception as e:
-            logger.error(f"Error hiding dropdown: {e}")
-    
-    def _select_waypoint_type(self, waypoint_type_id: str):
-        """
-        Select a waypoint type from the dropdown.
-        
-        Args:
-            waypoint_type_id: ID of the selected waypoint type
-        """
-        try:
-            self._selected_waypoint_type = waypoint_type_id
-            
-            # Update tooltip first, then hide dropdown with delay
-            if self._main_button:
-                current_name = self._get_current_type_name()
-                self._main_button.tooltip = f"Waypoint Capture Tool - Capture: Click - Scroll Current: {current_name}"
-            
-            self._dinfo(f"Selected waypoint type: {waypoint_type_id}")
-            
-            # Hide dropdown immediately after selection
-            self._hide_dropdown()
-            
-        except Exception as e:
-            logger.error(f"Error selecting waypoint type: {e}")
-    
     def _get_current_type_name(self) -> str:
         """Get the display name of the currently selected waypoint type."""
-        for wtype in self.WAYPOINT_TYPES:
-            if wtype["id"] == self._selected_waypoint_type:
-                return wtype["name"]
-        return "Unknown"
+        return WaypointTypeRegistry.get_type_name(self._selected_waypoint_type)
     
     def _get_next_waypoint_number(self, waypoint_type: str) -> int:
         """Get the next available number for a waypoint type, accounting for deleted waypoints."""
@@ -521,33 +405,12 @@ class WaypointCaptureToolbar(WidgetGroup):
                                  if wp.waypoint_type == waypoint_type])
             return same_type_count + 1
     
-    def _get_current_distance(self) -> float:
+    def get_current_distance(self) -> float:
         """Get current distance setting from slider."""
         if hasattr(self, '_distance_slider') and self._distance_slider:
             return self._distance_slider.model.get_value_as_float()
         return self._config.waypoint_distance_default
     
-    def _capture_camera_waypoint(self):
-        """Capture a waypoint at the current camera position."""
-        try:
-            # Get camera position and create waypoint using existing methods
-            position, target = self.waypoint_manager.get_camera_position_and_target()
-            
-            # Get next available number for this waypoint type
-            next_number = self._get_next_waypoint_number(self._selected_waypoint_type)
-            
-            # Use target-based approach for accurate camera positioning
-            waypoint_id = self.waypoint_manager.create_waypoint(
-                position=position,
-                target=target,  # Store target coordinates for accurate recall
-                waypoint_type=self._selected_waypoint_type,
-                name=f"{self._selected_waypoint_type}_{next_number}"
-            )
-            self._dinfo(f"Waypoint captured: {waypoint_id} ({self._selected_waypoint_type})")
-            self._show_capture_feedback(f"{self._get_current_type_name()} waypoint captured!")
-                
-        except Exception as e:
-            logger.error(f"Error capturing camera waypoint: {e}")
     
     def _enter_capture_mode(self):
         """Enter crosshair-based waypoint placement mode."""
@@ -562,7 +425,7 @@ class WaypointCaptureToolbar(WidgetGroup):
             self._setup_crosshair_system()
             
             # Visual feedback
-            self._show_capture_feedback(f"Crosshair active - Left click: place {self._get_current_type_name()}, X key: remove last")
+            self.show_capture_feedback(f"Crosshair active - Left click: place {self._get_current_type_name()}, X key: remove last")
             
             self._dinfo(f"Entered crosshair capture mode for {self._selected_waypoint_type}")
             
@@ -578,7 +441,7 @@ class WaypointCaptureToolbar(WidgetGroup):
             self._cleanup_crosshair_system()
             
             # Visual feedback
-            self._show_capture_feedback("Crosshair mode deactivated")
+            self.show_capture_feedback("Crosshair mode deactivated")
             
             self._dinfo("Exited crosshair capture mode")
             
@@ -838,18 +701,18 @@ class WaypointCaptureToolbar(WidgetGroup):
         try:
             # Special handling for camera and directional lighting waypoints - capture exact camera state
             if self._selected_waypoint_type in ['camera_position', 'directional_lighting']:
-                self._capture_exact_waypoint()
+                self._capture_handler.capture_exact_waypoint(self._selected_waypoint_type)
                 return
             
             # For all other waypoint types, use crosshair placement
             # Calculate crosshair world position using simple camera math
-            camera_position, camera_forward = self._get_camera_position_and_forward()
+            camera_position, camera_forward = self._capture_handler.get_camera_position_and_forward()
             if not camera_position or not camera_forward:
                 logger.error("❌ Could not get camera position and forward vector")
                 return
             
             # Get distance from slider
-            distance = self._get_current_distance()
+            distance = self.get_current_distance()
             
             # Calculate waypoint position: camera + (forward * distance)
             waypoint_position = [
@@ -864,60 +727,11 @@ class WaypointCaptureToolbar(WidgetGroup):
                 logger.info(f"   Waypoint position: {waypoint_position}")
             
             # Create waypoint using HTTP API
-            self._create_waypoint_via_http(waypoint_position)
+            self._capture_handler.create_waypoint_via_http(waypoint_position, self._selected_waypoint_type)
             
         except Exception as e:
             logger.error(f"Error placing waypoint at crosshair: {e}")
     
-    def _capture_exact_waypoint(self):
-        """Capture waypoint at exact camera position using create_waypoint method."""
-        try:
-            import requests
-            
-            # Get camera position and target
-            position, target = self.waypoint_manager.get_camera_position_and_target()
-            
-            # Get next available number for this waypoint type  
-            next_number = self._get_next_waypoint_number(self._selected_waypoint_type)
-            
-            # Use the general create_waypoint HTTP endpoint for thread safety
-            base_url = self._config.get_server_url()
-            response = requests.post(
-                f"{base_url}/create_waypoint",
-                json={
-                    'name': f"{self._selected_waypoint_type}_{next_number}",
-                    'position': position,
-                    'target': target,
-                    'waypoint_type': self._selected_waypoint_type
-                },
-                timeout=5.0,
-                headers={'Content-Type': 'application/json'}
-            )
-            
-            if response.status_code == 200:
-                result = response.json()
-                if result.get('success'):
-                    # Cache the waypoint ID for potential removal
-                    if 'waypoint_id' in result:
-                        self._last_crosshair_waypoint_id = result['waypoint_id']
-                    
-                    if self._config.debug_mode:
-                        logger.info(f"📷 {self._selected_waypoint_type} waypoint captured: {result.get('waypoint_id')}")
-                    
-                    # Show user feedback
-                    pos_str = f"{position[0]:.1f}, {position[1]:.1f}, {position[2]:.1f}"
-                    type_name = self._get_current_type_name()
-                    self._show_capture_feedback(f"{type_name} captured at ({pos_str})")
-                else:
-                    logger.error(f"❌ {self._get_current_type_name()} capture failed: {result.get('error')}")
-                    self._show_capture_feedback(f"❌ {self._get_current_type_name()} capture failed")
-            else:
-                logger.error(f"❌ HTTP error capturing {self._selected_waypoint_type} waypoint: {response.status_code}")
-                self._show_capture_feedback(f"❌ {self._get_current_type_name()} capture failed")
-                
-        except Exception as e:
-            logger.error(f"❌ Error capturing {self._selected_waypoint_type} waypoint: {e}")
-            self._show_capture_feedback(f"❌ {self._get_current_type_name()} capture failed")
     
     def _remove_last_waypoint(self):
         """Remove the most recently placed crosshair waypoint."""
@@ -949,142 +763,29 @@ class WaypointCaptureToolbar(WidgetGroup):
                 if data.get('success'):
                     if self._config.debug_mode:
                         logger.info(f"✅ Waypoint {waypoint_id} removed successfully")
-                    self._show_capture_feedback("Last waypoint removed")
+                    self.show_capture_feedback("Last waypoint removed")
                 else:
                     logger.info(f"Failed to remove waypoint: {data.get('error', 'Unknown error')}")
-                    self._show_capture_feedback("Waypoint not found")
+                    self.show_capture_feedback("Waypoint not found")
             else:
                 logger.info(f"Unable to remove waypoint {waypoint_id}: {response.status_code}")
-                self._show_capture_feedback("Unable to remove waypoint")
+                self.show_capture_feedback("Unable to remove waypoint")
             
             # Always clear the cache after removal attempt
             self._last_crosshair_waypoint_id = None
                 
         except requests.RequestException as http_e:
             logger.info(f"Network error removing waypoint {waypoint_id}: {http_e}")
-            self._show_capture_feedback("Network error removing waypoint")
+            self.show_capture_feedback("Network error removing waypoint")
             # Clear cache even on network error
             self._last_crosshair_waypoint_id = None
         except Exception as e:
             logger.info(f"Error removing waypoint: {e}")
-            self._show_capture_feedback("Error removing waypoint")
+            self.show_capture_feedback("Error removing waypoint")
             # Clear cache even on error
             self._last_crosshair_waypoint_id = None
     
-    def _get_camera_position_and_forward(self):
-        """Get current camera position and forward direction vector."""
-        try:
-            if not self._viewport_window or not hasattr(self._viewport_window, 'viewport_api'):
-                logger.error("❌ No viewport window or viewport API")
-                return None, None
-                
-            viewport_api = self._viewport_window.viewport_api
-            if not viewport_api:
-                logger.error("❌ Viewport API is None")
-                return None, None
-            
-            # Get camera information
-            import omni.usd
-            from pxr import UsdGeom, Gf
-            
-            stage = omni.usd.get_context().get_stage()
-            if not stage:
-                logger.error("❌ No USD stage available")
-                return None, None
-                
-            camera_path = viewport_api.camera_path
-            if not camera_path:
-                logger.error("❌ No camera path from viewport API")
-                return None, None
-                
-            camera_prim = stage.GetPrimAtPath(camera_path)
-            if not camera_prim or not camera_prim.IsValid():
-                logger.error(f"❌ Invalid camera prim at path: {camera_path}")
-                return None, None
-                
-            camera = UsdGeom.Camera(camera_prim)
-            if not camera:
-                logger.error("❌ Could not create UsdGeom.Camera from prim")
-                return None, None
-                
-            # Get camera transform
-            transform = camera.ComputeLocalToWorldTransform(0.0)
-            if not transform:
-                logger.error("❌ Could not get camera transform")
-                return None, None
-                
-            # Extract camera position
-            camera_position = transform.ExtractTranslation()
-            camera_position = [float(camera_position[0]), float(camera_position[1]), float(camera_position[2])]
-            
-            # Get camera direction using WorldViewer's proven approach
-            # Camera looks down -Z axis in USD camera space
-            forward_vec = transform.TransformDir(Gf.Vec3d(0, 0, -1))
-            forward_vec = forward_vec.GetNormalized()
-            camera_forward = [float(forward_vec[0]), float(forward_vec[1]), float(forward_vec[2])]
-            
-            if self._config.debug_mode:
-                logger.info(f"🔍 CAMERA DEBUG:")
-                logger.info(f"   Camera path: {camera_path}")
-                logger.info(f"   Position: [{camera_position[0]:.2f}, {camera_position[1]:.2f}, {camera_position[2]:.2f}]")
-                logger.info(f"   Forward: [{camera_forward[0]:.3f}, {camera_forward[1]:.3f}, {camera_forward[2]:.3f}]")
-            
-            return camera_position, camera_forward
-            
-        except Exception as e:
-            logger.error(f"❌ Error getting camera position and forward: {e}")
-            return None, None
     
-    def _create_waypoint_via_http(self, position):
-        """Create waypoint using HTTP API."""
-        try:
-            import requests
-            
-            # Get next available number for this waypoint type
-            next_number = self._get_next_waypoint_number(self._selected_waypoint_type)
-            
-            waypoint_data = {
-                "position": position,
-                "waypoint_type": self._selected_waypoint_type,
-                "name": f"{self._selected_waypoint_type}_crosshair_{next_number}"
-            }
-            
-            logger.info(f"🌐 Creating waypoint via HTTP: {waypoint_data}")
-            
-            response = requests.post(
-                "http://localhost:8891/create_waypoint", 
-                json=waypoint_data,
-                timeout=5.0,
-                headers={'Content-Type': 'application/json'}
-            )
-            
-            if response.status_code == 200:
-                result = response.json()
-                
-                # Cache the waypoint ID for potential removal
-                if 'waypoint_id' in result:
-                    self._last_crosshair_waypoint_id = result['waypoint_id']
-                    if self._config.debug_mode:
-                        logger.info(f"✅ Crosshair waypoint created and cached: {self._last_crosshair_waypoint_id}")
-                else:
-                    if self._config.debug_mode:
-                        logger.info(f"✅ Crosshair waypoint created: {result}")
-                
-                # Show success feedback to user
-                distance = self._get_current_distance()
-                pos_str = f"{position[0]:.1f}, {position[1]:.1f}, {position[2]:.1f}"
-                self._show_capture_feedback(f"Waypoint placed at ({pos_str}) - {distance:.1f}u ahead")
-                
-            else:
-                logger.error(f"❌ HTTP API failed: {response.status_code} - {response.text}")
-                self._show_capture_feedback("Failed to create waypoint")
-                
-        except requests.RequestException as http_e:
-            logger.error(f"❌ HTTP request failed: {http_e}")
-            self._show_capture_feedback("Network error creating waypoint")
-        except Exception as e:
-            logger.error(f"❌ Unexpected error creating waypoint: {e}")
-            self._show_capture_feedback("Error creating waypoint")
     
     def _cleanup_crosshair_system(self):
         """Clean up crosshair system resources."""
@@ -1129,22 +830,9 @@ class WaypointCaptureToolbar(WidgetGroup):
         except Exception as e:
             logger.error(f"Error hiding crosshair: {e}")
     
-    def _show_capture_feedback(self, message: str):
-        """
-        Show user feedback for waypoint capture operations.
-        
-        Args:
-            message: Feedback message to display
-        """
-        try:
-            # For now, just log the message
-            # In a full implementation, this could show a toast notification
-            logger.info(f"Waypoint feedback: {message}")
-            
-            # TODO: Implement proper UI feedback (toast, status bar, etc.)
-            
-        except Exception as e:
-            logger.error(f"Error showing capture feedback: {e}")
+    def show_capture_feedback(self, message: str):
+        """Show user feedback for waypoint capture operations - delegate to UI handler."""
+        self._ui_handler.show_capture_feedback(message)
     
     def cleanup(self):
         """Clean up crosshair system and other resources."""

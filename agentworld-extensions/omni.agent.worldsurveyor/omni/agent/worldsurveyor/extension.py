@@ -18,7 +18,7 @@ from .http_api_interface import HTTPAPIInterface
 
 # Import toolbar integration
 try:
-    from .waypoint_toolbar import WaypointToolbarManager
+    from .ui.waypoint_toolbar import WaypointToolbarManager
     TOOLBAR_AVAILABLE = True
 except ImportError as e:
     TOOLBAR_AVAILABLE = False
