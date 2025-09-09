@@ -113,9 +113,15 @@ class WaypointDatabase:
             # Create indexes for performance
             conn.execute("CREATE INDEX IF NOT EXISTS idx_waypoints_type ON waypoints(waypoint_type)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_waypoints_session ON waypoints(session_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_waypoints_timestamp ON waypoints(timestamp)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_waypoints_type_timestamp ON waypoints(waypoint_type, timestamp)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_waypoints_session_timestamp ON waypoints(session_id, timestamp)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_waypoints_position ON waypoints(position_x, position_y, position_z)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_groups_parent ON groups(parent_group_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_groups_name ON groups(name)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_waypoint_groups_waypoint ON waypoint_groups(waypoint_id)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_waypoint_groups_group ON waypoint_groups(group_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_waypoint_groups_composite ON waypoint_groups(group_id, waypoint_id)")
             
             conn.commit()
     

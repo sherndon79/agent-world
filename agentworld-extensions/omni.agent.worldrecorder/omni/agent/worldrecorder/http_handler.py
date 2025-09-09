@@ -5,10 +5,61 @@ HTTP request handler for Agent WorldRecorder API endpoints.
 import time
 import logging
 import shutil
+import os
 from typing import Dict, Any, Optional
 from pathlib import Path
 
 # Note: Unified logging is initialized once in api_interface.py
+
+
+def _validate_output_path(path_str: str) -> Optional[Path]:
+    """
+    Validate and normalize output path to prevent directory traversal attacks.
+    
+    Args:
+        path_str: User-provided output path string
+        
+    Returns:
+        Validated Path object if safe, None if invalid/unsafe
+    """
+    try:
+        if not path_str or not isinstance(path_str, str):
+            return None
+            
+        # Remove any null bytes and normalize
+        path_str = path_str.replace('\x00', '')
+        
+        # Resolve the path to get absolute path and eliminate .. components
+        path = Path(path_str).resolve()
+        
+        # Define allowed base directories (configure as needed for deployment)
+        allowed_bases = [
+            Path("/tmp").resolve(),
+            Path(os.path.expanduser("~/Downloads")).resolve(),
+            Path(os.path.expanduser("~/Desktop")).resolve(),
+        ]
+        
+        # Add current working directory as allowed (for relative paths)
+        allowed_bases.append(Path.cwd().resolve())
+        
+        # Check if path is within any allowed base directory
+        for allowed_base in allowed_bases:
+            try:
+                # This will raise ValueError if path is not relative to allowed_base
+                path.relative_to(allowed_base)
+                # If we get here, path is within allowed_base
+                return path
+            except ValueError:
+                continue
+                
+        # Path is not within any allowed base directory
+        logging.warning(f"Path validation failed: {path} not within allowed directories")
+        return None
+        
+    except (OSError, ValueError) as e:
+        logging.warning(f"Path validation error for '{path_str}': {e}")
+        return None
+
 
 # Import centralized version management
 def _find_and_import_versions():
@@ -144,7 +195,9 @@ class WorldRecorderHTTPHandler(WorldHTTPHandler):
                 return {'success': False, 'error': 'output_path required'}
             
             # File type resolution: path extension wins, file_type as fallback
-            out = Path(out_path)
+            out = _validate_output_path(out_path)
+            if not out:
+                return {'success': False, 'error': 'Invalid output path - path traversal blocked'}
             if out.suffix:
                 file_type = out.suffix
                 opts.output_folder = str(out.parent)
@@ -309,7 +362,9 @@ class WorldRecorderHTTPHandler(WorldHTTPHandler):
             is_sequence = duration_sec and (interval_sec or frame_count)
             
             # File type resolution: path extension wins, file_type as fallback
-            out = Path(out_path)
+            out = _validate_output_path(out_path)
+            if not out:
+                return {'success': False, 'error': 'Invalid output path - path traversal blocked'}
             if out.suffix:
                 file_type = out.suffix
             else:
@@ -578,7 +633,10 @@ class WorldRecorderHTTPHandler(WorldHTTPHandler):
                 logger.debug("No output_path provided, returning")
                 return
                 
-            output_file = Path(output_path)
+            output_file = _validate_output_path(output_path)
+            if not output_file:
+                logger.warning(f"Invalid output path blocked: {output_path}")
+                return
             parent_dir = output_file.parent
             base_name = output_file.stem
             
@@ -658,7 +716,9 @@ class WorldRecorderHTTPHandler(WorldHTTPHandler):
             
             # Perform cleanup
             try:
-                output_file = Path(output_path)
+                output_file = _validate_output_path(output_path)
+                if not output_file:
+                    return {'success': False, 'error': 'Invalid output path - path traversal blocked'}
                 parent_dir = output_file.parent
                 base_name = output_file.stem
                 frame_dir_pattern = f"{base_name}_frames"
