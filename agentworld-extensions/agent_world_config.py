@@ -52,8 +52,16 @@ class WorldExtensionConfig:
     4. Environment variables (highest priority)
     """
     
-    # Subclasses must define their defaults
-    DEFAULTS: Dict[str, Any] = {}
+    # Common defaults for all extensions
+    DEFAULTS: Dict[str, Any] = {
+        'server_host': 'localhost',
+        'debug_mode': False,
+        'verbose_logging': False,
+        'auth_enabled': True,
+        'startup_delay': 0.1,
+        'rate_limit_requests_per_minute': 100,
+        'rate_limit_window_seconds': 60
+    }
     
     def __init__(self, extension_name: str, config_file: Optional[str] = None):
         """
@@ -294,10 +302,8 @@ def create_worldbuilder_config() -> WorldExtensionConfig:
     
     class WorldBuilderConfig(WorldExtensionConfig):
         DEFAULTS = {
-            'server_port': 8899,
-            'debug_mode': False,
-            'verbose_logging': False,
-            'auth_enabled': True,
+            **WorldExtensionConfig.DEFAULTS,  # Common defaults
+            'server_port': 8899,              # Extension-specific overrides
             'enable_batch_operations': True,
             'max_elements_per_batch': 100,
             'auto_save_scene': False
@@ -310,10 +316,9 @@ def create_worldviewer_config() -> WorldExtensionConfig:
     """Create WorldViewer configuration instance."""
     class WorldViewerConfig(WorldExtensionConfig):
         DEFAULTS = {
-            'server_port': 8900,
-            'debug_mode': False,
-            'verbose_logging': False,
-            'auth_enabled': True,
+            **WorldExtensionConfig.DEFAULTS,  # Common defaults
+            'server_port': 8900,              # Extension-specific overrides
+            'rate_limit_requests_per_minute': 120,  # Higher rate limit for camera operations
             'enable_cinematic_mode': True,
             'default_movement_duration': 3.0,
             'max_movement_duration': 60.0
@@ -326,10 +331,9 @@ def create_worldsurveyor_config() -> WorldExtensionConfig:
     """Create WorldSurveyor configuration instance."""
     class WorldSurveyorConfig(WorldExtensionConfig):
         DEFAULTS = {
-            'server_port': 8891,
-            'debug_mode': False,
-            'verbose_logging': False,
-            'auth_enabled': True,
+            **WorldExtensionConfig.DEFAULTS,  # Common defaults
+            'server_port': 8891,              # Extension-specific overrides
+            'rate_limit_requests_per_minute': 80,   # Lower rate limit for waypoint operations
             'enable_waypoint_persistence': True,
             'waypoint_marker_scale': 1.0,
             'auto_save_waypoints': True
@@ -342,12 +346,10 @@ def create_worldrecorder_config() -> WorldExtensionConfig:
     """Create WorldRecorder configuration instance."""
     class WorldRecorderConfig(WorldExtensionConfig):
         DEFAULTS = {
-            'server_port': 8892,
-            'debug_mode': False,
-            'verbose_logging': False,
-            'auth_enabled': True,
+            **WorldExtensionConfig.DEFAULTS,  # Common defaults
+            'server_port': 8892,              # Extension-specific overrides
             'default_fps': 24,
-            'max_recording_duration': 300,  # 5 minutes
+            'max_recording_duration': 300,    # 5 minutes
             'output_directory': '/tmp/recordings'
         }
     

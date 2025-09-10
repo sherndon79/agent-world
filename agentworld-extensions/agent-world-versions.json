@@ -26,6 +26,11 @@
       "version": "0.1.0",
       "api_version": "0.1.0",
       "service_name": "Agent WorldRecorder API"
+    },
+    "worldstreamer": {
+      "version": "0.1.0",
+      "api_version": "0.1.0",
+      "service_name": "Agent WorldStreamer API"
     }
   },
   

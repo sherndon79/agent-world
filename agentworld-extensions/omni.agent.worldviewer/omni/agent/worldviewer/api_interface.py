@@ -34,7 +34,7 @@ except ImportError as e:
 from .config import get_config
 from agent_world_logging import setup_logging
 from .http_handler import WorldViewerHTTPHandler
-from .security import SecurityManager
+from .security import WorldViewerAuth
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +48,7 @@ class HTTPAPIInterface:
         self._port = port or self._config.server_port or 8900
         self._server = None
         self._server_thread = None
-        self.security_manager = SecurityManager()
+        self.security_manager = WorldViewerAuth(config=self._config)
         
         # Always initialize _api_stats for backward compatibility
         self._api_stats = {

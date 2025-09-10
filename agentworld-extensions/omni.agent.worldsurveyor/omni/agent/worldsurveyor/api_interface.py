@@ -35,7 +35,7 @@ from .config import get_config
 from agent_world_logging import setup_logging
 from .http_handler import WorldSurveyorHTTPHandler
 from .waypoint_manager import WaypointManager
-from .security import SecurityManager
+from .security import WorldSurveyorAuth
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +51,7 @@ class HTTPAPIInterface:
         self._server = None
         self._server_thread = None
         self._toolbar_manager = None  # Reference to toolbar manager for cleanup
-        self.security_manager = SecurityManager()
+        self.security_manager = WorldSurveyorAuth(config=self._config)
         
         # Thread coordination
         self._main_thread_id = threading.get_ident()

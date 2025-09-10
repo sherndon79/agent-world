@@ -1,112 +1,174 @@
 """
-Security and rate limiting for WorldBuilder API.
+WorldBuilder Security Module
+
+Authentication and security for WorldBuilder API.
+Uses unified agent_world authentication system for consistency.
 """
 
-import hashlib
-import hmac
+import sys
 import logging
-import os
-import time
-from collections import defaultdict, deque
-from typing import Dict
 from pathlib import Path
-import json
+from typing import Optional, Dict, Any
+
+# Import unified authentication system
+try:
+    # Find the agentworld-extensions directory
+    current = Path(__file__).resolve()
+    for _ in range(10):  # Search up the directory tree
+        if current.name == 'agentworld-extensions':
+            sys.path.insert(0, str(current))
+            break
+        current = current.parent
+    
+    from agent_world_auth import SecurityManager, is_bearer_auth_enabled
+    AUTH_AVAILABLE = True
+except ImportError as e:
+    logging.getLogger(__name__).warning(f"Could not import unified auth system: {e}")
+    AUTH_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
 
-class RateLimiter:
-    def __init__(self, max_requests: int = 100, window_seconds: int = 60):
-        self.max_requests = max_requests
-        self.window_seconds = window_seconds
-        self.requests = defaultdict(deque)
-
-    def is_allowed(self, client_ip: str) -> bool:
-        now = time.time()
-        dq = self.requests[client_ip]
-        while dq and dq[0] < now - self.window_seconds:
-            dq.popleft()
-        if len(dq) < self.max_requests:
-            dq.append(now)
-            return True
-        return False
-
-
-class SecurityManager:
-    """Bearer/HMAC auth compatible with existing env variables and settings."""
-
-    def __init__(self, settings_path: str = "/exts/omni.agent.worldbuilder/auth_enabled",
-                 bearer_env: str = 'AGENT_WORLDBUILDER_AUTH_TOKEN',
-                 hmac_env: str = 'AGENT_WORLDBUILDER_HMAC_SECRET'):
-        self.settings_path = settings_path
-        self.bearer_env = bearer_env
-        self.hmac_env = hmac_env
-        self._sec = self._load_security_config()
-        rl = self._sec.get('rate_limiting', {})
-        self.rate_limiter = RateLimiter(
-            max_requests=int(rl.get('requests_per_minute', 60)),
-            window_seconds=60
-        )
-        authc = self._sec.get('authentication', {})
-        self.bearer_header = authc.get('bearer_token_header', 'Authorization')
-        self.token_prefix = authc.get('token_prefix', 'Bearer ')
-
-    def check_rate_limit(self, client_ip: str) -> bool:
-        return self.rate_limiter.is_allowed(client_ip)
-
-    def check_auth(self, method: str, headers: Dict, path: str) -> bool:
-        try:
-            # Honor global disable
-            if (os.getenv('AGENT_EXT_AUTH_ENABLED') or '').lower() in ('0','false','no','off'):
-                return True
+class WorldBuilderAuth:
+    """
+    Authentication handler for WorldBuilder API.
+    
+    Provides consistent authentication using the unified agent_world system.
+    """
+    
+    def __init__(self, config=None):
+        """
+        Initialize authentication handler.
+        
+        Args:
+            config: Extension config object for rate limiting settings
+        """
+        self._security_manager = None
+        
+        if AUTH_AVAILABLE:
             try:
-                import carb
-                cs = carb.settings.get_settings()
-                enabled = cs.get(self.settings_path)
-                if enabled is False:
-                    return True
-            except Exception:
-                pass
-            bearer = os.getenv(self.bearer_env) or os.getenv('AGENT_EXT_AUTH_TOKEN')
-            secret = os.getenv(self.hmac_env) or os.getenv('AGENT_EXT_HMAC_SECRET')
-            if not bearer and not secret:
-                return True
-            auth = headers.get(self.bearer_header, '')
-            if bearer and auth == f"{self.token_prefix}{bearer}":
-                return True
-            if secret:
-                ts = headers.get('X-Timestamp')
-                sig = headers.get('X-Signature')
-                if ts and sig:
-                    try:
-                        tsf = float(ts)
-                        if abs(time.time() - tsf) > 60.0:
-                            return False
-                    except Exception:
-                        return False
-                    msg = f"{method}|{path}|{ts}".encode('utf-8')
-                    expected = hmac.new(secret.encode('utf-8'), msg, hashlib.sha256).hexdigest()
-                    if hmac.compare_digest(expected, sig):
-                        return True
-            return False
-        except Exception:
-            return False
-
-
-    def _load_security_config(self) -> Dict:
+                self._security_manager = SecurityManager('worldbuilder', config=config)
+                logger.info("WorldBuilder authentication initialized with unified SecurityManager")
+            except Exception as e:
+                logger.error(f"Failed to initialize WorldBuilder authentication: {e}")
+        else:
+            logger.warning("WorldBuilder authentication unavailable - unified auth system not found")
+    
+    def is_enabled(self) -> bool:
+        """
+        Check if authentication is enabled.
+        
+        Returns:
+            True if authentication is enabled and available
+        """
+        return AUTH_AVAILABLE and self._security_manager is not None and self._security_manager.is_auth_enabled()
+    
+    def validate_request(self, headers: Dict[str, str], 
+                        client_ip: str = "127.0.0.1",
+                        method: str = "GET", 
+                        path: str = "/") -> tuple[bool, Optional[str]]:
+        """
+        Validate authentication for an incoming request.
+        
+        Args:
+            headers: Request headers dictionary
+            client_ip: Client IP address for rate limiting
+            method: HTTP method for HMAC validation
+            path: Request path for HMAC validation
+            
+        Returns:
+            Tuple of (is_valid, error_message)
+        """
+        # If auth system unavailable, deny requests
+        if not AUTH_AVAILABLE or not self._security_manager:
+            return False, "Authentication system unavailable"
+        
+        # Use SecurityManager for comprehensive validation
         try:
-            current = Path(__file__).resolve()
-            for _ in range(10):
-                cfg = current / 'agent-world-security.json'
-                if cfg.exists():
-                    return json.loads(cfg.read_text(encoding='utf-8'))
-                if current.parent == current:
-                    break
-                current = current.parent
-        except Exception:
-            pass
+            return self._security_manager.validate_request(headers, client_ip, method, path)
+        except Exception as e:
+            logger.error(f"Authentication validation error: {e}")
+            return False, "Authentication validation failed"
+    
+    def check_auth(self, method: str, headers: Dict[str, str], path: str) -> bool:
+        """
+        Legacy compatibility method for unified HTTP handler.
+        
+        Args:
+            method: HTTP method
+            headers: Request headers
+            path: Request path
+            
+        Returns:
+            True if authentication passes, False otherwise
+        """
+        is_valid, error_msg = self.validate_request(headers, "127.0.0.1", method, path)
+        return is_valid
+    
+    def check_rate_limit(self, client_ip: str) -> bool:
+        """
+        Legacy compatibility method for unified HTTP handler rate limiting.
+        
+        Args:
+            client_ip: Client IP address
+            
+        Returns:
+            True if request is allowed, False if rate limited
+        """
+        if not AUTH_AVAILABLE or not self._security_manager:
+            return True  # Allow if auth system unavailable
+        
+        try:
+            # The unified SecurityManager handles rate limiting internally
+            # For compatibility, we'll always return True since rate limiting
+            # is already handled in validate_request()
+            return True
+        except Exception as e:
+            logger.error(f"Rate limit check error: {e}")
+            return True  # Allow on error to avoid blocking legitimate requests
+    
+    def get_auth_requirements(self) -> Dict[str, Any]:
+        """
+        Get authentication requirements for API documentation.
+        
+        Returns:
+            Dict with authentication scheme information
+        """
+        if not self.is_enabled():
+            return {
+                'auth_required': False,
+                'auth_scheme': None
+            }
+        
+        # Check if Bearer auth is explicitly enabled
+        bearer_enabled = AUTH_AVAILABLE and is_bearer_auth_enabled('worldbuilder')
+        
+        schemes = ['HMAC signature (recommended)']
+        if bearer_enabled:
+            schemes.append('Bearer token (testing only)')
+        
         return {
-            'global_settings': {'auth_enabled': True},
-            'rate_limiting': {'requests_per_minute': 60},
-            'authentication': {'bearer_token_header': 'Authorization', 'token_prefix': 'Bearer '}
+            'auth_required': True,
+            'auth_schemes': schemes,
+            'primary_scheme': 'HMAC',
+            'hmac_headers': ['X-Timestamp', 'X-Signature'],
+            'bearer_enabled': bearer_enabled,
+            'auth_description': 'HMAC signature authentication (preferred) or Bearer token (testing only if enabled)'
         }
+    
+    def get_health_status(self) -> Dict[str, Any]:
+        """
+        Get authentication system health status.
+        
+        Returns:
+            Dict with auth health information
+        """
+        return {
+            'auth_available': AUTH_AVAILABLE,
+            'security_manager_initialized': self._security_manager is not None,
+            'auth_functional': self.is_enabled(),
+            'bearer_auth_enabled': AUTH_AVAILABLE and is_bearer_auth_enabled('worldbuilder'),
+            'extension_name': 'worldbuilder'
+        }
+
+

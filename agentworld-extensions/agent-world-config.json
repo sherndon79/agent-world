@@ -67,5 +67,26 @@
     "max_queue_size": 100,
     "hardware_encoding_preferred": true,
     "capture_depth_buffer": false
+  },
+
+  "worldstreamer": {
+    "server_port": 8905,
+    "server_host": "localhost",
+    "debug_mode": false,
+    "verbose_logging": false,
+    "auth_enabled": true,
+    "startup_delay": 0.1,
+    "shutdown_timeout": 5.0,
+    "webrtc_port": 49100,
+    "client_port": 8211,
+    "livestream_mode": 2,
+    "isaac_webrtc_extension": "omni.kit.livestream.webrtc",
+    "isaac_livestream_core_extension": "omni.kit.livestream.core",
+    "isaac_streamsdk_extension": "omni.kit.streamsdk.plugins",
+    "stream_timeout": 30.0,
+    "ip_detection_timeout": 5.0,
+    "max_concurrent_streams": 1,
+    "connection_validation_enabled": true,
+    "environment_validation_enabled": true
   }
 }
