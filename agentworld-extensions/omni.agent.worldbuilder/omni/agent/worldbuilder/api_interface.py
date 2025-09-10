@@ -32,7 +32,7 @@ from .config import get_config
 from agent_world_logging import setup_logging
 from .http_handler import WorldBuilderHTTPHandler
 from .scene_builder import SceneBuilder
-from .security import SecurityManager
+from .security import WorldBuilderAuth
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +47,7 @@ class HTTPAPIInterface:
         self._port = port or self._config.server_port
         self._server = None
         self._server_thread = None
-        self.security_manager = SecurityManager()
+        self.security_manager = WorldBuilderAuth(config=self._config)
         
         # Initialize scene builder
         self._scene_builder = SceneBuilder()

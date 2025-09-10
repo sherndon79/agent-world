@@ -8,7 +8,7 @@ from typing import Optional, Callable, Any
 from collections import deque
 
 from .http_handler import WorldRecorderHTTPHandler
-from .security import SecurityManager
+from .security import WorldRecorderAuth
 from .config import WorldRecorderConfig
 from agent_world_metrics import setup_worldrecorder_metrics
 
@@ -39,7 +39,7 @@ class HTTPAPIInterface:
         self.host = host or self._config.server_host
         self.port = (port or 0) or self._config.server_port
         # Unified security / metrics
-        self.security_manager = SecurityManager()
+        self.security_manager = WorldRecorderAuth(config=self._config)
         self.metrics = setup_worldrecorder_metrics()
         
         # Main-thread task queue (process on Kit update stream)

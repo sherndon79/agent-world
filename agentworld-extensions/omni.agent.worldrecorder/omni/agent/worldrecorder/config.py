@@ -2,11 +2,29 @@
 Unified configuration for WorldRecorder extension.
 """
 import os
+import sys
 import tempfile
-from agent_world_config import WorldExtensionConfig
+import logging
+from pathlib import Path
+
+# Import the unified config system from agentworld-extensions root
+try:
+    # Find the agentworld-extensions directory
+    current = Path(__file__).resolve()
+    for _ in range(10):  # Search up the directory tree
+        if current.name == 'agentworld-extensions':
+            sys.path.insert(0, str(current))
+            break
+        current = current.parent
+    
+    from agent_world_config import WorldExtensionConfig
+    CONFIG_AVAILABLE = True
+except ImportError as e:
+    logging.getLogger(__name__).warning(f"Could not import unified config system: {e}")
+    CONFIG_AVAILABLE = False
 
 
-class WorldRecorderConfig(WorldExtensionConfig):
+class WorldRecorderConfig(WorldExtensionConfig if CONFIG_AVAILABLE else object):
     DEFAULTS = {
         'server_port': 8892,
         'server_host': 'localhost',
@@ -25,7 +43,22 @@ class WorldRecorderConfig(WorldExtensionConfig):
     }
 
     def __init__(self):
-        super().__init__(extension_name='worldrecorder')
+        """Initialize WorldRecorder configuration."""
+        if CONFIG_AVAILABLE:
+            # Use unified config system
+            super().__init__(extension_name='worldrecorder')
+        else:
+            # Fallback to basic config if unified system unavailable
+            self._config = self.DEFAULTS.copy()
+            logging.getLogger(__name__).warning("Using fallback configuration (unified system unavailable)")
+    
+    # Backward compatibility methods for existing WorldRecorder code
+    def get(self, key: str, default=None):
+        """Get configuration value with fallback support."""
+        if CONFIG_AVAILABLE:
+            return super().get(key, default)
+        else:
+            return self._config.get(key, default)
 
     # Convenience properties
     @property

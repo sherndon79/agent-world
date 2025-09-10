@@ -282,11 +282,11 @@ class WorldExtensionMetrics:
                         # Skip failed gauge calculations
                 
                 metrics.append("")  # Final newline
-                return "\\n".join(metrics)
+                return "\n".join(metrics)
                 
         except Exception as e:
             logger.error(f"Error generating Prometheus metrics: {e}")
-            return f"# Error generating metrics: {e}\\n"
+            return f"# Error generating metrics: {e}\n"
     
     def get_stats_dict(self) -> Dict[str, Any]:
         """
@@ -377,12 +377,21 @@ def setup_worldrecorder_metrics() -> WorldExtensionMetrics:
     return metrics
 
 
-def setup_videocapture_metrics() -> WorldExtensionMetrics:
-    """Setup metrics for VideoCapture extension."""
-    metrics = WorldExtensionMetrics("videocapture")
-    metrics.register_counter("videos_started", "Total video captures started")
-    metrics.register_counter("captures_stopped", "Total captures stopped")
-    metrics.register_counter("capture_errors", "Total capture errors")
+def setup_worldstreamer_metrics() -> WorldExtensionMetrics:
+    """Setup metrics for WorldStreamer extension with its specific counters/gauges."""
+    metrics = WorldExtensionMetrics("worldstreamer")
+    
+    # Register WorldStreamer-specific counters
+    metrics.register_counter("streams_started", "Total streaming sessions started")
+    metrics.register_counter("streams_stopped", "Total streaming sessions stopped") 
+    metrics.register_counter("stream_errors", "Total streaming errors")
+    metrics.register_counter("api_requests", "Total API requests processed")
+    metrics.register_counter("webrtc_connections", "Total WebRTC connections established")
+    
+    # Note: Gauges would be registered when streaming interface is available
+    # metrics.register_gauge("active_streams", "Current number of active streams",
+    #                       lambda: streaming_interface.get_active_stream_count())
+    
     return metrics
 
 
@@ -425,7 +434,8 @@ if __name__ == "__main__":
         ('worldbuilder', setup_worldbuilder_metrics),
         ('worldviewer', setup_worldviewer_metrics), 
         ('worldsurveyor', setup_worldsurveyor_metrics),
-        ('worldrecorder', setup_worldrecorder_metrics)
+        ('worldrecorder', setup_worldrecorder_metrics),
+        ('worldstreamer', setup_worldstreamer_metrics)
     ]
     
     for name, setup_func in extensions:
