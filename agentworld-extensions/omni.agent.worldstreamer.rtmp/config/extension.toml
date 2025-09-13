@@ -1,0 +1,33 @@
+[core]
+reloadable = true
+order = 0
+
+[package]
+version = "0.1.0"
+category = "Agent World Extensions"
+title = "Agent WorldStreamer (RTMP)"
+description = "RTMP streaming extension: captures Isaac Sim viewport and pushes RTMP. Minimal control API (start/stop/status)."
+authors = ["agenTW∞rld Team"]
+keywords = ["isaac", "streaming", "rtmp", "live", "broadcast", "api", "worldstreamer", "control", "rtmp"]
+changelog = "docs/CHANGELOG.md"
+readme = "docs/README.md"
+writeTarget.kit = true
+writeTarget.platform = true
+
+# Dependencies removed for external RTMP encoding approach
+# Isaac Sim WebRTC was replaced with external GStreamer/NVENC pipeline
+# [dependencies]
+# "omni.kit.viewport.utility" = {} # Used for viewport capture
+# External: GStreamer, NVENC, RTMP server
+
+[fswatcher.patterns]
+include = ["*.py", "*.toml"]
+exclude = ["__pycache__"]
+
+[[python.module]]
+name = "omni.agent.worldstreamer.rtmp"
+
+[settings]
+# Note: Configuration values come from agentworld-extensions/agent-world-config.json
+# These settings provide Isaac Sim carb integration only
+"/exts/omni.agent.worldstreamer.rtmp/config_source" = { type="string", default="unified", description="Configuration source: unified agentworld-extensions JSON (RTMP)" }

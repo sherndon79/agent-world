@@ -90,7 +90,9 @@ class WorldExtensionConfig:
             for _ in range(5):  # Reasonable search limit
                 extension_path = current / extension_dir_name
                 if extension_path.exists():
-                    return extension_path / "omni" / "agent" / self.extension_name
+                    # Support nested names like 'worldstreamer.rtmp' -> omni/agent/worldstreamer/rtmp
+                    parts = self.extension_name.split('.')
+                    return extension_path / "omni" / "agent" / Path('/'.join(parts))
                 current = current.parent
             
             logger.warning(f"Could not find extension directory for {self.extension_name}")
@@ -126,15 +128,12 @@ class WorldExtensionConfig:
         if not self._config_file:
             return
         
-        # Try multiple config locations in priority order:
-        # 1. MCP servers directory (for MCP server contexts)
-        # 2. Isaac extensions directory (for Isaac Sim contexts)
-        # 3. Extension-specific config file
+        # Try config locations (extensions are decoupled from MCP):
+        # 1. Isaac extensions directory (for Isaac Sim contexts)
+        # 2. Extension-specific config file
         isaac_extension_root = Path(__file__).parent
-        mcp_servers_root = isaac_extension_root.parent / "mcp-servers"
-        
+
         config_candidates = [
-            mcp_servers_root / "agent-world-config.json",
             isaac_extension_root / "agent-world-config.json",
             self._extension_path / self._config_file if self._extension_path else None
         ]

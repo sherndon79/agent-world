@@ -43,13 +43,10 @@ docs/dev_docs/
 
 # MCP tools in development
 mcp-servers/tools/mcpctl
-mcp-servers/worldstreamer
-
-# Extensions in development
-agentworld-extensions/omni.agent.worldstreamer
 
 # Misc
 *.bak
+*.bak-*
 *.backup
 *.swp
 *.swo

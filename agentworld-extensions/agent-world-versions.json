@@ -1,11 +1,9 @@
 {
   "_comment": "Centralized version management for Agent World Extensions",
   "_usage": "Import this config to get consistent versioning across all extensions",
-  
   "default_version": "0.1.0",
   "suite_version": "1.0.0-alpha",
   "release_stage": "alpha",
-  
   "extensions": {
     "worldbuilder": {
       "version": "0.1.0",
@@ -13,7 +11,7 @@
       "service_name": "Agent WorldBuilder API"
     },
     "worldviewer": {
-      "version": "0.1.0", 
+      "version": "0.1.0",
       "api_version": "0.1.0",
       "service_name": "Agent WorldViewer API"
     },
@@ -27,13 +25,17 @@
       "api_version": "0.1.0",
       "service_name": "Agent WorldRecorder API"
     },
-    "worldstreamer": {
+    "worldstreamer.rtmp": {
       "version": "0.1.0",
       "api_version": "0.1.0",
-      "service_name": "Agent WorldStreamer API"
+      "service_name": "Agent WorldStreamer RTMP API"
+    },
+    "worldstreamer.srt": {
+      "version": "0.1.0",
+      "api_version": "0.1.0",
+      "service_name": "Agent WorldStreamer SRT API"
     }
   },
-  
   "version_history": {
     "0.1.0": {
       "release_date": "2025-08-25",

@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OME WebRTC Player</title>
+  <script src="https://cdn.jsdelivr.net/npm/ovenplayer/dist/ovenplayer.js"></script>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 16px; }
+    .row { margin-bottom: 8px; }
+    label { display: inline-block; min-width: 110px; }
+    input { width: 260px; }
+    #player { width: 640px; height: 360px; background: #000; }
+  </style>
+  <!--
+    Usage:
+    1) Make sure OME is running locally with ports 3333 (WebRTC), 9999 (SRT)
+    2) Publish SRT with streamid to #default#app/isaac, e.g.:
+       srt://127.0.0.1:9999?mode=caller&latency=50&transtype=live&streamid=#!::h=default;r=app;s=isaac
+    3) Open this page, set Host=127.0.0.1, App=app, Stream=isaac, then Play.
+  -->
+  </head>
+  <body>
+    <h1>OvenMediaEngine WebRTC Player</h1>
+    <div class="row"><label>Host:</label><input id="host" value="127.0.0.1" /></div>
+    <div class="row"><label>App:</label><input id="app" value="app" /></div>
+    <div class="row"><label>Stream:</label><input id="stream" value="isaac" /></div>
+    <div class="row">
+      <button id="play">Play (WebRTC)</button>
+      <button id="stop" disabled>Stop</button>
+    </div>
+    <div id="player"></div>
+
+    <script>
+      let op;
+      const $ = id => document.getElementById(id);
+      function play() {
+        const host = $('host').value.trim();
+        const app = $('app').value.trim();
+        const stream = $('stream').value.trim();
+        // Use WebSocket signaling URL for OME WebRTC playback
+        const url = `ws://${host}:3333/${app}/${stream}`;
+        if (op) { try { op.remove(); } catch(_){} }
+        op = OvenPlayer.create('player', {
+          autoStart: true,
+          sources: [{ type: 'webrtc', file: url }]
+        });
+        $('play').disabled = true;
+        $('stop').disabled = true;
+        op.on('ready', () => { $('stop').disabled = false; });
+        op.on('error', e => { console.error(e); $('play').disabled = false; });
+      }
+      function stop() {
+        if (op) { try { op.remove(); } catch(_){} }
+        $('play').disabled = false;
+        $('stop').disabled = true;
+      }
+      $('play').onclick = play;
+      $('stop').onclick = stop;
+    </script>
+  </body>
+  </html>
+

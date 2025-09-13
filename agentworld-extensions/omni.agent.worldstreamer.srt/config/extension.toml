@@ -1,0 +1,32 @@
+[core]
+reloadable = true
+order = 0
+
+[package]
+version = "0.1.0"
+category = "Agent World Extensions"
+title = "Agent WorldStreamer (SRT)"
+description = "SRT streaming extension: captures Isaac Sim viewport and pushes SRT (MPEG-TS/H.264). Minimal control API (start/stop/status)."
+authors = ["agenTW∞rld Team"]
+keywords = ["isaac", "streaming", "srt", "low-latency", "broadcast", "api", "worldstreamer", "control"]
+changelog = "docs/CHANGELOG.md"
+readme = "docs/README.md"
+writeTarget.kit = true
+writeTarget.platform = true
+
+# External encoding approach using GStreamer/NVENC
+# [dependencies]
+# "omni.kit.viewport.utility" = {} # Used for viewport capture
+# External: GStreamer, NVENC, RTMP server
+
+[fswatcher.patterns]
+include = ["*.py", "*.toml"]
+exclude = ["__pycache__"]
+
+[[python.module]]
+name = "omni.agent.worldstreamer.srt"
+
+[settings]
+# Note: Configuration values come from agentworld-extensions/agent-world-config.json
+# These settings provide Isaac Sim carb integration only
+"/exts/omni.agent.worldstreamer.srt/config_source" = { type="string", default="unified", description="Configuration source: unified agentworld-extensions JSON (SRT)" }
