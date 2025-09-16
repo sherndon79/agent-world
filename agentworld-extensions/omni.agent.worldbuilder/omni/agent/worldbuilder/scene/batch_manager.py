@@ -45,20 +45,16 @@ class BatchManager:
                     'success': False,
                     'error': "No USD stage available. Please create or open a stage first."
                 }
-            
-            # Validate batch name
-            if not batch_name or not batch_name.strip():
+
+            # Validate batch request using centralized validation
+            validation_result = self.validate_batch_request(batch_name, elements)
+            if not validation_result['valid']:
                 return {
                     'success': False,
-                    'error': "Batch name cannot be empty"
+                    'error': '; '.join(validation_result['errors'])
                 }
-            
-            # Check if batch already exists
-            if batch_name in self._current_batches:
-                return {
-                    'success': False,
-                    'error': f"Batch '{batch_name}' already exists"
-                }
+
+            batch_path = f"/World/{self._sanitize_usd_name(batch_name)}"
             
             # Parse elements from request data
             scene_elements = []
@@ -95,13 +91,18 @@ class BatchManager:
                 batch_rotation = batch_transform.get('rotation', batch_rotation)
                 batch_scale = batch_transform.get('scale', batch_scale)
             
-            # Create batch Xform parent
-            batch_path = f"/World/{self._sanitize_usd_name(batch_name)}"
-            batch_xform = UsdGeom.Xform.Define(stage, batch_path)
-            if not batch_xform:
+            # Create batch Xform parent with improved error handling
+            try:
+                batch_xform = UsdGeom.Xform.Define(stage, batch_path)
+                if not batch_xform or not batch_xform.GetPrim().IsValid():
+                    return {
+                        'success': False,
+                        'error': f"Invalid batch name '{batch_name}' - contains unsupported characters"
+                    }
+            except Exception as e:
                 return {
                     'success': False,
-                    'error': f"Failed to create batch Xform at {batch_path}"
+                    'error': f"USD stage error creating batch '{batch_name}': {str(e)}"
                 }
             
             # Add batch identification metadata to USD
@@ -149,21 +150,8 @@ class BatchManager:
                     # Restore original name
                     element.name = original_name
             
-            # Create SceneBatch object and store for tracking
-            scene_batch = SceneBatch(
-                batch_name=batch_name,
-                elements=scene_elements,
-                batch_position=batch_position,
-                batch_rotation=batch_rotation,
-                batch_scale=batch_scale,
-                metadata={
-                    'path': batch_path, 
-                    'created_at': time.time(),
-                    'created_elements': len(created_elements),
-                    'failed_elements': len(failed_elements)
-                }
-            )
-            self._current_batches[batch_name] = scene_batch
+            # USD stage metadata is now the single source of truth
+            # No memory tracking needed - all batch info stored as USD metadata
             
             logger.info(f"🎯 Created batch '{batch_name}' with {len(created_elements)} elements at {batch_path}")
             
@@ -387,9 +375,14 @@ class BatchManager:
         # Check batch name
         if not batch_name or not batch_name.strip():
             errors.append("Batch name cannot be empty")
-        
-        if batch_name in self._current_batches:
-            errors.append(f"Batch '{batch_name}' already exists")
+
+        # Check if batch path already exists in USD stage
+        stage = self._usd_context.get_stage()
+        if stage:
+            batch_path = f"/World/{self._sanitize_usd_name(batch_name)}"
+            existing_prim = stage.GetPrimAtPath(batch_path)
+            if existing_prim and existing_prim.IsValid():
+                errors.append(f"Batch '{batch_name}' already exists at path '{batch_path}'")
         
         # Check elements
         if not elements:
