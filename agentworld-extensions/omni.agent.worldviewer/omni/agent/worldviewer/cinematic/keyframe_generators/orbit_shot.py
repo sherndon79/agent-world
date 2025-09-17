@@ -55,7 +55,7 @@ class OrbitShotGenerator(BaseKeyframeGenerator):
             raise
     
     def _generate_spherical_orbit(self, params: Dict) -> List[Dict]:
-        """Generate spherical orbital keyframes around origin"""
+        """Generate spherical orbital keyframes around center point"""
         # Extract parameters with defaults
         start_azimuth = math.radians(params.get('start_azimuth', 0.0))
         end_azimuth = math.radians(params.get('end_azimuth', 360.0))
@@ -63,32 +63,55 @@ class OrbitShotGenerator(BaseKeyframeGenerator):
         elevation = math.radians(params.get('elevation', 15.0))
         duration = params.get('duration', 8.0)
         fps = params.get('fps', 30.0)
+        center = params.get('center', [0, 0, 0])  # Support custom center point
         
         num_frames = self.calculate_frame_count(duration, fps)
         keyframes = []
         
+        # Get target parameters for interpolation
+        start_target = params.get('start_target')
+        end_target = params.get('end_target')
+
         for i in range(num_frames + 1):
             t = i / max(1, num_frames)
             azimuth = start_azimuth + (end_azimuth - start_azimuth) * t
-            
-            # Calculate position from spherical coordinates
-            x = distance * math.cos(elevation) * math.cos(azimuth)
-            y = distance * math.sin(elevation)
-            z = distance * math.cos(elevation) * math.sin(azimuth)
-            
+
+            # Orbital easing
+            eased_t = 0.5 * (1 - math.cos(math.pi * t))
+
+            # Calculate position from spherical coordinates (Isaac Sim Z-up)
+            x = center[0] + distance * math.cos(elevation) * math.cos(azimuth)
+            y = center[1] + distance * math.cos(elevation) * math.sin(azimuth)
+            z = center[2] + distance * math.sin(elevation)
+
+            # Calculate target with interpolation support
+            if start_target and end_target:
+                # Linear interpolation between start and end targets across all rotations
+                target = [
+                    start_target[i] + (end_target[i] - start_target[i]) * eased_t
+                    for i in range(3)
+                ]
+            elif start_target:
+                # Use fixed start target
+                target = start_target[:]
+            else:
+                # Look at center point
+                target = center[:]
+
             keyframe = self.create_keyframe(
                 position=[x, y, z],
-                target=[0, 0, 0],  # Look at origin
+                target=target,
                 frame_index=i,
                 total_frames=num_frames + 1,
                 timestamp=t * duration,
                 azimuth_degrees=math.degrees(azimuth),
-                elevation_degrees=math.degrees(elevation)
+                elevation_degrees=math.degrees(elevation),
+                orbit_progress=eased_t if start_target and end_target else t
             )
             
             keyframes.append(keyframe)
         
-        logger.debug(f"Generated {len(keyframes)} spherical orbit keyframes")
+        logger.debug(f"Generated {len(keyframes)} spherical orbit keyframes around {center}")
         return keyframes
     
     def _generate_orbit_around_target(self, params: Dict) -> List[Dict]:
@@ -111,9 +134,14 @@ class OrbitShotGenerator(BaseKeyframeGenerator):
             arc_degrees = orbit_count * 360.0
             duration = float(params.get('duration', 8.0))
             fps = params.get('fps', 30.0)
-            
-            # Calculate orbit center from target object
-            orbit_center = self._calculate_orbit_center(target_object)
+
+            # Use provided center parameter, or calculate from target object
+            orbit_center = params.get('center')
+            if orbit_center is None:
+                orbit_center = self._calculate_orbit_center(target_object)
+            else:
+                # Convert to list if needed
+                orbit_center = list(orbit_center)
             
             # Calculate orbit parameters from starting position
             start_vec = [start_pos[i] - orbit_center[i] for i in range(3)]
@@ -126,6 +154,10 @@ class OrbitShotGenerator(BaseKeyframeGenerator):
             start_azimuth = math.atan2(start_vec[1], start_vec[0])
             start_elevation = math.asin(start_vec[2] / orbit_radius)
             
+            # Get target parameters for interpolation
+            start_target = params.get('start_target')
+            end_target = params.get('end_target')
+
             # Calculate original view elevation from start_target
             original_view_elevation = self._calculate_view_elevation(params, start_pos, orbit_center)
             
@@ -153,8 +185,19 @@ class OrbitShotGenerator(BaseKeyframeGenerator):
                     orbit_center[2] + orbit_radius * math.sin(start_elevation)
                 ]
                 
-                # Calculate target with original view elevation
-                target = self._calculate_orbital_target(pos, orbit_center, original_view_elevation)
+                # Calculate target with interpolation support
+                if start_target and end_target:
+                    # Linear interpolation between start and end targets across all rotations
+                    target = [
+                        start_target[i] + (end_target[i] - start_target[i]) * eased_t
+                        for i in range(3)
+                    ]
+                elif start_target:
+                    # Use fixed start target
+                    target = start_target[:]
+                else:
+                    # Fallback to original orbital target calculation
+                    target = self._calculate_orbital_target(pos, orbit_center, original_view_elevation)
                 
                 keyframe = self.create_keyframe(
                     position=pos,
@@ -251,7 +294,13 @@ class OrbitShotGenerator(BaseKeyframeGenerator):
             if orbit_count <= 0:
                 raise ValueError("Orbit count must be positive")
             validated['orbit_count'] = orbit_count
-        
+
+        # Validate target parameters
+        if 'start_target' in params:
+            validated['start_target'] = self._validate_position(params['start_target'])
+        if 'end_target' in params:
+            validated['end_target'] = self._validate_position(params['end_target'])
+
         return validated
 
 
