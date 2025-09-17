@@ -314,7 +314,7 @@ class AgentWorldBuilderExtension(omni.ext.IExt):
             
             # Debug log to see what stats we're getting
             if self._config.debug_mode:
-                logger.info(f"UI Stats Debug: {api_stats}")
+                logger.debug(f"UI Stats Debug: {api_stats}")
             
             if self._http_api_interface.is_running():
                 self._api_status_label.text = "Server: Running"

@@ -225,13 +225,13 @@ class SceneBuilder:
             
             # Debug: Check if root prim has children
             children = list(root_prim.GetChildren())
-            logger.info(f"🔍 Debug: Root prim '{path}' has {len(children)} children")
+            logger.debug(f"🔍 Debug: Root prim '{path}' has {len(children)} children")
             for child in children:
-                logger.info(f"  - Child: {child.GetPath()} (Type: {child.GetTypeName()})")
+                logger.debug(f"  - Child: {child.GetPath()} (Type: {child.GetTypeName()})")
             
             # Inspect scene hierarchy
             scene_data = self._inspect_prim_recursive(root_prim, 0, max_depth=10)
-            logger.info(f"🔍 Debug: Scene data structure: {scene_data}")
+            logger.debug(f"🔍 Debug: Scene data structure: {scene_data}")
             
             # Generate statistics
             stats = self._generate_scene_statistics(root_prim)

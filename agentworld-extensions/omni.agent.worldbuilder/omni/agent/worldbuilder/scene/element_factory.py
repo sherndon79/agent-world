@@ -49,8 +49,9 @@ class ElementFactory:
                     'error': "No USD stage available. Please create or open a stage first."
                 }
             
-            # Create element directly in /World/
-            element_path = f"/World/{element.name}"
+            # Create element using parent_path for hierarchical placement
+            element_path = f"{element.parent_path}/{element.name}"
+            logger.debug(f"🔍 Creating element '{element.name}' with parent_path='{element.parent_path}' -> element_path='{element_path}'")
             
             # Create primitive based on type using factory pattern
             prim = self._create_primitive(stage, element_path, element.primitive_type)

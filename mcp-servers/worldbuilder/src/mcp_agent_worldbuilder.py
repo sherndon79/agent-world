@@ -159,7 +159,12 @@ class WorldBuilderMCP:
                             },
                             "position": schemas["position"],
                             "color": {**schemas["color"], "default": [0.5, 0.5, 0.5]},
-                            "scale": {**schemas["scale"], "default": [1.0, 1.0, 1.0]}
+                            "scale": {**schemas["scale"], "default": [1.0, 1.0, 1.0]},
+                            "parent_path": {
+                                "type": "string",
+                                "default": "/World",
+                                "description": "USD parent path for hierarchical placement"
+                            }
                         },
                         "required": ["element_type", "name", "position"]
                     }
@@ -630,7 +635,8 @@ class WorldBuilderMCP:
                 "name": args["name"],
                 "position": args["position"],
                 "color": args.get("color", [0.5, 0.5, 0.5]),
-                "scale": args.get("scale", [1.0, 1.0, 1.0])
+                "scale": args.get("scale", [1.0, 1.0, 1.0]),
+                "parent_path": args.get("parent_path", "/World")
             }
             
             await self._initialize_client()

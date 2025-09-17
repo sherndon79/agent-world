@@ -27,6 +27,7 @@ class SceneElement:
     rotation: Tuple[float, float, float] = (0.0, 0.0, 0.0)  # Euler angles in degrees
     scale: Tuple[float, float, float] = (1.0, 1.0, 1.0)
     color: Tuple[float, float, float] = (0.5, 0.5, 0.5)  # RGB 0-1
+    parent_path: str = "/World"  # USD parent path for hierarchical placement
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 

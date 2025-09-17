@@ -133,6 +133,7 @@ class WorldBuilderHTTPHandler(WorldHTTPHandler):
                     rotation: list = Field(default=[0.0, 0.0, 0.0])
                     scale: list = Field(default=[1.0, 1.0, 1.0])
                     color: list = Field(default=[0.5, 0.5, 0.5])
+                    parent_path: str = Field(default='/World')
                     metadata: dict = Field(default_factory=dict)
                     
                 try:
@@ -140,6 +141,7 @@ class WorldBuilderHTTPHandler(WorldHTTPHandler):
                 except ValidationError as ve:
                     return {'success': False, 'error': f'Validation error: {ve}'}
             
+            logger.debug(f"🔍 HTTP Handler received parent_path: '{element_data.get('parent_path', 'NOT_PROVIDED')}'")
             element = SceneElement(
                 name=element_data.get('name', f'element_{int(time.time())}'),
                 primitive_type=PrimitiveType(element_data.get('element_type', 'cube')),
@@ -147,8 +149,10 @@ class WorldBuilderHTTPHandler(WorldHTTPHandler):
                 rotation=tuple(element_data.get('rotation', [0.0, 0.0, 0.0])),
                 scale=tuple(element_data.get('scale', [1.0, 1.0, 1.0])),
                 color=tuple(element_data.get('color', [0.5, 0.5, 0.5])),
+                parent_path=element_data.get('parent_path', '/World'),
                 metadata=element_data.get('metadata', {})
             )
+            logger.debug(f"🔍 HTTP Handler created SceneElement with parent_path: '{element.parent_path}'")
             
             # Add element directly to USD stage
             response = self.api_interface._scene_builder.add_element_to_stage(element)

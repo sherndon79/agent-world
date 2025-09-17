@@ -20,14 +20,14 @@ class BoundsCalculator:
     def calculate_selection_bounds(self, stage, prim_paths: List[str]) -> Optional[Dict[str, Any]]:
         """Calculate combined bounds using Isaac Sim and Omniverse best practices."""
         try:
-            logger.info(f"Calculating bounds for {len(prim_paths)} selected prims: {prim_paths}")
+            logger.debug(f"Calculating bounds for {len(prim_paths)} selected prims: {prim_paths}")
             
             all_min = [float('inf')] * 3
             all_max = [float('-inf')] * 3
             valid_bounds_count = 0
             
             for prim_path in prim_paths:
-                logger.info(f"Processing prim {prim_path}")
+                logger.debug(f"Processing prim {prim_path}")
                 
                 # Method 1: Use Omniverse USD context (most reliable)
                 bounds_data = self._try_omniverse_context_bounds(prim_path)
@@ -37,7 +37,7 @@ class BoundsCalculator:
                         all_min[i] = min(all_min[i], min_pt[i])
                         all_max[i] = max(all_max[i], max_pt[i])
                     valid_bounds_count += 1
-                    logger.info(f"Omniverse context bounds success for {prim_path}: min={min_pt}, max={max_pt}")
+                    logger.debug(f"Omniverse context bounds success for {prim_path}: min={min_pt}, max={max_pt}")
                     continue
                 
                 # Method 2: Try Isaac Sim bounds utilities
@@ -50,7 +50,7 @@ class BoundsCalculator:
                         all_min[i] = min(all_min[i], min_pt[i])
                         all_max[i] = max(all_max[i], max_pt[i])
                     valid_bounds_count += 1
-                    logger.info(f"Isaac Sim bounds success for {prim_path}: min={min_pt}, max={max_pt}")
+                    logger.debug(f"Isaac Sim bounds success for {prim_path}: min={min_pt}, max={max_pt}")
                     continue
                 
                 # Method 3: Standard USD Imageable approach
@@ -63,7 +63,7 @@ class BoundsCalculator:
                             all_min[i] = min(all_min[i], min_pt[i])
                             all_max[i] = max(all_max[i], max_pt[i])
                         valid_bounds_count += 1
-                        logger.info(f"USD Imageable bounds success for {prim_path}: min={min_pt}, max={max_pt}")
+                        logger.debug(f"USD Imageable bounds success for {prim_path}: min={min_pt}, max={max_pt}")
                         continue
                 
                 # Method 4: Fallback to transform position
@@ -74,7 +74,7 @@ class BoundsCalculator:
                         all_min[i] = min(all_min[i], pos[i])
                         all_max[i] = max(all_max[i], pos[i])
                     valid_bounds_count += 1
-                    logger.info(f"Transform position fallback for {prim_path}: {pos}")
+                    logger.debug(f"Transform position fallback for {prim_path}: {pos}")
             
             if valid_bounds_count == 0:
                 return None
@@ -83,7 +83,7 @@ class BoundsCalculator:
             center = [(all_min[i] + all_max[i]) / 2 for i in range(3)]
             size = [all_max[i] - all_min[i] for i in range(3)]
             
-            logger.info(f"Final bounds: center={center}, size={size}, min={all_min}, max={all_max}")
+            logger.debug(f"Final bounds: center={center}, size={size}, min={all_min}, max={all_max}")
             
             return {
                 'center': center,

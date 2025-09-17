@@ -314,12 +314,14 @@ class WorldBuilderQueueManager:
                     request = self._element_queue.pop(0)
                     request_id = request['request_id']
                     
+                    logger.debug(f"🔍 About to call element_processor for '{request['element'].name}' with parent_path='{request['element'].parent_path}'")
                     result = self.process_single_request(
-                        request_id, 
+                        request_id,
                         lambda: element_processor(request['element']),
                         success_msg=f"Created element '{request['element'].name}'",
                         error_context=f"element request {request_id}"
                     )
+                    logger.debug(f"🔍 Element processor returned: {result}")
                     
                     if result['success']:
                         self._stats['elements_created'] += 1

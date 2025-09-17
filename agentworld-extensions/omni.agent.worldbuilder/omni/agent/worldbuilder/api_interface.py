@@ -614,7 +614,7 @@ class HTTPAPIInterface:
                         'position': [float(translation[0]), float(translation[1]), float(translation[2])],
                         'world_transform': world_transform
                     })
-                    logger.info(f"Got position for {obj_path}: {[float(translation[0]), float(translation[1]), float(translation[2])]}")
+                    logger.debug(f"Got position for {obj_path}: {[float(translation[0]), float(translation[1]), float(translation[2])]}")
                     
                 except Exception as e:
                     logger.warning(f"Could not get transform for object {obj_path}: {e}")
@@ -651,8 +651,8 @@ class HTTPAPIInterface:
                         )
                         
                         transform_success = transform_result.get('success', False)
-                        logger.info(f"Transform result for {obj['path']}: {transform_result}")
-                        logger.info(f"Transform success: {transform_success}")
+                        logger.debug(f"Transform result for {obj['path']}: {transform_result}")
+                        logger.debug(f"Transform success: {transform_success}")
                         
                         alignment_results.append({
                             'object': obj['path'],

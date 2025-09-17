@@ -469,7 +469,7 @@ class BatchManager:
                         if batch_info:
                             batches[batch_info['name']] = batch_info
             
-            logger.info(f"🔍 Discovered {len(batches)} batches from USD stage")
+            logger.debug(f"🔍 Discovered {len(batches)} batches from USD stage")
             return batches
             
         except Exception as e:
