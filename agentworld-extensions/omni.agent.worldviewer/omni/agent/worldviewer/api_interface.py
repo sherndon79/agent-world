@@ -204,6 +204,23 @@ class HTTPAPIInterface:
         """Shutdown the HTTP server and cleanup (extension compatibility method)."""
         self.stop_server()
 
+    def get_health_info(self) -> Dict[str, Any]:
+        """Provide extension-specific health metadata for unified HTTP handler."""
+        try:
+            from .services.worldviewer_service import WorldViewerService  # Local import to avoid cycles
+
+            service = WorldViewerService(self)
+            status = service.get_camera_status()
+            info: Dict[str, Any] = {
+                'camera_status': status,
+            }
+            if status.get('success'):
+                info['camera_position'] = status.get('position')
+            return info
+        except Exception as exc:  # pragma: no cover - health info is best effort
+            logger.debug(f"Health info unavailable: {exc}")
+            return {}
+
     def start_server(self):
         """Start the HTTP server in a background thread."""
         if self._server is not None:

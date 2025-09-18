@@ -72,9 +72,11 @@ def test_process_queues_handles_batch_and_asset_requests(queue_manager):
         lambda *_: _success(),
     )
 
-    assert result["success"]
+    assert result['processed_count'] == 2
+    assert result['queue_lengths']['batches'] == 0
+    assert result['queue_lengths']['assets'] == 0
     assert batches and batches[0][0] == "test_batch"
-    assert assets and assets[0] == "asset"
+    assert assets and assets[0] == 'place'
 
 
 def test_queue_manager_respects_config_fallback():

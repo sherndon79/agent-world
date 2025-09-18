@@ -1,69 +1,114 @@
+"""Pytest configuration ensuring extension modules import without Isaac Sim."""
+
+from __future__ import annotations
+
 import sys
 import types
 from pathlib import Path
 
-TESTS_DIR = Path(__file__).resolve().parent
-EXTENSIONS_ROOT = TESTS_DIR.parent
-PROJECT_ROOT = EXTENSIONS_ROOT.parent
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+_WORLD_BUILDER_ROOT = _PROJECT_ROOT / "omni.agent.worldbuilder" / "omni"
+_WORLD_VIEWER_ROOT = _PROJECT_ROOT / "omni.agent.worldviewer" / "omni"
+
+_PACKAGE_PATHS = {
+    "omni": [
+        _WORLD_BUILDER_ROOT,
+        _WORLD_VIEWER_ROOT,
+    ],
+    "omni.agent": [
+        _WORLD_BUILDER_ROOT / "agent",
+        _WORLD_VIEWER_ROOT / "agent",
+    ],
+    "omni.agent.worldbuilder": [
+        _WORLD_BUILDER_ROOT / "agent" / "worldbuilder",
+    ],
+    "omni.agent.worldviewer": [
+        _WORLD_VIEWER_ROOT / "agent" / "worldviewer",
+    ],
+}
 
 
-def _ensure_module(name: str, attrs: dict | None = None):
-    if name in sys.modules:
-        return sys.modules[name]
-    module = types.ModuleType(name)
-    if attrs:
-        for key, value in attrs.items():
-            setattr(module, key, value)
-    sys.modules[name] = module
+def _ensure_namespace(pkg_name: str, paths: list[Path]) -> None:
+    existing_paths = [str(path) for path in paths if path.is_dir()]
+    if not existing_paths:
+        return
+
+    module = sys.modules.get(pkg_name)
+    if module is None:
+        module = types.ModuleType(pkg_name)
+        module.__path__ = []  # type: ignore[attr-defined]
+        sys.modules[pkg_name] = module
+
+    pkg_path = getattr(module, "__path__", [])
+    for path_str in existing_paths:
+        if path_str not in pkg_path:
+            pkg_path.append(path_str)
+    module.__path__ = pkg_path  # type: ignore[attr-defined]
+
+
+def _ensure_stub_module(name: str, factory) -> None:
+    if name not in sys.modules:
+        sys.modules[name] = factory()
+
+
+def _create_omni_usd_stub():
+    module = types.ModuleType('omni.usd')
+
+    class _UsdContextStub:
+        def get_stage(self):
+            return None
+
+    def get_context():
+        return _UsdContextStub()
+
+    module.get_context = get_context  # type: ignore[attr-defined]
     return module
 
 
-# Stub Omni and PXR modules so extension imports succeed in headless tests
-omni = _ensure_module("omni")
+def _create_omni_kit_app_stub():
+    module = types.ModuleType('omni.kit.app')
 
-ext_module = _ensure_module("omni.ext")
-if not hasattr(ext_module, "IExt"):
-    class _IExt:  # minimal base class stub
-        pass
-    ext_module.IExt = _IExt
-
-ui_module = _ensure_module("omni.ui")
-if not hasattr(ui_module, "Window"):
-    class _Window:
-        def __init__(self, *_, **__):
-            self.visible = True
-    ui_module.Window = _Window
-
-usd_module = _ensure_module("omni.usd")
-if not hasattr(usd_module, "get_context"):
-    class _UsdContext:
-        def get_stage(self):
+    class _Subscription:
+        def unsubscribe(self):
             return None
-    usd_module.get_context = lambda: _UsdContext()
 
-kit_module = _ensure_module("omni.kit")
-kit_app_module = _ensure_module("omni.kit.app")
-if not hasattr(kit_app_module, "get_app_interface"):
-    kit_app_module.get_app_interface = lambda: None
-kit_module.app = kit_app_module
+    class _UpdateStream:
+        def create_subscription_to_pop(self, *_args, **_kwargs):
+            return _Subscription()
 
-pxr_module = _ensure_module("pxr")
-pxr_module.Usd = types.SimpleNamespace()
-pxr_module.UsdGeom = types.SimpleNamespace(Xform=types.SimpleNamespace(Define=lambda *args, **kwargs: types.SimpleNamespace(GetPrim=lambda: types.SimpleNamespace(IsValid=lambda: True))))
-pxr_module.Gf = types.SimpleNamespace()
-pxr_module.Sdf = types.SimpleNamespace(ValueTypeNames=types.SimpleNamespace(Bool=bool, String=str, Double=float, Int=int))
+    class _AppStub:
+        def get_update_event_stream(self):
+            return _UpdateStream()
 
-# Ensure repo root (for fallback imports)
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
+    def get_app():
+        return _AppStub()
 
-# Ensure top-level extensions helpers are importable
-if str(EXTENSIONS_ROOT) not in sys.path:
-    sys.path.insert(0, str(EXTENSIONS_ROOT))
+    module.get_app = get_app  # type: ignore[attr-defined]
+    return module
 
-# Add extension package roots for direct module imports
-for package_dir in EXTENSIONS_ROOT.glob("omni.agent.*"):
-    if package_dir.is_dir():
-        package_path = package_dir
-        if str(package_path) not in sys.path:
-            sys.path.insert(0, str(package_path))
+
+def _create_pxr_stub():
+    module = types.ModuleType('pxr')
+
+    class _PxrStub:
+        def __call__(self, *args, **kwargs):
+            return self
+
+        def __getattr__(self, _name):
+            return _PxrStub()
+
+    stub_instance = _PxrStub()
+    module.Usd = stub_instance  # type: ignore[attr-defined]
+    module.UsdGeom = stub_instance  # type: ignore[attr-defined]
+    module.Gf = stub_instance  # type: ignore[attr-defined]
+    module.Sdf = stub_instance  # type: ignore[attr-defined]
+    return module
+
+
+for package, paths in _PACKAGE_PATHS.items():
+    _ensure_namespace(package, paths)
+
+_ensure_stub_module('omni.usd', _create_omni_usd_stub)
+_ensure_stub_module('omni.kit.app', _create_omni_kit_app_stub)
+_ensure_stub_module('pxr', _create_pxr_stub)

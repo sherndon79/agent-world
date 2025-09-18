@@ -28,6 +28,32 @@ from mcp.server.stdio import stdio_server
 from mcp.server.lowlevel import NotificationOptions
 from mcp.types import Tool, TextContent
 
+try:
+    from agent_world_transport import normalize_transport_response
+except ImportError:  # pragma: no cover - fallback when extensions not available
+    def normalize_transport_response(operation: str, response: Any, *, default_error_code: str) -> Dict[str, Any]:
+        if isinstance(response, dict):
+            response.setdefault('success', True)
+            if response['success'] is False:
+                response.setdefault('error_code', default_error_code)
+                response.setdefault('error', 'An unknown error occurred')
+            return response
+        return {
+            'success': False,
+            'error_code': 'INVALID_RESPONSE',
+            'error': 'Service returned unexpected response type',
+            'details': {'operation': operation, 'type': type(response).__name__},
+        }
+
+try:
+    from omni.agent.worldviewer.errors import error_response
+except ImportError:  # pragma: no cover - fallback when extension package unavailable
+    def error_response(code: str, message: str, *, details: Dict[str, Any] | None = None) -> Dict[str, Any]:
+        payload = {'success': False, 'error_code': code, 'error': message}
+        if details:
+            payload['details'] = details
+        return payload
+
 
 def get_movement_style_schema(shot_type: str) -> Dict:
     """
@@ -46,131 +72,6 @@ def get_movement_style_schema(shot_type: str) -> Dict:
         "description": f"Movement style for {shot_type.replace('_', ' ')} - affects timing, easing, and cinematic characteristics"
     }
 
-
-class CameraResponseFormatter:
-    """Unified response formatting for camera operations"""
-    
-    SUCCESS_TEMPLATES = {
-        'set_position': "✅ Camera position set to {position}",
-        'frame_object': "✅ Camera framed on object: {object_path}",
-        'orbit_camera': "✅ Camera positioned in orbit around {center}",
-        'stop_movement': "✅ {message}",
-        'get_status': "📷 Camera Status",
-        'health_check': "✅ Extension Health: {status}"
-    }
-    
-    ERROR_TEMPLATE = "❌ {operation} failed: {error}"
-    
-    # User-friendly troubleshooting hints for common errors
-    TROUBLESHOOTING_HINTS = {
-        "Could not connect": "💡 Troubleshooting:\n• Ensure Isaac Sim is running\n• Check that WorldViewer extension is enabled\n• Verify extension HTTP API is active on port 8900",
-        "timed out": "💡 Troubleshooting:\n• Isaac Sim may be busy processing\n• Try reducing queue load or wait a moment\n• Check Isaac Sim console for errors",
-        "Object not found": "💡 Troubleshooting:\n• Verify the USD path exists (e.g., '/World/my_object')\n• Check object spelling and case sensitivity\n• Use WorldBuilder MCP to list scene elements",
-        "No viewport connection": "💡 Troubleshooting:\n• Ensure Isaac Sim viewport is active\n• Try reloading the WorldViewer extension\n• Check Isaac Sim camera setup",
-        "HTTP 500": "💡 Troubleshooting:\n• Isaac Sim internal error occurred\n• Check Isaac Sim console logs\n• Try reloading the WorldViewer extension\n• Restart Isaac Sim if issues persist"
-    }
-    
-    @classmethod
-    def format_success(cls, operation: str, response: Dict, **template_vars) -> str:
-        """Format successful operation response"""
-        template = cls.SUCCESS_TEMPLATES.get(operation, "✅ Operation successful")
-        
-        # Merge response data with template variables
-        format_vars = {**template_vars, **response}
-        
-        try:
-            message = template.format(**format_vars)
-        except KeyError:
-            # Fallback if template variables don't match
-            message = template
-        
-        # Add additional details for specific operations
-        if operation == 'set_position':
-            if 'target' in format_vars and format_vars['target']:
-                message += f" looking at {format_vars['target']}"
-        elif operation == 'frame_object':
-            if 'calculated_distance' in response:
-                message += f" (distance: {response['calculated_distance']:.2f})"
-        elif operation == 'orbit_camera':
-            if all(k in format_vars for k in ['distance', 'elevation', 'azimuth']):
-                message += f"\n• Distance: {format_vars['distance']}"
-                message += f"\n• Elevation: {format_vars['elevation']}°"
-                message += f"\n• Azimuth: {format_vars['azimuth']}°"
-        elif operation == 'get_status':
-            camera_status = response.get('camera_status') or response
-            message = "📷 Camera Status:\n"
-            connected = camera_status.get('connected', 'Unknown')
-            message += f"• Connected: {connected}\n"
-            
-            if camera_status.get('position'):
-                pos = camera_status['position']
-                message += f"• Position: [{pos[0]:.2f}, {pos[1]:.2f}, {pos[2]:.2f}]\n"
-            
-            if camera_status.get('target'):
-                target = camera_status['target']
-                message += f"• Target: [{target[0]:.2f}, {target[1]:.2f}, {target[2]:.2f}]\n"
-            
-            if camera_status.get('forward_vector'):
-                fwd = camera_status['forward_vector']
-                message += f"• Forward: [{fwd[0]:.3f}, {fwd[1]:.3f}, {fwd[2]:.3f}]\n"
-            
-            if camera_status.get('right_vector'):
-                right = camera_status['right_vector']
-                message += f"• Right: [{right[0]:.3f}, {right[1]:.3f}, {right[2]:.3f}]\n"
-                
-            if camera_status.get('up_vector'):
-                up = camera_status['up_vector']
-                message += f"• Up: [{up[0]:.3f}, {up[1]:.3f}, {up[2]:.3f}]\n"
-            
-            if camera_status.get('camera_path'):
-                message += f"• Camera Path: {camera_status['camera_path']}\n"
-        elif operation == 'stop_movement':
-            # Format rich stop_movement response
-            message = f"✅ {response.get('message', 'Stopped camera movement')}\n"
-            
-            if response.get('stopped_at_position'):
-                pos = response['stopped_at_position']
-                message += f"\n📍 Camera Position: [{pos[0]:.2f}, {pos[1]:.2f}, {pos[2]:.2f}]"
-            
-            if response.get('stopped_at_target'):
-                target = response['stopped_at_target']
-                message += f"\n🎯 Looking At: [{target[0]:.2f}, {target[1]:.2f}, {target[2]:.2f}]"
-            
-            if response.get('interrupted_movement_id'):
-                message += f"\n🎬 Interrupted: {response['interrupted_movement_id']}"
-                if response.get('interrupted_operation'):
-                    message += f" ({response['interrupted_operation']})"
-                if response.get('progress_when_stopped'):
-                    message += f" - {response['progress_when_stopped']} complete"
-            
-            if response.get('stopped_count', 0) > 1:
-                message += f"\n📊 Total Stopped: {response['stopped_count']} movements"
-        elif operation == 'health_check':
-            # Update for standardized health format
-            message = "✅ WorldViewer Health\n"
-            message += f"• Service: {response.get('service', 'Agent WorldViewer API')}\n"
-            message += f"• Version: {response.get('version', '1.0.0')}\n"
-            message += f"• URL: {response.get('url', 'Unknown')}\n"
-            message += f"• Timestamp: {response.get('timestamp', 'unknown')}\n"
-            # Add extension-specific status
-            camera_position = response.get('camera_position', [0.0, 0.0, 0.0])
-            message += f"• Camera Position: [{camera_position[0]:.2f}, {camera_position[1]:.2f}, {camera_position[2]:.2f}]"
-        
-        return message
-    
-    @classmethod
-    def format_error(cls, operation: str, error: str) -> str:
-        """Format error response with user-friendly operation name and troubleshooting hints"""
-        friendly_operation = operation.replace('_', ' ').title()
-        error_message = cls.ERROR_TEMPLATE.format(operation=friendly_operation, error=error)
-        
-        # Add troubleshooting hints for common error patterns
-        for error_pattern, hint in cls.TROUBLESHOOTING_HINTS.items():
-            if error_pattern.lower() in error.lower():
-                error_message += f"\n\n{hint}"
-                break
-        
-        return error_message
 
 shared_compat_path = os.path.join(os.path.dirname(__file__), '..', '..', 'shared')
 if shared_compat_path not in sys.path:
@@ -234,7 +135,6 @@ class WorldViewerMCP:
         self.client = MCPBaseClient("WORLDVIEWER", self.base_url)
         
         # Response formatter
-        self.formatter = CameraResponseFormatter()
         
         # Register tool handlers
         self._register_tools()
@@ -629,51 +529,82 @@ class WorldViewerMCP:
                     return await self._stop_queue(arguments)
                 
                 else:
-                    return [TextContent(type="text", text=f"Unknown tool: {name}")]
-            
-            except aiohttp.ClientError as e:
-                return [TextContent(type="text", text=f"❌ Connection error: {str(e)}")]
-            except Exception as e:
-                return [TextContent(type="text", text=f"❌ Tool execution failed: {str(e)}")]
+                    return self._wrap_response(
+                        error_response('UNKNOWN_TOOL', f'Unknown tool: {name}', details={'tool': name})
+                    )
+
+            except aiohttp.ClientError as exc:
+                return self._wrap_response(
+                    error_response('CONNECTION_ERROR', f'Connection error: {exc}', details={'tool': name})
+                )
+            except Exception as exc:
+                return self._wrap_response(
+                    error_response('TOOL_EXECUTION_FAILED', str(exc), details={'tool': name})
+                )
     
     
     
     
-    async def _execute_camera_operation(self, operation: str, method: str, endpoint: str, 
-                                       data: Optional[Dict] = None, **template_vars) -> List[TextContent]:
-        """Unified camera operation execution with consistent response formatting"""
+    async def _execute_camera_operation(
+        self,
+        operation: str,
+        method: str,
+        endpoint: str,
+        *,
+        data: Optional[Dict[str, Any]] = None,
+        params: Optional[Dict[str, Any]] = None,
+        timeout_type: str = 'standard',
+        default_error_code: str,
+    ) -> Dict[str, Any]:
+        """Execute HTTP operation and normalise the response payload."""
         try:
             await self._initialize_client()
-            
-            if method.upper() == "GET":
-                response = await self.client.get(endpoint)
-            elif method.upper() == "POST":
-                response = await self.client.post(endpoint, json=data)
+            timeout = self._get_timeout(timeout_type)
+
+            if method.upper() == 'GET':
+                response = await self.client.get(endpoint, params=params, timeout=timeout)
+            elif method.upper() == 'POST':
+                response = await self.client.post(endpoint, json=data, timeout=timeout)
             else:
-                raise ValueError(f"Unsupported method: {method}")
-            
-            if response.get("success"):
-                message = self.formatter.format_success(operation, response, **template_vars)
-                return [TextContent(type="text", text=message)]
-            else:
-                error_message = self.formatter.format_error(operation, response.get('error', 'Unknown error'))
-                return [TextContent(type="text", text=error_message)]
-        
-        except aiohttp.ClientError as e:
-            error_message = self.formatter.format_error(operation, f"Connection error: {str(e)}")
-            return [TextContent(type="text", text=error_message)]
-        except Exception as e:
-            error_message = self.formatter.format_error(operation, f"Execution error: {str(e)}")
-            return [TextContent(type="text", text=error_message)]
+                raise ValueError(f'Unsupported method: {method}')
+
+            return normalize_transport_response(
+                operation,
+                response,
+                default_error_code=default_error_code,
+            )
+
+        except asyncio.TimeoutError:
+            return error_response(
+                'REQUEST_TIMEOUT',
+                'Request timed out - Isaac Sim may be busy',
+                details={'operation': operation},
+            )
+        except aiohttp.ClientError as exc:
+            return error_response(
+                'CONNECTION_ERROR',
+                f'Connection error: {exc}',
+                details={'operation': operation},
+            )
+        except Exception as exc:
+            return error_response(
+                default_error_code,
+                str(exc),
+                details={'operation': operation},
+            )
+
+    @staticmethod
+    def _wrap_response(payload: Dict[str, Any]) -> List[TextContent]:
+        """Convert response payload into MCP text content."""
+        return [TextContent(type="text", text=json.dumps(payload, indent=2, sort_keys=True))]
     
     async def _set_camera_position(self, args: Dict[str, Any]) -> List[TextContent]:
-        """Set camera position"""
-        
-        position = args.get("position")
-        target = args.get("target")
-        up_vector = args.get("up_vector")
-        
-        # Manual validation for compatibility with Pydantic v1
+        """Set camera position."""
+
+        position = args.get('position')
+        target = args.get('target')
+        up_vector = args.get('up_vector')
+
         try:
             if HAS_COMPAT:
                 validate_position(position)
@@ -682,348 +613,280 @@ class WorldViewerMCP:
                 if up_vector:
                     validate_position(up_vector)
             else:
-                # Basic validation fallback
                 if not isinstance(position, list) or len(position) != 3:
-                    raise ValueError("position must be an array of exactly 3 numbers")
+                    raise ValueError('position must be an array of exactly 3 numbers')
                 if target and (not isinstance(target, list) or len(target) != 3):
-                    raise ValueError("target must be an array of exactly 3 numbers")
+                    raise ValueError('target must be an array of exactly 3 numbers')
                 if up_vector and (not isinstance(up_vector, list) or len(up_vector) != 3):
-                    raise ValueError("up_vector must be an array of exactly 3 numbers")
-        except ValueError as e:
-            return [TextContent(type="text", text=f"❌ Parameter validation error: {str(e)}")]
-        
-        request_data = {"position": position}
+                    raise ValueError('up_vector must be an array of exactly 3 numbers')
+        except ValueError as exc:
+            return self._wrap_response(error_response('VALIDATION_ERROR', str(exc)))
+
+        request_data = {'position': position}
         if target:
-            request_data["target"] = target
+            request_data['target'] = target
         if up_vector:
-            request_data["up_vector"] = up_vector
-        
-        return await self._execute_camera_operation(
-            "set_position", "POST", "/camera/set_position", 
-            request_data, position=position, target=target
+            request_data['up_vector'] = up_vector
+
+        response = await self._execute_camera_operation(
+            'set_camera_position',
+            'POST',
+            '/camera/set_position',
+            data=request_data,
+            default_error_code='SET_CAMERA_POSITION_FAILED',
         )
+        return self._wrap_response(response)
     
     async def _frame_object(self, args: Dict[str, Any]) -> List[TextContent]:
-        """Frame object in viewport"""
-        
-        object_path = args.get("object_path")
-        distance = args.get("distance")
-        
-        request_data = {"object_path": object_path}
+        """Frame object in viewport."""
+
+        object_path = args.get('object_path')
+        distance = args.get('distance')
+
+        if not object_path:
+            return self._wrap_response(
+                error_response('MISSING_PARAMETER', 'object_path is required', details={'parameter': 'object_path'})
+            )
+
+        request_data = {'object_path': object_path}
         if distance is not None:
-            request_data["distance"] = distance
-        
-        return await self._execute_camera_operation(
-            "frame_object", "POST", "/camera/frame_object", 
-            request_data, object_path=object_path
+            request_data['distance'] = distance
+
+        response = await self._execute_camera_operation(
+            'frame_object',
+            'POST',
+            '/camera/frame_object',
+            data=request_data,
+            default_error_code='FRAME_OBJECT_FAILED',
         )
+        return self._wrap_response(response)
     
     async def _orbit_camera(self, args: Dict[str, Any]) -> List[TextContent]:
-        """Position camera in orbit"""
-        
-        center = args.get("center")
-        distance = args.get("distance")
-        elevation = args.get("elevation")
-        azimuth = args.get("azimuth")
-        
-        # Manual validation for compatibility with Pydantic v1
+        """Position camera in orbit."""
+
+        center = args.get('center')
+        distance = args.get('distance')
+        elevation = args.get('elevation')
+        azimuth = args.get('azimuth')
+
         try:
             if HAS_COMPAT:
                 validate_position(center)
             else:
                 if not isinstance(center, list) or len(center) != 3:
-                    raise ValueError("center must be an array of exactly 3 numbers")
-        except ValueError as e:
-            return [TextContent(type="text", text=f"❌ Parameter validation error: {str(e)}")]
-        
+                    raise ValueError('center must be an array of exactly 3 numbers')
+        except ValueError as exc:
+            return self._wrap_response(error_response('VALIDATION_ERROR', str(exc)))
+
         request_data = {
-            "center": center,
-            "distance": distance,
-            "elevation": elevation,
-            "azimuth": azimuth
+            'center': center,
+            'distance': distance,
+            'elevation': elevation,
+            'azimuth': azimuth,
         }
-        
-        return await self._execute_camera_operation(
-            "orbit_camera", "POST", "/camera/orbit", 
-            request_data, center=center, distance=distance, elevation=elevation, azimuth=azimuth
+
+        response = await self._execute_camera_operation(
+            'orbit_camera',
+            'POST',
+            '/camera/orbit',
+            data=request_data,
+            default_error_code='ORBIT_CAMERA_FAILED',
         )
+        return self._wrap_response(response)
     
     async def _get_camera_status(self, args: Dict[str, Any]) -> List[TextContent]:
-        """Get camera status"""
-        return await self._execute_camera_operation(
-            "get_status", "GET", "/camera/status"
+        """Get camera status."""
+        response = await self._execute_camera_operation(
+            'get_camera_status',
+            'GET',
+            '/camera/status',
+            default_error_code='CAMERA_STATUS_FAILED',
         )
+        return self._wrap_response(response)
     
     async def _get_asset_transform(self, args: Dict[str, Any]) -> List[TextContent]:
-        """Get asset transform information for camera operations"""
-        usd_path = args.get("usd_path", "")
-        calculation_mode = args.get("calculation_mode", "auto")
-        
+        """Get asset transform information for camera operations."""
+
+        usd_path = args.get('usd_path')
+        calculation_mode = args.get('calculation_mode', 'auto')
+
         if not usd_path:
-            return [TextContent(type="text", text="❌ Error: usd_path is required")]
-        
-        try:
-            await self._initialize_client()
-            result = await self.client.get("/get_asset_transform", params={
-                "usd_path": usd_path,
-                "calculation_mode": calculation_mode
-            })
-            
-            if result.get("success"):
-                # Format the transform data nicely
-                pos = result.get("position", [0, 0, 0])
-                bounds = result.get("bounds", {})
-                bounds_center = bounds.get("center", [0, 0, 0])
-                asset_type = result.get("type", "unknown")
-                child_count = result.get("child_count", 0)
-                calc_mode = result.get("calculation_mode", "auto")
-                
-                transform_text = (
-                    f"🔍 Asset Transform: {usd_path}\n"
-                    f"• Type: {asset_type} ({child_count} children)\n"
-                    f"• Position: [{pos[0]:.2f}, {pos[1]:.2f}, {pos[2]:.2f}]\n"
-                    f"• Bounds Center: [{bounds_center[0]:.2f}, {bounds_center[1]:.2f}, {bounds_center[2]:.2f}]\n"
-                    f"• Calculation Mode: {calc_mode}\n"
-                    f"• Source: worldviewer"
-                )
-                
-                # Add bounds info if available
-                if bounds.get("min") and bounds.get("max"):
-                    bounds_min = bounds["min"]
-                    bounds_max = bounds["max"]
-                    size = [bounds_max[i] - bounds_min[i] for i in range(3)]
-                    transform_text += (
-                        f"\n• Bounds Size: [{size[0]:.2f}, {size[1]:.2f}, {size[2]:.2f}]"
-                        f"\n• Bounds Min: [{bounds_min[0]:.2f}, {bounds_min[1]:.2f}, {bounds_min[2]:.2f}]"
-                        f"\n• Bounds Max: [{bounds_max[0]:.2f}, {bounds_max[1]:.2f}, {bounds_max[2]:.2f}]"
-                    )
-                
-                return [TextContent(type="text", text=transform_text)]
-            else:
-                error_msg = result.get('error', 'Unknown error')
-                return [TextContent(type="text", text=f"❌ Failed to get asset transform: {error_msg}")]
-                    
-        except aiohttp.ServerTimeoutError:
-            return [TextContent(type="text", text="❌ Request timed out - Isaac Sim may be busy")]
-        except Exception as e:
-            return [TextContent(type="text", text=f"❌ Connection error: {str(e)}")]
+            return self._wrap_response(error_response('MISSING_PARAMETER', 'usd_path is required', details={'parameter': 'usd_path'}))
+
+        response = await self._execute_camera_operation(
+            'asset_transform',
+            'GET',
+            '/get_asset_transform',
+            params={'usd_path': usd_path, 'calculation_mode': calculation_mode},
+            default_error_code='ASSET_TRANSFORM_FAILED',
+        )
+        return self._wrap_response(response)
     
     async def _extension_health(self, args: Dict[str, Any]) -> List[TextContent]:
-        """Check extension health"""
-        return await self._execute_camera_operation(
-            "health_check", "GET", "/health", status="healthy"
+        """Check extension health."""
+        response = await self._execute_camera_operation(
+            'get_health',
+            'GET',
+            '/health',
+            timeout_type='simple',
+            default_error_code='HEALTH_FAILED',
         )
+        return self._wrap_response(response)
     
     # =====================================================================
     # CINEMATIC MOVEMENT TOOL HANDLERS
     # =====================================================================
     
     async def _smooth_move(self, args: Dict[str, Any]) -> List[TextContent]:
-        """Execute smooth camera movement"""
-        return await self._execute_camera_operation(
-            "smooth_move", "POST", "/camera/smooth_move", args,
-            start_position=args.get("start_position"),
-            end_position=args.get("end_position"),
-            duration=args.get("duration", 3.0)
+        """Execute smooth camera movement."""
+
+        if 'start_position' not in args or 'end_position' not in args:
+            return self._wrap_response(
+                error_response(
+                    'MISSING_PARAMETER',
+                    'start_position and end_position are required',
+                    details={'required': ['start_position', 'end_position']},
+                )
+            )
+
+        response = await self._execute_camera_operation(
+            'smooth_move',
+            'POST',
+            '/camera/smooth_move',
+            data=args,
+            timeout_type='complex',
+            default_error_code='SMOOTH_MOVE_FAILED',
         )
+        return self._wrap_response(response)
     
     async def _arc_shot(self, args: Dict[str, Any]) -> List[TextContent]:
-        """Execute arc shot cinematic movement with curved Bezier path"""
-        return await self._execute_camera_operation(
-            "arc_shot", "POST", "/camera/arc_shot", args,
-            start_position=args.get("start_position"),
-            end_position=args.get("end_position"),
-            start_target=args.get("start_target"),
-            end_target=args.get("end_target"),
-            duration=args.get("duration", 6.0)
+        """Execute arc shot cinematic movement with curved path."""
+
+        if 'start_position' not in args:
+            return self._wrap_response(
+                error_response('MISSING_PARAMETER', 'start_position is required', details={'parameter': 'start_position'})
+            )
+
+        response = await self._execute_camera_operation(
+            'arc_shot',
+            'POST',
+            '/camera/arc_shot',
+            data=args,
+            timeout_type='complex',
+            default_error_code='ARC_SHOT_FAILED',
         )
+        return self._wrap_response(response)
     
     async def _stop_movement(self, args: Dict[str, Any]) -> List[TextContent]:
-        """Stop all active cinematic movements"""
-        return await self._execute_camera_operation(
-            "stop_movement", "POST", "/camera/stop_movement", {},
-            description="Stopping all camera movements"
+        """Stop all active cinematic movements."""
+        response = await self._execute_camera_operation(
+            'stop_movement',
+            'POST',
+            '/camera/stop_movement',
+            data={},
+            default_error_code='STOP_MOVEMENT_FAILED',
         )
+        return self._wrap_response(response)
     
     async def _movement_status(self, args: Dict[str, Any]) -> List[TextContent]:
-        """Get status of a cinematic movement"""
-        movement_id = args.get("movement_id")
+        """Get status of a cinematic movement."""
+        movement_id = args.get('movement_id')
         if not movement_id:
-            return [TextContent(type="text", text="❌ Movement ID is required")]
-        
-        return await self._execute_camera_operation(
-            "movement_status", "GET", f"/camera/movement_status?movement_id={movement_id}", None,
-            movement_id=movement_id
+            return self._wrap_response(
+                error_response('MISSING_PARAMETER', 'movement_id is required', details={'parameter': 'movement_id'})
+            )
+
+        response = await self._execute_camera_operation(
+            'movement_status',
+            'GET',
+            '/camera/movement_status',
+            params={'movement_id': movement_id},
+            default_error_code='MOVEMENT_STATUS_FAILED',
         )
+        return self._wrap_response(response)
     
     async def _get_metrics(self, args: Dict[str, Any]) -> List[TextContent]:
-        """Get performance metrics and statistics from WorldViewer extension"""
-        format_type = args.get("format", "json")
-        
-        try:
-            if format_type == "prom":
-                await self._initialize_client()
-                response = await self.client.get("/metrics.prom")
-            else:
-                await self._initialize_client()
-                response = await self.client.get("/metrics")
-            
-            # Handle Prometheus format special response
-            if format_type == "prom" and "_raw_text" in response:
-                prom_data = response["_raw_text"]
-                return [TextContent(type="text", text=f"📊 **WorldViewer Metrics (Prometheus)**\n```\n{prom_data}\n```")]
-            elif response.get("success"):
-                if format_type == "json":
-                    metrics_json = json.dumps(response.get("metrics", {}), indent=2)
-                    return [TextContent(type="text", text=f"📊 **WorldViewer Metrics (JSON)**\n```json\n{metrics_json}\n```")]
-                elif format_type == "prom":
-                    prom_data = response.get("prometheus_metrics", "# No Prometheus metrics available")
-                    return [TextContent(type="text", text=f"📊 **WorldViewer Metrics (Prometheus)**\n```\n{prom_data}\n```")]
-                else:
-                    return [TextContent(type="text", text="❌ Error: format must be 'json' or 'prom'")]
-            else:
-                error_msg = response.get('error', 'Unknown error')
-                return [TextContent(type="text", text=f"❌ Failed to get WorldViewer metrics: {error_msg}")]
-                
-        except Exception as e:
-            return [TextContent(type="text", text=f"❌ Error getting metrics: {str(e)}")]
+        """Get performance metrics and statistics from WorldViewer extension."""
+        format_type = args.get('format', 'json').lower()
+
+        if format_type not in {'json', 'prom'}:
+            return self._wrap_response(
+                error_response('INVALID_PARAMETER', "format must be 'json' or 'prom'", details={'format': format_type})
+            )
+
+        if format_type == 'prom':
+            response = await self._execute_camera_operation(
+                'get_prometheus_metrics',
+                'GET',
+                '/metrics.prom',
+                timeout_type='simple',
+                default_error_code='PROMETHEUS_METRICS_FAILED',
+            )
+        else:
+            response = await self._execute_camera_operation(
+                'get_metrics',
+                'GET',
+                '/metrics',
+                timeout_type='simple',
+                default_error_code='METRICS_FAILED',
+            )
+
+        return self._wrap_response(response)
     
     async def _metrics_prometheus(self, args: Dict[str, Any]) -> List[TextContent]:
         """Get WorldViewer metrics in Prometheus format."""
-        try:
-            await self._initialize_client()
-            response = await self.client.get("/metrics.prom")
-            
-            # For Prometheus format, check for _raw_text field first (special response format)
-            if "_raw_text" in response:
-                prom_data = response["_raw_text"]
-                return [TextContent(type="text", text=f"📊 **WorldViewer Prometheus Metrics**\n\n```\n{prom_data}\n```")]
-            elif response.get("success"):
-                # Fallback to prometheus_metrics field
-                prom_data = response.get("prometheus_metrics", "# No Prometheus metrics available")
-                return [TextContent(type="text", text=f"📊 **WorldViewer Prometheus Metrics**\n\n```\n{prom_data}\n```")]
-            else:
-                error_msg = response.get('error', 'Unknown error')
-                return [TextContent(type="text", text=f"❌ Failed to get Prometheus metrics: {error_msg}")]
-                
-        except Exception as e:
-            return [TextContent(type="text", text=f"❌ Error getting Prometheus metrics: {str(e)}")]
+        response = await self._execute_camera_operation(
+            'get_prometheus_metrics',
+            'GET',
+            '/metrics.prom',
+            timeout_type='simple',
+            default_error_code='PROMETHEUS_METRICS_FAILED',
+        )
+        return self._wrap_response(response)
 
     async def _get_queue_status(self, args: Dict[str, Any]) -> List[TextContent]:
-        """Get comprehensive shot queue status with timing information"""
-        try:
-            await self._initialize_client()
-            response = await self.client.get("/camera/shot_queue_status")
-            
-            if response.get("success"):
-                # Format the response nicely
-                status_text = "🎬 **WorldViewer Queue Status**\n\n"
-                
-                # Queue state
-                queue_state = response.get("queue_state", "unknown")
-                shot_count = response.get("shot_count", 0)
-                active_count = response.get("active_count", 0)
-                queued_count = response.get("queued_count", 0)
-                
-                status_text += f"**Queue State:** {queue_state.title()}\n"
-                status_text += f"**Total Shots:** {shot_count} ({active_count} active, {queued_count} queued)\n\n"
-                
-                # Active shot info
-                active_shot = response.get("active_shot")
-                if active_shot:
-                    movement_id = active_shot.get("movement_id", "N/A")
-                    operation = active_shot.get("operation", "N/A")
-                    progress = active_shot.get("progress", 0) * 100  # Convert to percentage
-                    remaining_time = active_shot.get("remaining_time", 0)
-                    total_duration = active_shot.get("total_duration", 0)
-                    
-                    status_text += f"**Active Shot:** {movement_id} ({operation})\n"
-                    status_text += f"**Progress:** {progress:.1f}%\n"
-                    status_text += f"**Duration:** {total_duration:.1f}s (remaining: {remaining_time:.1f}s)\n\n"
-                
-                # Overall timing information
-                total_duration = response.get("total_duration", 0)
-                remaining_duration = response.get("remaining_duration", 0)
-                if total_duration > 0:
-                    status_text += f"**Total Queue Duration:** {total_duration:.1f}s\n"
-                    status_text += f"**Estimated Remaining:** {remaining_duration:.1f}s\n\n"
-                
-                # Queue details if there are queued shots
-                queued_shots = response.get("queued_shots", [])
-                if queued_shots:
-                    status_text += "**Queued Shots:**\n"
-                    for i, shot in enumerate(queued_shots, 1):
-                        mov_id = shot.get("movement_id", f"shot_{i}")
-                        operation = shot.get("operation", "unknown")
-                        duration = shot.get("estimated_duration", 0)
-                        status_text += f"  {i}. {mov_id} ({operation}) - {duration:.1f}s\n"
-                
-                return [TextContent(type="text", text=status_text)]
-            else:
-                error_msg = response.get('error', 'Unknown error')
-                return [TextContent(type="text", text=f"❌ Failed to get queue status: {error_msg}")]
-                
-        except Exception as e:
-            return [TextContent(type="text", text=f"❌ Error getting queue status: {str(e)}")]
+        """Get comprehensive shot queue status with timing information."""
+        response = await self._execute_camera_operation(
+            'shot_queue_status',
+            'GET',
+            '/camera/shot_queue_status',
+            timeout_type='standard',
+            default_error_code='QUEUE_STATUS_FAILED',
+        )
+        return self._wrap_response(response)
 
     async def _play_queue(self, args: Dict[str, Any]) -> List[TextContent]:
-        """Start/resume queue processing"""
-        try:
-            await self._initialize_client()
-            response = await self.client.post("/camera/queue/play")
-            
-            if response.get("success"):
-                queue_state = response.get("queue_state", "unknown")
-                active_count = response.get("active_count", 0)
-                queued_count = response.get("queued_count", 0)
-                message = response.get("message", "Queue started")
-                
-                return [TextContent(type="text", text=f"▶️ **Queue Play**\n\n{message}\n\n**State:** {queue_state.title()}\n**Active:** {active_count} | **Queued:** {queued_count}")]
-            else:
-                error_msg = response.get('error', 'Unknown error')
-                return [TextContent(type="text", text=f"❌ Failed to play queue: {error_msg}")]
-                
-        except Exception as e:
-            return [TextContent(type="text", text=f"❌ Error playing queue: {str(e)}")]
+        """Start or resume queue processing."""
+        response = await self._execute_camera_operation(
+            'queue_play',
+            'POST',
+            '/camera/queue/play',
+            data={},
+            default_error_code='QUEUE_PLAY_FAILED',
+        )
+        return self._wrap_response(response)
 
     async def _pause_queue(self, args: Dict[str, Any]) -> List[TextContent]:
-        """Pause queue processing"""
-        try:
-            await self._initialize_client()
-            response = await self.client.post("/camera/queue/pause")
-            
-            if response.get("success"):
-                queue_state = response.get("queue_state", "unknown")
-                active_count = response.get("active_count", 0)
-                queued_count = response.get("queued_count", 0)
-                message = response.get("message", "Queue paused")
-                
-                return [TextContent(type="text", text=f"⏸️ **Queue Pause**\n\n{message}\n\n**State:** {queue_state.title()}\n**Active:** {active_count} | **Queued:** {queued_count}")]
-            else:
-                error_msg = response.get('error', 'Unknown error')
-                return [TextContent(type="text", text=f"❌ Failed to pause queue: {error_msg}")]
-                
-        except Exception as e:
-            return [TextContent(type="text", text=f"❌ Error pausing queue: {str(e)}")]
+        """Pause queue processing."""
+        response = await self._execute_camera_operation(
+            'queue_pause',
+            'POST',
+            '/camera/queue/pause',
+            data={},
+            default_error_code='QUEUE_PAUSE_FAILED',
+        )
+        return self._wrap_response(response)
 
     async def _stop_queue(self, args: Dict[str, Any]) -> List[TextContent]:
-        """Stop and clear entire queue"""
-        try:
-            await self._initialize_client()
-            response = await self.client.post("/camera/queue/stop")
-            
-            if response.get("success"):
-                queue_state = response.get("queue_state", "unknown")
-                stopped_movements = response.get("stopped_movements", 0)
-                message = response.get("message", "Queue stopped")
-                
-                return [TextContent(type="text", text=f"⏹️ **Queue Stop**\n\n{message}\n\n**State:** {queue_state.title()}\n**Stopped Movements:** {stopped_movements}")]
-            else:
-                error_msg = response.get('error', 'Unknown error')
-                return [TextContent(type="text", text=f"❌ Failed to stop queue: {error_msg}")]
-                
-        except Exception as e:
-            return [TextContent(type="text", text=f"❌ Error stopping queue: {str(e)}")]
+        """Stop and clear entire queue."""
+        response = await self._execute_camera_operation(
+            'queue_stop',
+            'POST',
+            '/camera/queue/stop',
+            data={},
+            default_error_code='QUEUE_STOP_FAILED',
+        )
+        return self._wrap_response(response)
     
 async def main():
     """Main entry point for the MCP server."""

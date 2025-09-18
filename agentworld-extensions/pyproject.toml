@@ -33,3 +33,8 @@ include = ["omni.agent.*"]
 
 [tool.setuptools.package-data]
 "*" = ["*.json", "*.toml", "*.md"]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0"
+]

@@ -18,6 +18,17 @@ This document captures the sequence we just walked through on WorldBuilder so we
 - Installers/launchers precompile linked extensions, link the streamer MCP code, and enable SRT + auth by default (Surveyor remains unauthenticated).
 - This roadmap doc records the sequence so we can restore context after conversation compaction.
 
+### In Progress: WorldViewer (Phase 2–4)
+
+- Shared `agent_world_transport.normalize_transport_response` now powers both HTTP and MCP layers; the parity contract lives in `transport/contract.py`.
+- HTTP handler refactored to controller/service/schemas structure with validation parity and centralized error responses.
+- MCP stdio server returns JSON payloads via the shared normalizer, replacing Markdown formatting.
+- Added lightweight unit coverage (`tests/worldviewer/test_controller.py`) to guard controller/service error paths ahead of USD-backed tests.
+
+#### Current Clean-up Targets
+- **WorldViewer**: the HTTP handler still instantiates the controller lazily and lets some routes bypass validation. Move controller/service creation into `api_interface.initialize()` and funnel every route through controller helpers so validation/error codes stay consistent. The MCP stdio server now emits JSON, but each tool wraps responses manually—extract a shared helper so the HTTP contract remains the single source of truth.
+- **WorldBuilder**: queue processing returns stats without an explicit `success` flag and mixes emoji logging with structured errors. Align on `error_response`/`normalize_transport_response` so downstream clients don’t need special cases. Scene helpers rely on direct `omni.usd`/`pxr` calls everywhere; an adapter layer would make unit testing easier and reduce the stubbing footprint we just added.
+
 ## Repeatable Sequence
 
 1. **Survey + Diff**
