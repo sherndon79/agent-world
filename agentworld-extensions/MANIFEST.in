@@ -1,0 +1,2 @@
+recursive-include omni *.json *.toml *.md
+include agent-world-*.json

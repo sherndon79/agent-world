@@ -5,20 +5,10 @@ This replaces the old duplicated config logic with the unified system,
 eliminating code duplication while maintaining identical functionality and interface.
 """
 
-import sys
 import logging
-from pathlib import Path
 
 # Import the unified config system from agentworld-extensions root
 try:
-    # Find the agentworld-extensions directory
-    current = Path(__file__).resolve()
-    for _ in range(10):  # Search up the directory tree
-        if current.name == 'agentworld-extensions':
-            sys.path.insert(0, str(current))
-            break
-        current = current.parent
-    
     from agent_world_config import WorldExtensionConfig
     CONFIG_AVAILABLE = True
 except ImportError as e:

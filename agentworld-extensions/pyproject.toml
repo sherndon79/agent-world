@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agentworld-extensions"
+version = "0.1.0"
+description = "Unified Agent World Isaac Sim extensions"
+authors = [{name = "Agent Adventures"}]
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "Proprietary"}
+keywords = ["isaac-sim", "omni", "agent-world", "mcp"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: Other/Proprietary License",
+    "Operating System :: OS Independent",
+]
+
+[tool.setuptools]
+include-package-data = true
+py-modules = [
+    "agent_world_auth",
+    "agent_world_config",
+    "agent_world_http",
+    "agent_world_logging",
+    "agent_world_metrics",
+    "agent_world_versions"
+]
+
+[tool.setuptools.packages.find]
+include = ["omni.agent.*"]
+
+[tool.setuptools.package-data]
+"" = ["*.json", "*.toml", "*.md"]

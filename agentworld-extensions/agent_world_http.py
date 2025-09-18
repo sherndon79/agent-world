@@ -31,34 +31,13 @@ from urllib.parse import parse_qs, urlparse
 
 logger = logging.getLogger(__name__)
 
-# Try to import centralized version management  
-def _find_and_import_versions():
-    """Find and import version management module using robust path resolution."""
-    try:
-        import sys
-        import os
-        
-        # Strategy 1: Search upward in directory tree for agentworld-extensions
-        current = Path(__file__).resolve()
-        for _ in range(10):  # Reasonable search limit
-            if current.name == 'agentworld-extensions' or (current / 'agent_world_versions.py').exists():
-                sys.path.insert(0, str(current))
-                from agent_world_versions import get_version, get_service_name
-                return get_version, get_service_name
-            if current.parent == current:  # Reached filesystem root
-                break
-            current = current.parent
-        
-        # Strategy 2: Environment variable fallback
-        env_path = os.getenv('AGENT_WORLD_VERSIONS_PATH')
-        if env_path:
-            sys.path.insert(0, env_path)
-            from agent_world_versions import get_version, get_service_name
-            return get_version, get_service_name
-            
-        return None, None
-    except ImportError:
-        return None, None
+try:
+    from agent_world_versions import get_version, get_service_name
+    VERSION_AVAILABLE = True
+except ImportError:
+    get_version = None
+    get_service_name = None
+    VERSION_AVAILABLE = False
 
 # Try to import HTTP configuration
 def _load_http_config():
@@ -71,14 +50,8 @@ def _load_http_config():
         logger.warning(f"Could not load HTTP config: {e}")
         return {}
 
-# Initialize version management and config
-try:
-    get_version, get_service_name = _find_and_import_versions()
-    VERSION_AVAILABLE = get_version is not None
-    HTTP_CONFIG = _load_http_config()
-except Exception:
-    VERSION_AVAILABLE = False
-    HTTP_CONFIG = {}
+# Initialize HTTP configuration (version info already handled above)
+HTTP_CONFIG = _load_http_config()
 
 
 class WorldHTTPHandler(BaseHTTPRequestHandler):

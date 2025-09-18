@@ -5,58 +5,21 @@ HTTP request handler for Agent WorldBuilder API endpoints (unified HTTP).
 import logging
 import time
 from datetime import datetime
-from pathlib import Path
 
 from .scene_builder import SceneElement, SceneBatch, AssetPlacement, PrimitiveType
 
-# Import centralized version management
-def _find_and_import_versions():
-    """Find and import version management module using robust path resolution."""
-    try:
-        # Strategy 1: Search upward in directory tree for agentworld-extensions
-        current = Path(__file__).resolve()
-        for _ in range(10):  # Reasonable search limit
-            if current.name == 'agentworld-extensions' or (current / 'agent_world_versions.py').exists():
-                sys.path.insert(0, str(current))
-                from agent_world_versions import get_version, get_service_name
-                return get_version, get_service_name
-            if current.parent == current:  # Reached filesystem root
-                break
-            current = current.parent
-        
-        # Strategy 2: Environment variable fallback
-        env_path = os.getenv('AGENT_WORLD_VERSIONS_PATH')
-        if env_path:
-            sys.path.insert(0, env_path)
-            from agent_world_versions import get_version, get_service_name
-            return get_version, get_service_name
-            
-        return None, None
-    except ImportError:
-        return None, None
-
-# Unified HTTP handler import with fallback
 try:
-    import sys as _sys
-    from pathlib import Path as _P
-    _cur = _P(__file__).resolve()
-    for _ in range(10):
-        if _cur.name == 'agentworld-extensions':
-            _sys.path.insert(0, str(_cur))
-            break
-        _cur = _cur.parent
     from agent_world_http import WorldHTTPHandler
     UNIFIED = True
-except Exception:
+except ImportError:
     from http.server import BaseHTTPRequestHandler as WorldHTTPHandler  # type: ignore
     UNIFIED = False
 
 try:
-    import sys
-    import os
-    get_version, get_service_name = _find_and_import_versions()
-    VERSION_AVAILABLE = get_version is not None
-except Exception:
+    from agent_world_versions import get_version, get_service_name
+    VERSION_AVAILABLE = True
+except ImportError:
+    get_version = get_service_name = None
     VERSION_AVAILABLE = False
 
 # Optional Pydantic for request validation

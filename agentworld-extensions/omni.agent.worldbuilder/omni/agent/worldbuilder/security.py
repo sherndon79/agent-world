@@ -5,21 +5,11 @@ Authentication and security for WorldBuilder API.
 Uses unified agent_world authentication system for consistency.
 """
 
-import sys
 import logging
-from pathlib import Path
 from typing import Optional, Dict, Any
 
 # Import unified authentication system
 try:
-    # Find the agentworld-extensions directory
-    current = Path(__file__).resolve()
-    for _ in range(10):  # Search up the directory tree
-        if current.name == 'agentworld-extensions':
-            sys.path.insert(0, str(current))
-            break
-        current = current.parent
-    
     from agent_world_auth import SecurityManager, is_bearer_auth_enabled
     AUTH_AVAILABLE = True
 except ImportError as e:
@@ -170,5 +160,4 @@ class WorldBuilderAuth:
             'bearer_auth_enabled': AUTH_AVAILABLE and is_bearer_auth_enabled('worldbuilder'),
             'extension_name': 'worldbuilder'
         }
-
 

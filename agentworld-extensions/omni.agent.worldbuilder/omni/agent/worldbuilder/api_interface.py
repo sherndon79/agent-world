@@ -2,9 +2,7 @@
 HTTP API interface for WorldBuilder communication.
 """
 
-import sys
 import logging
-from pathlib import Path
 import socket
 import struct
 import threading
@@ -15,13 +13,6 @@ from typing import Optional
 
 # Import unified systems from agentworld-extensions root
 try:
-    current = Path(__file__).resolve()
-    for _ in range(10):
-        if current.name == 'agentworld-extensions':
-            sys.path.insert(0, str(current))
-            break
-        current = current.parent
-    
     from agent_world_metrics import setup_worldbuilder_metrics
     METRICS_AVAILABLE = True
 except ImportError as e:
