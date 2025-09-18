@@ -24,6 +24,7 @@ from agent_world_logging import setup_logging
 from .http_handler import WorldBuilderHTTPHandler
 from .scene_builder import SceneBuilder
 from .security import WorldBuilderAuth
+from .utils import count_world_children
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +42,7 @@ class HTTPAPIInterface:
         self.security_manager = WorldBuilderAuth(config=self._config)
         
         # Initialize scene builder
-        self._scene_builder = SceneBuilder()
+        self._scene_builder = SceneBuilder(config=self._config)
         
         # Thread coordination
         self._main_thread_id = threading.get_ident()
@@ -137,8 +138,8 @@ class HTTPAPIInterface:
                 try:
                     self.metrics.register_gauge(
                         'scene_objects',
-                        'Objects in current scene', 
-                        lambda: self._get_scene_object_count()
+                        'Objects in current scene',
+                        lambda: count_world_children(self._get_stage)
                     )
                 except Exception as e:
                     if self._config.debug_mode:
@@ -174,18 +175,13 @@ class HTTPAPIInterface:
         else:
             return self._api_stats.get('server_running', False)
     
-    def _get_scene_object_count(self) -> int:
-        """Get current number of objects in scene for metrics."""
+    def _get_stage(self):
+        """Get the current USD stage safely."""
         try:
             if self._scene_builder and hasattr(self._scene_builder, '_usd_context'):
-                stage = self._scene_builder._usd_context.get_stage()
-                if stage:
-                    world_prim = stage.GetPrimAtPath('/World')
-                    if world_prim:
-                        return len(list(world_prim.GetAllChildren()))
+                return self._scene_builder._usd_context.get_stage()
         except Exception:
-            pass
-        return 0
+            return None
     
     def get_port(self):
         """Get the server port (for health endpoint compatibility)."""

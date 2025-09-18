@@ -56,7 +56,14 @@ function Remove-ExtensionSymlinks {
   param([string]$ExtsUser)
   Write-Host "==> Removing Agent World extension symlinks from $ExtsUser..." -ForegroundColor Yellow
   
-  $extensions = @("omni.agent.worldbuilder", "omni.agent.worldviewer", "omni.agent.worldsurveyor", "omni.agent.worldrecorder")
+  $extensions = @(
+    "omni.agent.worldbuilder",
+    "omni.agent.worldviewer",
+    "omni.agent.worldsurveyor",
+    "omni.agent.worldrecorder",
+    "omni.agent.worldstreamer.rtmp",
+    "omni.agent.worldstreamer.srt"
+  )
   foreach ($ext in $extensions) {
     $linkPath = Join-Path $ExtsUser $ext
     if (Test-Path $linkPath) {
@@ -72,6 +79,23 @@ function Remove-ExtensionSymlinks {
   }
   
   Write-Host "==> Extension symlinks cleanup complete!" -ForegroundColor Green
+}
+
+function Invoke-PrecompileExtensions {
+  $repoRoot = Split-Path $PSScriptRoot -Parent
+  $srcBase = Join-Path $repoRoot "agentworld-extensions"
+  if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
+    Write-Warning "python executable not found; skipping bytecode precompile"
+    return
+  }
+  Write-Host "==> Precompiling extension modules"
+  python -m compileall -q \
+    (Join-Path $srcBase 'omni.agent.worldbuilder') \
+    (Join-Path $srcBase 'omni.agent.worldviewer') \
+    (Join-Path $srcBase 'omni.agent.worldsurveyor') \
+    (Join-Path $srcBase 'omni.agent.worldrecorder') \
+    (Join-Path $srcBase 'omni.agent.worldstreamer.rtmp') \
+    (Join-Path $srcBase 'omni.agent.worldstreamer.srt')
 }
 
 function Remove-GeneratedFiles {
@@ -258,7 +282,14 @@ if (-not (Test-Path $extsUser)) { New-Item -ItemType Directory -Path $extsUser |
 if (Read-Choice "Create links for Agent World extensions into '$extsUser'?" $true) {
   $repoRoot = Split-Path $PSScriptRoot -Parent
   $srcBase = Join-Path $repoRoot "agentworld-extensions"
-  $exts = @('omni.agent.worldbuilder','omni.agent.worldviewer','omni.agent.worldsurveyor','omni.agent.worldrecorder')
+  $exts = @(
+    'omni.agent.worldbuilder',
+    'omni.agent.worldviewer',
+    'omni.agent.worldsurveyor',
+    'omni.agent.worldrecorder',
+    'omni.agent.worldstreamer.rtmp',
+    'omni.agent.worldstreamer.srt'
+  )
   foreach ($name in $exts) {
     $src = Join-Path $srcBase $name
     $dst = Join-Path $extsUser $name
@@ -268,6 +299,7 @@ if (Read-Choice "Create links for Agent World extensions into '$extsUser'?" $tru
       Write-Host "Linked: $dst -> $src"
     }
   }
+  Invoke-PrecompileExtensions
 }
 
 # Create launcher
@@ -313,10 +345,12 @@ $Bin = "$bin"
   --enable omni.agent.worldviewer `
   --enable omni.agent.worldsurveyor `
   --enable omni.agent.worldrecorder `
+  --enable omni.agent.worldstreamer.srt `
   --/exts/omni.agent.worldbuilder/auth_enabled=true `
   --/exts/omni.agent.worldviewer/auth_enabled=true `
   --/exts/omni.agent.worldsurveyor/auth_enabled=false `
   --/exts/omni.agent.worldrecorder/auth_enabled=true `
+  --/exts/omni.agent.worldstreamer.srt/auth_enabled=true `
   @Args
 "@ | Set-Content -LiteralPath $launcher -NoNewline:$false
 

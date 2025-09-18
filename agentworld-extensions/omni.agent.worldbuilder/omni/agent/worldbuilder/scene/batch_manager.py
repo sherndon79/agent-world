@@ -10,6 +10,7 @@ from typing import Dict, Any, List, Optional, Tuple
 from pxr import Usd, UsdGeom, Gf
 
 from .scene_types import SceneElement, SceneBatch, PrimitiveType
+from ..utils import sanitize_usd_name
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +55,7 @@ class BatchManager:
                     'error': '; '.join(validation_result['errors'])
                 }
 
-            batch_path = f"/World/{self._sanitize_usd_name(batch_name)}"
+            batch_path = f"/World/{sanitize_usd_name(batch_name)}"
             
             # Parse elements from request data
             scene_elements = []
@@ -118,7 +119,7 @@ class BatchManager:
             for element in scene_elements:
                 # Temporarily adjust element name to include batch path
                 original_name = element.name
-                element.name = f"{self._sanitize_usd_name(batch_name)}/{original_name}"
+                element.name = f"{sanitize_usd_name(batch_name)}/{original_name}"
                 
                 try:
                     # Use element factory to create the element
@@ -379,7 +380,7 @@ class BatchManager:
         # Check if batch path already exists in USD stage
         stage = self._usd_context.get_stage()
         if stage:
-            batch_path = f"/World/{self._sanitize_usd_name(batch_name)}"
+            batch_path = f"/World/{sanitize_usd_name(batch_name)}"
             existing_prim = stage.GetPrimAtPath(batch_path)
             if existing_prim and existing_prim.IsValid():
                 errors.append(f"Batch '{batch_name}' already exists at path '{batch_path}'")
@@ -417,14 +418,6 @@ class BatchManager:
             'valid_elements': valid_elements,
             'total_elements': len(elements)
         }
-    
-    def _sanitize_usd_name(self, name: str) -> str:
-        """Sanitize name for USD path compatibility."""
-        import re
-        sanitized = re.sub(r'[^a-zA-Z0-9_\-]', '_', name)
-        if sanitized and sanitized[0].isdigit():
-            sanitized = f"_{sanitized}"
-        return sanitized
     
     def _add_batch_metadata(self, batch_xform: UsdGeom.Xform, batch_name: str, scene_elements: List[SceneElement]):
         """Add batch identification metadata to USD Xform."""

@@ -4,8 +4,11 @@ HTTP request handler for Agent WorldBuilder API endpoints (unified HTTP).
 
 import logging
 
+from agent_world_logging import module_logger
+
 from .http import WorldBuilderController
 from .services import WorldBuilderService
+from .errors import error_response
 
 try:
     from agent_world_http import WorldHTTPHandler
@@ -15,6 +18,7 @@ except ImportError:
     UNIFIED = False
 
 logger = logging.getLogger(__name__)
+request_logger = module_logger(service='worldbuilder', component='http_handler')
 
 
 
@@ -26,7 +30,8 @@ class WorldBuilderHTTPHandler(WorldHTTPHandler):
     @property
     def controller(self) -> WorldBuilderController:
         if not hasattr(self, '_controller') or self._controller is None:
-            service = WorldBuilderService(self.api_interface)
+            config = getattr(self.api_interface, '_config', None)
+            service = WorldBuilderService(self.api_interface, config=config)
             self._controller = WorldBuilderController(service)
         return self._controller
 
@@ -63,133 +68,94 @@ class WorldBuilderHTTPHandler(WorldHTTPHandler):
     
     def _handle_stats(self, method: str = 'GET', request_data: dict | None = None):
         """Handle stats request."""
-        try:
-            return self.controller.get_stats()
-        except Exception as e:
-            return {'success': False, 'error': f'Stats error: {e}'}
+        return self.controller.get_stats()
 
     def _handle_add_element(self, method: str, request_data: dict):
         """Handle add element request."""
-        try:
-            if method != 'POST':
-                return {'success': False, 'error': 'add_element requires POST method'}
-            return self.controller.add_element(request_data or {})
-        except ValueError as ve:
-            return {'success': False, 'error': f'Validation error: {ve}'}
-        except Exception as e:
-            return {'success': False, 'error': f'Add element error: {e}'}
+        if method != 'POST':
+            request_logger.warning('method_not_allowed', extra={'route': 'add_element', 'method': method})
+            return error_response('METHOD_NOT_ALLOWED', 'add_element requires POST method', details={'method': method})
+        return self.controller.add_element(request_data or {})
     
     def _handle_health(self):
         """Handle health check request."""
-        try:
-            return self.controller.get_health()
-        except Exception as e:
-            return {'success': False, 'error': f'Health error: {e}'}
+        return self.controller.get_health()
     
     def _handle_metrics(self, request_data: dict):
         """Handle metrics endpoint request."""
-        try:
-            return self.controller.get_metrics()
-        except Exception as e:
-            return {'success': False, 'error': f'Metrics error: {e}'}
+        return self.controller.get_metrics()
     
     def _get_prometheus_metrics(self) -> str:
         """Get Prometheus formatted metrics."""
         try:
             return self.controller.get_prometheus_metrics()
-        except Exception as e:
-            return f"# Error generating metrics: {e}\n"
+        except Exception as exc:
+            request_logger.exception('prometheus_metrics_error', extra={'error': str(exc)})
+            return "# Error generating metrics\n"
     
     # HTTP response helpers handled by unified base class
     def _handle_create_batch(self, method: str, request_data: dict):
         """Handle create batch request.""" 
-        try:
-            if method != 'POST':
-                return {'success': False, 'error': 'create_batch requires POST method'}
-            return self.controller.create_batch(request_data or {})
-        except Exception as e:
-            return {'success': False, 'error': f'Create batch error: {e}'}
+        if method != 'POST':
+            request_logger.warning('method_not_allowed', extra={'route': 'create_batch', 'method': method})
+            return error_response('METHOD_NOT_ALLOWED', 'create_batch requires POST method', details={'method': method})
+        return self.controller.create_batch(request_data or {})
 
     def _handle_place_asset(self, method: str, request_data: dict):
         """Handle place asset request."""
-        try:
-            if method != 'POST':
-                return {'success': False, 'error': 'place_asset requires POST method'}
-            return self.controller.place_asset(request_data or {})
-        except Exception as e:
-            return {'success': False, 'error': f'Place asset error: {e}'}
+        if method != 'POST':
+            request_logger.warning('method_not_allowed', extra={'route': 'place_asset', 'method': method})
+            return error_response('METHOD_NOT_ALLOWED', 'place_asset requires POST method', details={'method': method})
+        return self.controller.place_asset(request_data or {})
 
     # Add other handler methods as needed...
     def _handle_transform_asset(self, method: str, request_data: dict):
         """Handle asset transformation request."""
-        try:
-            if method != 'POST':
-                return {'success': False, 'error': 'transform_asset requires POST method'}
-            return self.controller.transform_asset(request_data or {})
-        except Exception as e:
-            return {'success': False, 'error': f'Transform asset error: {e}'}
+        if method != 'POST':
+            request_logger.warning('method_not_allowed', extra={'route': 'transform_asset', 'method': method})
+            return error_response('METHOD_NOT_ALLOWED', 'transform_asset requires POST method', details={'method': method})
+        return self.controller.transform_asset(request_data or {})
 
     def _handle_batch_info(self, method: str, request_data: dict):
         """Handle batch info request."""
-        try:
-            return self.controller.get_batch_info(request_data or {})
-        except Exception as e:
-            return {'success': False, 'error': f'Batch info error: {e}'}
+        return self.controller.batch_info(request_data or {})
 
     def _handle_list_batches(self, method: str, request_data: dict):
         """Handle list batches request using stage discovery."""
-        try:
-            if method != 'GET':
-                return {'success': False, 'error': 'list_batches requires GET method'}
-            return self.controller.list_batches()
-        except Exception as e:
-            return {'success': False, 'error': f'List batches error: {e}'}
+        if method != 'GET':
+            request_logger.warning('method_not_allowed', extra={'route': 'list_batches', 'method': method})
+            return error_response('METHOD_NOT_ALLOWED', 'list_batches requires GET method', details={'method': method})
+        return self.controller.list_batches()
 
     def _handle_request_status(self, method: str, request_data: dict):
         """Handle request status check."""
-        try:
-            return self.controller.request_status(request_data or {})
-        except Exception as e:
-            return {'success': False, 'error': f'Request status error: {e}'}
+        return self.controller.request_status(request_data or {})
     
     def _handle_remove_element(self, method: str, request_data: dict):
         """Handle remove element request."""
-        try:
-            if method != 'POST':
-                return {'success': False, 'error': 'remove_element requires POST method'}
-            return self.controller.remove_element(request_data or {})
-        except Exception as e:
-            return {'success': False, 'error': f'Remove element error: {e}'}
+        if method != 'POST':
+            request_logger.warning('method_not_allowed', extra={'route': 'remove_element', 'method': method})
+            return error_response('METHOD_NOT_ALLOWED', 'remove_element requires POST method', details={'method': method})
+        return self.controller.remove_element(request_data or {})
 
     def _handle_clear_path(self, method: str, request_data: dict):
         """Handle clear path request."""
-        try:
-            if method != 'POST':
-                return {'success': False, 'error': 'clear_path requires POST method'}
-            return self.controller.clear_path(request_data or {})
-        except Exception as e:
-            return {'success': False, 'error': f'Clear path error: {e}'}
+        if method != 'POST':
+            request_logger.warning('method_not_allowed', extra={'route': 'clear_path', 'method': method})
+            return error_response('METHOD_NOT_ALLOWED', 'clear_path requires POST method', details={'method': method})
+        return self.controller.clear_path(request_data or {})
 
     def _handle_get_scene(self, method: str, request_data: dict):
         """Handle get scene request."""
-        try:
-            return self.controller.get_scene(request_data or {})
-        except Exception as e:
-            return {'success': False, 'error': f'Get scene error: {e}'}
+        return self.controller.get_scene(request_data or {})
 
     def _handle_list_elements(self, method: str, request_data: dict):
         """Handle list elements request."""
-        try:
-            return self.controller.list_elements(request_data or {})
-        except Exception as e:
-            return {'success': False, 'error': f'List elements error: {e}'}
+        return self.controller.list_elements(request_data or {})
 
     def _handle_scene_status(self, method: str = 'GET', request_data: dict | None = None):
         """Handle scene status request."""
-        try:
-            return self.controller.scene_status()
-        except Exception as e:
-            return {'success': False, 'error': f'Scene status error: {e}'}
+        return self.controller.scene_status()
 
     def _get_scene_status(self):
         """Get scene health and basic statistics."""
@@ -197,47 +163,30 @@ class WorldBuilderHTTPHandler(WorldHTTPHandler):
     
     def _handle_query_by_type(self, method: str, request_data: dict):
         """Handle query by type request."""
-        try:
-            return self.controller.query_objects_by_type(request_data or {})
-        except Exception as e:
-            return {'success': False, 'error': f'Query by type error: {e}'}
+        return self.controller.query_objects_by_type(request_data or {})
     
     def _handle_query_in_bounds(self, method: str, request_data: dict):
         """Handle query in bounds request."""
-        try:
-            return self.controller.query_objects_in_bounds(request_data or {})
-        except Exception as e:
-            return {'success': False, 'error': f'Query in bounds error: {e}'}
+        return self.controller.query_objects_in_bounds(request_data or {})
     
     def _handle_query_near_point(self, method: str, request_data: dict):
         """Handle query near point request."""
-        try:
-            return self.controller.query_objects_near_point(request_data or {})
-        except Exception as e:
-            return {'success': False, 'error': f'Query near point error: {e}'}
+        return self.controller.query_objects_near_point(request_data or {})
 
     def _handle_calculate_bounds(self, method: str, request_data: dict):
         """Handle calculate bounds request."""
-        try:
-            return self.controller.calculate_bounds(request_data or {})
-        except Exception as e:
-            return {'success': False, 'error': f'Calculate bounds error: {e}'}
+        return self.controller.calculate_bounds(request_data or {})
 
     def _handle_find_ground_level(self, method: str, request_data: dict):
         """Handle find ground level request."""
-        try:
-            return self.controller.find_ground_level(request_data or {})
-        except Exception as e:
-            return {'success': False, 'error': f'Find ground level error: {e}'}
+        return self.controller.find_ground_level(request_data or {})
 
     def _handle_align_objects(self, method: str, request_data: dict):
         """Handle align objects request."""
-        try:
-            if method != 'POST':
-                return {'success': False, 'error': 'align_objects requires POST method'}
-            return self.controller.align_objects(request_data or {})
-        except Exception as e:
-            return {'success': False, 'error': f'Align objects error: {e}'}
+        if method != 'POST':
+            request_logger.warning('method_not_allowed', extra={'route': 'align_objects', 'method': method})
+            return error_response('METHOD_NOT_ALLOWED', 'align_objects requires POST method', details={'method': method})
+        return self.controller.align_objects(request_data or {})
 
     def log_message(self, format, *args):
         """Override default HTTP server logging to use our logger with proper levels."""

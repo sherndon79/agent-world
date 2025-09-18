@@ -78,12 +78,36 @@ detect_local_zip() {
   [[ -n "$z" ]] && echo "$z"
 }
 
+precompile_extensions() {
+  local src_base="$ROOT_DIR/agentworld-extensions"
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "python3 not found; skipping bytecode precompile" >&2
+    return
+  fi
+  echo "==> Precompiling extension modules"
+  python3 -m compileall -q \
+    "$src_base/omni.agent.worldbuilder" \
+    "$src_base/omni.agent.worldviewer" \
+    "$src_base/omni.agent.worldsurveyor" \
+    "$src_base/omni.agent.worldrecorder" \
+    "$src_base/omni.agent.worldstreamer.rtmp" \
+    "$src_base/omni.agent.worldstreamer.srt"
+}
+
 link_extensions() {
   local exts_user="$1"
   echo "==> Linking extensions into: $exts_user"
   mkdir -p "$exts_user"
   local src_base="$ROOT_DIR/agentworld-extensions"
-  for d in omni.agent.worldbuilder omni.agent.worldviewer omni.agent.worldsurveyor omni.agent.worldrecorder; do
+  local extensions=(
+    omni.agent.worldbuilder
+    omni.agent.worldviewer
+    omni.agent.worldsurveyor
+    omni.agent.worldrecorder
+    omni.agent.worldstreamer.rtmp
+    omni.agent.worldstreamer.srt
+  )
+  for d in "${extensions[@]}"; do
     if [[ -d "$src_base/$d" ]]; then
       local target="$exts_user/$d"
       [[ -e "$target" ]] && { echo "exists: $target (skip)"; continue; }
@@ -91,6 +115,7 @@ link_extensions() {
       echo "linked: $target"
     fi
   done
+  precompile_extensions
 }
 
 create_launcher() {
@@ -118,10 +143,12 @@ exec "\$LAUNCH_BIN" \\
   --enable omni.agent.worldviewer \\
   --enable omni.agent.worldsurveyor \\
   --enable omni.agent.worldrecorder \\
+  --enable omni.agent.worldstreamer.srt \\
   --/exts/omni.agent.worldbuilder/auth_enabled=true \\
   --/exts/omni.agent.worldviewer/auth_enabled=true \\
   --/exts/omni.agent.worldsurveyor/auth_enabled=false \\
   --/exts/omni.agent.worldrecorder/auth_enabled=true \\
+  --/exts/omni.agent.worldstreamer.srt/auth_enabled=true \\
   "\$@"
 EOF
   chmod +x "$out_path"

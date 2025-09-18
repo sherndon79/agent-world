@@ -31,5 +31,8 @@ except Exception:
 
 __author__ = "agenTW∞rld Team"
 
-# Import and expose the extension class for Isaac Sim
-from .extension import AgentWorldBuilderExtension
+# Import and expose the extension class for Isaac Sim when available
+try:
+    from .extension import AgentWorldBuilderExtension
+except (ModuleNotFoundError, ImportError):  # pragma: no cover - allows headless test imports
+    AgentWorldBuilderExtension = None

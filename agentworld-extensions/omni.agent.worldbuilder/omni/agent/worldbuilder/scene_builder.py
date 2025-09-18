@@ -9,14 +9,11 @@ This is the clean, modular version using factory patterns and specialized manage
 
 import logging
 import time
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional, Tuple, TYPE_CHECKING
 from collections import OrderedDict
 
-try:
-    from .config import get_config
-    config = get_config()
-except ImportError:
-    config = None
+if TYPE_CHECKING:  # pragma: no cover - import only for type hints
+    from .config import WorldBuilderConfig
 
 import omni.usd
 import omni.kit.app
@@ -48,28 +45,26 @@ class SceneBuilder:
     using specialized managers and factory patterns.
     """
 
-    def __init__(self):
+    def __init__(self, config: Optional['WorldBuilderConfig'] = None):
         """Initialize scene builder with modular architecture."""
+        if config is None:
+            try:
+                from .config import get_config  # Local import to avoid cycles
+                config = get_config()
+            except ImportError:
+                config = None
+
+        self._config = config
         self._usd_context = omni.usd.get_context()
         
         # Initialize modular components
-        self._queue_manager = WorldBuilderQueueManager()
+        self._queue_manager = WorldBuilderQueueManager(config=self._config)
         self._element_factory = ElementFactory(self._usd_context)
         self._asset_manager = AssetManager(self._usd_context)
         self._cleanup_operations = CleanupOperations(self._usd_context)
         self._batch_manager = BatchManager(self._usd_context, self._element_factory)
         
         logger.info("🏗️ Scene Builder initialized with modular architecture")
-    
-    def _sanitize_usd_name(self, name: str) -> str:
-        """Sanitize name for USD path compatibility by replacing invalid characters."""
-        import re
-        # Replace spaces and other problematic characters with underscores
-        sanitized = re.sub(r'[^a-zA-Z0-9_\-]', '_', name)
-        # Ensure it doesn't start with a number
-        if sanitized and sanitized[0].isdigit():
-            sanitized = f"_{sanitized}"
-        return sanitized
     
     # =============================================================================
     # PUBLIC API METHODS - Queue-based operations

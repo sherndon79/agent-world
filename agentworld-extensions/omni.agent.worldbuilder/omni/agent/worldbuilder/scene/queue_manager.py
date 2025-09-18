@@ -8,23 +8,20 @@ with proper thread safety and request lifecycle management.
 import logging
 import time
 import threading
-from typing import Dict, Any, List, Optional, Callable
+from typing import Dict, Any, List, Optional, Callable, TYPE_CHECKING
 from collections import OrderedDict
 
 from .scene_types import (
-    SceneElement, 
-    SceneBatch, 
+    SceneElement,
+    SceneBatch,
     AssetPlacement,
     RequestStatus,
     RequestState,
     RequestType
 )
 
-try:
-    from ..config import get_config
-    config = get_config()
-except ImportError:
-    config = None
+if TYPE_CHECKING:  # pragma: no cover - only for typing
+    from ..config import WorldBuilderConfig
 
 logger = logging.getLogger(__name__)
 
@@ -32,9 +29,10 @@ logger = logging.getLogger(__name__)
 class WorldBuilderQueueManager:
     """Thread-safe queue manager for all WorldBuilder operations."""
     
-    def __init__(self):
+    def __init__(self, config: Optional['WorldBuilderConfig'] = None):
         """Initialize queue manager with thread-safe operations."""
         self._lock = threading.RLock()
+        self._config = config
         
         # Queue-based processing
         self._element_queue = []
@@ -43,7 +41,9 @@ class WorldBuilderQueueManager:
         self._asset_queue = []
         self._completed_requests = OrderedDict()  # O(1) FIFO eviction
         self._request_counter = 0
-        self._max_completed_requests = config.max_completed_requests if config else 100
+        self._max_completed_requests = (
+            self._config.max_completed_requests if self._config else 100
+        )
         
         # Statistics
         self._stats = {
@@ -306,7 +306,18 @@ class WorldBuilderQueueManager:
         """
         with self._lock:
             processed_count = 0
-            max_operations_per_update = config.max_operations_per_cycle if config else 5
+            config = self._config
+            if config is None:
+                try:
+                    from ..config import get_config  # Local import to avoid circular deps
+                    config = self._config = get_config()
+                except ImportError:
+                    config = None
+
+            max_operations_per_update = (
+                getattr(config, 'max_operations_per_cycle', 5)
+                if config else 5
+            )
             
             try:
                 # Process element queue
