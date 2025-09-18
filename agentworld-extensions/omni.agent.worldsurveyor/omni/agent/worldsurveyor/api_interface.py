@@ -178,6 +178,14 @@ class HTTPAPIInterface:
         
         logger.info("WorldSurveyor API shutdown complete")
 
+    def get_health_info(self) -> Dict[str, Any]:
+        waypoint_count = self.waypoint_manager.get_waypoint_count() if self.waypoint_manager else 0
+        visible_markers = self.waypoint_manager.get_visible_marker_count() if self.waypoint_manager else 0
+        return {
+            'waypoint_count': waypoint_count,
+            'visible_markers': visible_markers,
+        }
+
     def process_queued_operations(self):
         """Process queued camera operations from the main thread."""
         operations_processed = 0

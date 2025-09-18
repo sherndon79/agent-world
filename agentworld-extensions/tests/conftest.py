@@ -10,21 +10,27 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 _WORLD_BUILDER_ROOT = _PROJECT_ROOT / "omni.agent.worldbuilder" / "omni"
 _WORLD_VIEWER_ROOT = _PROJECT_ROOT / "omni.agent.worldviewer" / "omni"
+_WORLD_SURVEYOR_ROOT = _PROJECT_ROOT / "omni.agent.worldsurveyor" / "omni"
 
 _PACKAGE_PATHS = {
     "omni": [
         _WORLD_BUILDER_ROOT,
         _WORLD_VIEWER_ROOT,
+        _WORLD_SURVEYOR_ROOT,
     ],
     "omni.agent": [
         _WORLD_BUILDER_ROOT / "agent",
         _WORLD_VIEWER_ROOT / "agent",
+        _WORLD_SURVEYOR_ROOT / "agent",
     ],
     "omni.agent.worldbuilder": [
         _WORLD_BUILDER_ROOT / "agent" / "worldbuilder",
     ],
     "omni.agent.worldviewer": [
         _WORLD_VIEWER_ROOT / "agent" / "worldviewer",
+    ],
+    "omni.agent.worldsurveyor": [
+        _WORLD_SURVEYOR_ROOT / "agent" / "worldsurveyor",
     ],
 }
 
@@ -112,3 +118,19 @@ for package, paths in _PACKAGE_PATHS.items():
 _ensure_stub_module('omni.usd', _create_omni_usd_stub)
 _ensure_stub_module('omni.kit.app', _create_omni_kit_app_stub)
 _ensure_stub_module('pxr', _create_pxr_stub)
+
+
+def _create_omni_kit_viewport_utility_stub():
+    module = types.ModuleType('omni.kit.viewport.utility')
+
+    class _ViewportStub:
+        viewport_api = types.SimpleNamespace()
+
+    def get_active_viewport_window():
+        return _ViewportStub()
+
+    module.get_active_viewport_window = get_active_viewport_window  # type: ignore[attr-defined]
+    return module
+
+
+_ensure_stub_module('omni.kit.viewport.utility', _create_omni_kit_viewport_utility_stub)

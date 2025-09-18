@@ -29,6 +29,13 @@ This document captures the sequence we just walked through on WorldBuilder so we
 - **WorldViewer**: the HTTP handler still instantiates the controller lazily and lets some routes bypass validation. Move controller/service creation into `api_interface.initialize()` and funnel every route through controller helpers so validation/error codes stay consistent. The MCP stdio server now emits JSON, but each tool wraps responses manually—extract a shared helper so the HTTP contract remains the single source of truth.
 - **WorldBuilder**: queue processing returns stats without an explicit `success` flag and mixes emoji logging with structured errors. Align on `error_response`/`normalize_transport_response` so downstream clients don’t need special cases. Scene helpers rely on direct `omni.usd`/`pxr` calls everywhere; an adapter layer would make unit testing easier and reduce the stubbing footprint we just added.
 
+### In Progress: WorldSurveyor (Phase 2–4)
+
+- HTTP handler now routes through `WorldSurveyorController`/`WorldSurveyorService`, sharing the transport contract and JSON normalisation with the other extensions.
+- MCP stdio server is contract-driven, returning normalized payloads via `normalize_transport_response` instead of Markdown.
+- Added headless regression coverage under `tests/worldsurveyor/*`, reusing the shared stubs for Isaac-only modules.
+- Next clean-ups: extract queue/camera helpers from the service into an adapter, and align group/waypoint validation with the database layer to avoid duplicated checks.
+
 ## Repeatable Sequence
 
 1. **Survey + Diff**
