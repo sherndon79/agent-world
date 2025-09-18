@@ -32,4 +32,4 @@ py-modules = [
 include = ["omni.agent.*"]
 
 [tool.setuptools.package-data]
-"" = ["*.json", "*.toml", "*.md"]
+"*" = ["*.json", "*.toml", "*.md"]
