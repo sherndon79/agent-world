@@ -8,6 +8,7 @@ from monolithic waypoint_toolbar.py for better feature separation.
 
 import logging
 from typing import Optional, Tuple
+from .waypoint_types import get_waypoint_type_behavior
 
 logger = logging.getLogger(__name__)
 
@@ -324,8 +325,8 @@ class CrosshairInteractionHandler:
     def _place_waypoint_at_crosshair(self):
         """Create a waypoint at the crosshair position."""
         try:
-            # Special handling for camera and directional lighting waypoints - capture exact camera state
-            if self._selected_waypoint_type in ['camera_position', 'directional_lighting']:
+            # Special handling for camera behavior waypoints - capture exact camera state
+            if get_waypoint_type_behavior(self._selected_waypoint_type) == 'camera':
                 self._capture_exact_waypoint()
                 return
             

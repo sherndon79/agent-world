@@ -14,6 +14,8 @@ from typing import Any, Dict, Optional
 from pathlib import Path
 import sys
 
+from .ui.waypoint_types import get_waypoint_type_behavior
+
 # Import unified metrics system
 try:
     # Find the agentworld-extensions directory
@@ -235,7 +237,7 @@ class HTTPAPIInterface:
                     return
                 
                 # Use exact same logic as original WorldViewer frontend call
-                if waypoint.waypoint_type in ['camera_position', 'directional_lighting'] and waypoint.target:
+                if get_waypoint_type_behavior(waypoint.waypoint_type) == 'camera' and waypoint.target:
                     # Exact captured position - restore camera to exact position and target
                     camera_position = list(waypoint.position)
                     camera_target = list(waypoint.target)

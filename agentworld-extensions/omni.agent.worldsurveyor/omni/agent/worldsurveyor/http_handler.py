@@ -53,7 +53,9 @@ class WorldSurveyorHTTPHandler(WorldHTTPHandler):
             'groups/create': self._route_create_group,
             'groups/list': self._route_list_groups,
             'groups/get': self._route_get_group,
+            'groups/update': self._route_update_group,
             'groups/remove': self._route_remove_group,
+            'groups/clear': self._route_clear_groups,
             'groups/hierarchy': self._route_group_hierarchy,
             'groups/add_waypoint': self._route_add_waypoint_to_groups,
             'groups/remove_waypoint': self._route_remove_waypoint_from_groups,
@@ -63,6 +65,7 @@ class WorldSurveyorHTTPHandler(WorldHTTPHandler):
             'markers/individual': self._route_set_individual_marker_visible,
             'markers/selective': self._route_set_selective_markers_visible,
             'markers/debug': self._route_debug_status,
+            'waypoint_types': self._route_waypoint_types,
         }
 
     # ------------------------------------------------------------------
@@ -136,10 +139,20 @@ class WorldSurveyorHTTPHandler(WorldHTTPHandler):
             raise MethodNotAllowed('groups/get requires GET', details={'method': method})
         return self.controller.get_group(self._normalize_query_params(data))
 
+    def _route_update_group(self, method: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        if method != 'POST':
+            raise MethodNotAllowed('groups/update requires POST', details={'method': method})
+        return self.controller.update_group(data or {})
+
     def _route_remove_group(self, method: str, data: Dict[str, Any]) -> Dict[str, Any]:
         if method != 'POST':
             raise MethodNotAllowed('groups/remove requires POST', details={'method': method})
         return self.controller.remove_group(data or {})
+
+    def _route_clear_groups(self, method: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        if method != 'POST':
+            raise MethodNotAllowed('groups/clear requires POST', details={'method': method})
+        return self.controller.clear_groups(data or {})
 
     def _route_group_hierarchy(self, method: str, data: Dict[str, Any]) -> Dict[str, Any]:
         if method != 'GET':
@@ -185,6 +198,11 @@ class WorldSurveyorHTTPHandler(WorldHTTPHandler):
         if method != 'GET':
             raise MethodNotAllowed('markers/debug requires GET', details={'method': method})
         return self.controller.debug_status()
+
+    def _route_waypoint_types(self, method: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        if method != 'GET':
+            raise MethodNotAllowed('waypoint_types requires GET', details={'method': method})
+        return self.controller.get_waypoint_types()
 
     # ------------------------------------------------------------------
     def _normalize_query_params(self, params: Dict[str, Any]) -> Dict[str, Any]:

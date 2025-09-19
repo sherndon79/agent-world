@@ -44,12 +44,33 @@
         }
         
         .group-item {
-            padding: 8px 12px;
+            display: flex;
+            align-items: center;
+            padding: 6px 8px;
             border-radius: 4px;
-            margin-bottom: 5px;
+            margin-bottom: 3px;
             cursor: pointer;
             transition: background-color 0.3s;
             border-left: 3px solid transparent;
+            min-width: 0; /* Allow flex items to shrink */
+        }
+
+        .group-color-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 2px;
+            margin-right: 8px;
+            flex-shrink: 0;
+        }
+
+        .group-text {
+            flex: 1;
+            min-width: 0; /* Allow text to shrink */
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font-size: 13px;
+            margin-right: 2px;
         }
         
         .group-item:hover {
@@ -120,8 +141,10 @@
             transition: background-color 0.3s;
             cursor: move;
         }
+
+        /* Waypoint background colors - dynamically set via JavaScript from config */
         .waypoint-item:hover {
-            background-color: #363636;
+            opacity: 0.8;
         }
         .waypoint-item.hidden {
             opacity: 0.5;
@@ -143,10 +166,11 @@
             font-weight: bold;
             font-size: 16px;
             margin-bottom: 5px;
+            color: #ffffff;
         }
         .waypoint-details {
             font-size: 12px;
-            color: #aaa;
+            color: #ffffff;
             display: flex;
             gap: 15px;
             flex-wrap: wrap;
@@ -157,14 +181,8 @@
             border-radius: 12px;
             font-size: 11px;
             font-weight: bold;
+            color: #ffffff;
         }
-        .type-camera_position { background-color: #ef5350; }
-        .type-point_of_interest { background-color: #2196f3; }
-        .type-asset_placement { background-color: #66bb6a; }
-        .type-object_anchor { background-color: #ff9800; }
-        .type-lighting_position { background-color: #ffeb3b; color: #000; }
-        .type-audio_source { background-color: #9c27b0; }
-        .type-spawn_point { background-color: #795548; }
         
         .waypoint-groups {
             display: flex;
@@ -378,7 +396,7 @@
             <!-- Sidebar for Groups -->
             <div class="sidebar">
                 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
-                    <h3 style="margin: 0;">📁 Groups</h3>
+                    <h3 style="margin: 0;">Groups</h3>
                     <label style="display: flex; align-items: center; gap: 5px; font-size: 12px; color: #aaa; cursor: pointer;">
                         <input type="checkbox" id="includeChildGroupsToggle" checked onchange="onIncludeChildGroupsToggle()" style="transform: scale(0.9);">
                         Include child groups
@@ -387,11 +405,27 @@
                 <div id="groupsList">
                     <!-- Groups will be populated here -->
                 </div>
+
+                <!-- Selection Controls -->
+                <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #404040;">
+                    <div style="display: flex; align-items: center; gap: 8px; font-size: 11px; margin-bottom: 8px;">
+                        <div style="display: flex; align-items: center; gap: 8px; color: #aaa;">
+                            <label style="cursor: pointer;">
+                                <input type="checkbox" id="selectAllGroupsBtn" onchange="toggleAllGroups()" style="transform: scale(0.9);"> Select All
+                            </label>
+                            <span id="selectedGroupCount">0 selected</span>
+                        </div>
+                        <button class="btn btn-danger btn-small" onclick="removeSelectedGroups()" id="removeSelectedGroupsBtn" disabled style="padding: 2px 6px; font-size: 10px;">🗑️</button>
+                    </div>
+                </div>
+
+                <!-- Group Actions -->
                 <div class="group-actions">
                     <button class="btn btn-success btn-small" onclick="createGroup()">➕ New</button>
                     <button class="btn btn-primary btn-small" onclick="refreshGroups()">🔄 Refresh</button>
                 </div>
-                <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #404040;">
+
+                <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #404040;">
                     <button class="btn btn-warning btn-small" style="width: 100%;" onclick="showAllWaypoints()">Show All Waypoints</button>
                 </div>
             </div>
@@ -433,7 +467,7 @@
                         <button class="btn btn-warning btn-small" onclick="hideSelectedWaypoints()">🙈 Hide Selected</button>
                         <button class="btn btn-success btn-small" onclick="showSelectedWaypoints()">👁️ Show Selected</button>
                         <button class="btn btn-primary btn-small" onclick="assignSelectedToGroups()">📁 Assign to Groups</button>
-                        <button class="btn btn-danger btn-small" onclick="removeSelectedWaypoints()">🗑️ Remove Selected</button>
+                        <button class="btn btn-danger btn-small" onclick="removeSelectedWaypoints()" id="removeSelectedWaypointsBtn" disabled>🗑️ Remove Selected</button>
                         <span id="selectedCount" style="color: #aaa; font-size: 12px;">0 selected</span>
                     </div>
                 </div>
@@ -448,7 +482,7 @@
     <!-- Group Creation Modal -->
     <div id="groupModal" class="modal">
         <div class="modal-content">
-            <h3>📁 Create New Group</h3>
+            <h3>Create New Group</h3>
             <div class="form-group">
                 <label for="groupName">Group Name:</label>
                 <input type="text" id="groupName" placeholder="Enter group name">
@@ -469,7 +503,7 @@
             </div>
             <div style="display: flex; gap: 10px; justify-content: flex-end;">
                 <button class="btn btn-danger" onclick="closeGroupModal()">Cancel</button>
-                <button class="btn btn-success" onclick="saveGroup()">Create Group</button>
+                <button class="btn btn-success" onclick="saveGroup()" id="saveGroupBtn">Create Group</button>
             </div>
         </div>
     </div>
@@ -477,7 +511,7 @@
     <!-- Group Assignment Modal -->
     <div id="assignModal" class="modal">
         <div class="modal-content">
-            <h3>📁 Assign Waypoints to Groups</h3>
+            <h3>Assign Waypoints to Groups</h3>
             <div class="form-group">
                 <label>Select Groups:</label>
                 <div id="groupCheckboxList" class="checkbox-list">
@@ -498,6 +532,7 @@
         let groups = [];
         let currentGroupFilter = null;
         let groupStats = { total: 0 };
+        let waypointTypeColors = {}; // Cache for waypoint type colors
 
         const toArray = (value) => {
             if (!value) return [];
@@ -511,6 +546,25 @@
             }
             return [];
         };
+
+        // Waypoint type color management
+        async function loadWaypointTypeColors() {
+            try {
+                const result = await apiCall('waypoint_types', 'GET');
+                if (result.success && result.waypoint_types) {
+                    waypointTypeColors = {};
+                    result.waypoint_types.forEach(type => {
+                        waypointTypeColors[type.id] = type.color || [0.5, 0.5, 0.5]; // RGB array [0-1]
+                    });
+                }
+            } catch (error) {
+                console.error('Failed to load waypoint type colors:', error);
+            }
+        }
+
+        function getWaypointTypeColor(waypointType) {
+            return waypointTypeColors[waypointType] || [0.5, 0.5, 0.5]; // Fallback gray
+        }
 
         const normalizeHierarchy = (payload) => {
             if (!payload) return [];
@@ -644,6 +698,8 @@
                     : countGroups(groups);
                 groupStats.total = Number.isFinite(total) ? total : countGroups(groups);
                 renderGroups();
+                // Reset group selection state after refresh
+                updateSelectedGroupCount();
             }
         }
         
@@ -666,19 +722,71 @@
                     const groupLabel = getGroupName(group);
                     const safeGroupName = escapeAttr(groupLabel);
                     const style = indent > 0 ? `margin-left: ${indent * 15}px;` : '';
+                    // Get group color for indicator with debugging and fallback colors
+                    console.log('Group data:', group); // Debug line
+
+                    // Get group color - handle both hex strings and RGB arrays
+                    let groupColor;
+                    if (group.color) {
+                        if (Array.isArray(group.color) && group.color.length >= 3) {
+                            // RGB array format
+                            groupColor = group.color;
+                        } else if (typeof group.color === 'string' && group.color.startsWith('#')) {
+                            // Hex string format - convert to RGB array
+                            const hex = group.color.substring(1);
+                            const r = parseInt(hex.substring(0, 2), 16) / 255;
+                            const g = parseInt(hex.substring(2, 4), 16) / 255;
+                            const b = parseInt(hex.substring(4, 6), 16) / 255;
+                            groupColor = [r, g, b];
+                        }
+                    } else {
+                        // Generate a consistent color based on group name hash
+                        const hash = groupLabel.split('').reduce((a, b) => {
+                            a = ((a << 5) - a) + b.charCodeAt(0);
+                            return a;
+                        }, 0);
+                        const hue = Math.abs(hash) % 360;
+                        // Convert HSL to RGB (muted colors)
+                        const h = hue / 360;
+                        const s = 0.5; // Medium saturation
+                        const l = 0.4; // Medium lightness
+                        const c = (1 - Math.abs(2 * l - 1)) * s;
+                        const x = c * (1 - Math.abs((h * 6) % 2 - 1));
+                        const m = l - c / 2;
+                        let r, g, b;
+                        if (h < 1/6) { r = c; g = x; b = 0; }
+                        else if (h < 2/6) { r = x; g = c; b = 0; }
+                        else if (h < 3/6) { r = 0; g = c; b = x; }
+                        else if (h < 4/6) { r = 0; g = x; b = c; }
+                        else if (h < 5/6) { r = x; g = 0; b = c; }
+                        else { r = c; g = 0; b = x; }
+                        groupColor = [r + m, g + m, b + m];
+                    }
+
+                    const rgbColor = `rgb(${Math.round(groupColor[0] * 255)}, ${Math.round(groupColor[1] * 255)}, ${Math.round(groupColor[2] * 255)})`;
+
                     let html = `
-                        <div class="group-item ${currentGroupFilter === groupId ? 'active' : ''}" 
-                             style="${style}" 
+                        <div class="group-item ${currentGroupFilter === groupId ? 'active' : ''}"
+                             style="${style}"
                              onclick="filterByGroup('${groupId}', '${safeGroupName}')">
                             <div style="display: flex; justify-content: space-between; align-items: center;">
-                                <span>📁 ${groupLabel}</span>
-                                <div style="display: flex; gap: 5px;">
-                                    <button class="btn btn-danger btn-small" 
+                                <div style="display: flex; align-items: center;">
+                                    <input type="checkbox" class="group-select" data-group-id="${groupId}"
+                                           onchange="event.stopPropagation(); updateSelectedGroupCount()"
+                                           style="transform: scale(0.9); margin-right: 6px;">
+                                    <div class="group-color-indicator" style="background-color: ${rgbColor};"></div>
+                                    <span class="group-text">${groupLabel}</span>
+                                    ${group.description ? `<span style="color: #666; font-size: 10px; margin-left: 2px; margin-right: 3px; cursor: help;" title="${group.description.replace(/"/g, '&quot;')}">📝</span>` : ''}
+                                </div>
+                                <div style="display: flex; gap: 2px;">
+                                    <button class="btn btn-warning btn-small"
+                                            onclick="event.stopPropagation(); editGroup('${groupId}')"
+                                            style="padding: 2px 6px; font-size: 10px;">✏️</button>
+                                    <button class="btn btn-danger btn-small"
                                             onclick="event.stopPropagation(); removeGroup('${groupId}')"
                                             style="padding: 2px 6px; font-size: 10px;">🗑️</button>
                                 </div>
                             </div>
-                            ${group.description ? `<div style="font-size: 11px; color: #aaa; margin-top: 2px;">${group.description}</div>` : ''}
                         </div>
                     `;
                     
@@ -720,7 +828,14 @@
             document.getElementById('groupName').value = '';
             document.getElementById('groupDescription').value = '';
             document.getElementById('groupColor').value = '#4A90E2';
-            
+
+            // Clear editing state (ensure we're in create mode)
+            delete document.getElementById('groupModal').dataset.editingGroupId;
+
+            // Set modal title and button text
+            document.querySelector('#groupModal h3').textContent = '📁 Create New Group';
+            document.getElementById('saveGroupBtn').textContent = 'Create Group';
+
             // Show modal
             document.getElementById('groupModal').style.display = 'block';
         }
@@ -731,32 +846,119 @@
                 alert('Group name is required');
                 return;
             }
-            
+
             const groupData = {
                 name: name,
                 description: document.getElementById('groupDescription').value.trim(),
                 color: document.getElementById('groupColor').value
             };
-            
+
             const parentId = document.getElementById('groupParent').value;
             if (parentId) {
                 groupData.parent_group_id = parentId;
             }
-            
-            const result = await apiCall('groups/create', 'POST', groupData);
+
+            // Check if we're editing an existing group
+            const modal = document.getElementById('groupModal');
+            const editingGroupId = modal.dataset.editingGroupId;
+
+            let result;
+            if (editingGroupId) {
+                // Update existing group
+                groupData.group_id = editingGroupId;
+                result = await apiCall('groups/update', 'POST', groupData);
+                if (result.success) {
+                    console.log('Updated group:', editingGroupId);
+                } else {
+                    alert(`Error updating group: ${result.error}`);
+                }
+            } else {
+                // Create new group
+                result = await apiCall('groups/create', 'POST', groupData);
+                if (result.success) {
+                    console.log('Created group:', result.group_id);
+                } else {
+                    alert(`Error creating group: ${result.error}`);
+                }
+            }
+
             if (result.success) {
-                console.log('Created group:', result.group_id);
                 closeGroupModal();
                 await refreshGroups();
-            } else {
-                alert(`Error creating group: ${result.error}`);
             }
         }
         
         function closeGroupModal() {
             document.getElementById('groupModal').style.display = 'none';
+            // Clear editing state
+            delete document.getElementById('groupModal').dataset.editingGroupId;
+            // Reset modal title and button text
+            document.querySelector('#groupModal h3').textContent = '📁 Create New Group';
+            document.getElementById('saveGroupBtn').textContent = 'Create Group';
         }
-        
+
+        async function editGroup(groupId) {
+            // Find the group data
+            const group = findGroupById(groups, groupId);
+            if (!group) {
+                alert('Group not found');
+                return;
+            }
+
+            // Populate parent group options (same as create)
+            const parentSelect = document.getElementById('groupParent');
+            parentSelect.innerHTML = '<option value="">No Parent (Root Level)</option>';
+
+            function addGroupOptions(groupList, prefix = '') {
+                toArray(groupList).forEach(g => {
+                    if (!g || !g.id || g.id === groupId) { // Exclude self from parent options
+                        return;
+                    }
+                    const groupLabel = getGroupName(g);
+                    parentSelect.innerHTML += `<option value="${g.id}">${prefix}${groupLabel}</option>`;
+                    const childGroups = toArray(g.children);
+                    if (childGroups.length > 0) {
+                        addGroupOptions(childGroups, prefix + '└─ ');
+                    }
+                });
+            }
+
+            addGroupOptions(toArray(groups));
+
+            // Populate form with existing data
+            document.getElementById('groupName').value = group.name || '';
+            document.getElementById('groupDescription').value = group.description || '';
+            document.getElementById('groupColor').value = group.color || '#4A90E2';
+            if (group.parent_group_id) {
+                parentSelect.value = group.parent_group_id;
+            }
+
+            // Store the group ID for update
+            document.getElementById('groupModal').dataset.editingGroupId = groupId;
+
+            // Update modal title and button text
+            document.querySelector('#groupModal h3').textContent = '✏️ Edit Group';
+            document.getElementById('saveGroupBtn').textContent = 'Update Group';
+
+            // Show modal
+            document.getElementById('groupModal').style.display = 'block';
+        }
+
+        // Helper function to find group by ID recursively
+        function findGroupById(groupList, targetId) {
+            for (const group of toArray(groupList)) {
+                if (group && group.id === targetId) {
+                    return group;
+                }
+                const childGroups = toArray(group.children);
+                if (childGroups.length > 0) {
+                    const found = findGroupById(childGroups, targetId);
+                    if (found) return found;
+                }
+            }
+            return null;
+        }
+
         async function removeGroup(groupId) {
             if (confirm('Are you sure you want to remove this group? This will unassign all waypoints from the group.')) {
                 const result = await apiCall('groups/remove', 'POST', { group_id: groupId });
@@ -809,14 +1011,57 @@
                 const notesDisplay = notes ? notes : 'No notes added';
                 const notesClass = notes ? '' : 'notes-empty';
                 
-                // Render group tags
+                // Render group tags with actual group colors
                 const groups = wp.metadata && wp.metadata.groups ? wp.metadata.groups : [];
-                const groupTags = groups.map(group => 
-                    `<span class="group-tag">${group.name}</span>`
-                ).join('');
-                
+                const groupTags = groups.map(group => {
+                    let groupColor;
+                    if (group.color) {
+                        if (Array.isArray(group.color) && group.color.length >= 3) {
+                            // RGB array format
+                            groupColor = group.color;
+                        } else if (typeof group.color === 'string' && group.color.startsWith('#')) {
+                            // Hex string format - convert to RGB array
+                            const hex = group.color.substring(1);
+                            const r = parseInt(hex.substring(0, 2), 16) / 255;
+                            const g = parseInt(hex.substring(2, 4), 16) / 255;
+                            const b = parseInt(hex.substring(4, 6), 16) / 255;
+                            groupColor = [r, g, b];
+                        }
+                    } else {
+                        // Generate consistent color based on group name hash (same as sidebar)
+                        const groupName = group.name || 'Unknown';
+                        const hash = groupName.split('').reduce((a, b) => {
+                            a = ((a << 5) - a) + b.charCodeAt(0);
+                            return a;
+                        }, 0);
+                        const hue = Math.abs(hash) % 360;
+                        const h = hue / 360;
+                        const s = 0.5; // Medium saturation
+                        const l = 0.4; // Medium lightness
+                        const c = (1 - Math.abs(2 * l - 1)) * s;
+                        const x = c * (1 - Math.abs((h * 6) % 2 - 1));
+                        const m = l - c / 2;
+                        let r, g, b;
+                        if (h < 1/6) { r = c; g = x; b = 0; }
+                        else if (h < 2/6) { r = x; g = c; b = 0; }
+                        else if (h < 3/6) { r = 0; g = c; b = x; }
+                        else if (h < 4/6) { r = 0; g = x; b = c; }
+                        else if (h < 5/6) { r = x; g = 0; b = c; }
+                        else { r = c; g = 0; b = x; }
+                        groupColor = [r + m, g + m, b + m];
+                    }
+                    const rgbColor = `rgb(${Math.round(groupColor[0] * 255)}, ${Math.round(groupColor[1] * 255)}, ${Math.round(groupColor[2] * 255)})`;
+                    return `<span class="group-tag" style="background-color: ${rgbColor};">${group.name}</span>`;
+                }).join('');
+
+                // Get waypoint type color for background (muted version for UI)
+                const waypointColor = getWaypointTypeColor(wp.waypoint_type);
+                const backgroundColor = waypointColor ?
+                    `rgba(${Math.round(waypointColor[0] * 255)}, ${Math.round(waypointColor[1] * 255)}, ${Math.round(waypointColor[2] * 255)}, 0.3)` :
+                    'rgba(100, 100, 100, 0.3)'; // Fallback gray
+
                 return `
-                    <div class="waypoint-item" data-id="${wp.id}" data-index="${index}" draggable="true">
+                    <div class="waypoint-item type-${wp.waypoint_type}" data-id="${wp.id}" data-index="${index}" draggable="true" style="background-color: ${backgroundColor};">
                         <label class="waypoint-checkbox" style="margin-right: 10px; cursor: pointer;">
                             <input type="checkbox" class="waypoint-select" data-waypoint-id="${wp.id}" onchange="updateSelectedCount()" style="transform: scale(1.1);">
                         </label>
@@ -833,9 +1078,9 @@
                                       onkeydown="if(event.key==='Escape') this.blur()">${notes}</textarea>
                             
                             <div class="waypoint-details">
-                                <span class="waypoint-type type-${wp.waypoint_type}">${wp.waypoint_type.replace('_', ' ')}</span>
+                                <span class="waypoint-type">${wp.waypoint_type.replace('_', ' ')}</span>
                                 <span>Position: [${wp.position.map(p => p.toFixed(1)).join(', ')}]</span>
-                                ${(wp.waypoint_type === 'camera_position' || wp.waypoint_type === 'directional_lighting') && wp.target ? `<span>Target: [${wp.target.map(t => t.toFixed(1)).join(', ')}]</span>` : ''}
+                                ${(wp.waypoint_type === 'camera_position' || wp.waypoint_type === 'directional_lighting') && wp.target && wp.target.every(t => t !== null) ? `<span>Target: [${wp.target.map(t => t.toFixed(1)).join(', ')}]</span>` : ''}
                                 <span>ID: ${wp.id}</span>
                                 <span>${new Date(wp.timestamp).toLocaleString()}</span>
                             </div>
@@ -1335,9 +1580,13 @@
             const totalCheckboxes = document.querySelectorAll('.waypoint-select');
             const selectAllCheckbox = document.getElementById('selectAllCheckbox');
             const selectedCountSpan = document.getElementById('selectedCount');
-            
+            const removeButton = document.getElementById('removeSelectedWaypointsBtn');
+
             selectedCountSpan.textContent = `${selectedCheckboxes.length} selected`;
-            
+
+            // Enable/disable remove button
+            removeButton.disabled = selectedCheckboxes.length === 0;
+
             if (selectedCheckboxes.length === 0) {
                 selectAllCheckbox.checked = false;
                 selectAllCheckbox.indeterminate = false;
@@ -1349,7 +1598,122 @@
                 selectAllCheckbox.indeterminate = true;
             }
         }
-        
+
+        // Group selection functions
+        function updateSelectedGroupCount() {
+            const selectedCheckboxes = document.querySelectorAll('.group-select:checked');
+            const totalCheckboxes = document.querySelectorAll('.group-select');
+            const selectAllCheckbox = document.getElementById('selectAllGroupsBtn');
+            const selectedCountSpan = document.getElementById('selectedGroupCount');
+            const removeButton = document.getElementById('removeSelectedGroupsBtn');
+
+            selectedCountSpan.textContent = `${selectedCheckboxes.length} selected`;
+
+            // Enable/disable remove button
+            removeButton.disabled = selectedCheckboxes.length === 0;
+
+            if (selectedCheckboxes.length === 0) {
+                selectAllCheckbox.checked = false;
+                selectAllCheckbox.indeterminate = false;
+            } else if (selectedCheckboxes.length === totalCheckboxes.length) {
+                selectAllCheckbox.checked = true;
+                selectAllCheckbox.indeterminate = false;
+            } else {
+                selectAllCheckbox.checked = false;
+                selectAllCheckbox.indeterminate = true;
+            }
+        }
+
+        function toggleAllGroups() {
+            const selectAllCheckbox = document.getElementById('selectAllGroupsBtn');
+            const groupCheckboxes = document.querySelectorAll('.group-select');
+
+            groupCheckboxes.forEach(checkbox => {
+                checkbox.checked = selectAllCheckbox.checked;
+            });
+
+            updateSelectedGroupCount();
+        }
+
+        async function removeSelectedGroups() {
+            const selectedCheckboxes = document.querySelectorAll('.group-select:checked');
+
+            if (selectedCheckboxes.length === 0) {
+                alert('Please select groups to remove');
+                return;
+            }
+
+            const groupIds = Array.from(selectedCheckboxes).map(cb => cb.dataset.groupId);
+            const groupNames = Array.from(selectedCheckboxes).map(cb => {
+                const groupItem = cb.closest('.group-item');
+                return groupItem.querySelector('.group-text').textContent;
+            });
+
+            // Validate parent-child relationships
+            const validationErrors = validateGroupRemoval(groupIds);
+            if (validationErrors.length > 0) {
+                alert(`Cannot remove groups due to hierarchy conflicts:\n\n${validationErrors.join('\n\n')}\n\nPlease select all child groups when removing a parent group.`);
+                return;
+            }
+
+            if (!confirm(`Are you sure you want to remove ${groupIds.length} group(s)?\n\n${groupNames.join('\n')}`)) {
+                return;
+            }
+
+            try {
+                // Remove groups one by one (could be optimized with batch endpoint later)
+                for (const groupId of groupIds) {
+                    const response = await fetch('/groups/remove', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ group_id: groupId })
+                    });
+
+                    if (!response.ok) {
+                        console.error(`Failed to remove group ${groupId}`);
+                    }
+                }
+
+                // Refresh the groups list
+                await refreshGroups();
+                console.log(`Successfully removed ${groupIds.length} groups`);
+
+            } catch (error) {
+                console.error('Error removing selected groups:', error);
+                alert('Failed to remove groups. Please try again.');
+            }
+        }
+
+        function validateGroupRemoval(selectedGroupIds) {
+            const errors = [];
+            const selectedSet = new Set(selectedGroupIds);
+
+            // Helper function to find group in the flattened groups array
+            function findGroupById(groupId) {
+                const groupList = toArray(groups);
+                return groupList.find(g => g.id === groupId);
+            }
+
+            // Check each selected group
+            for (const groupId of selectedGroupIds) {
+                const group = findGroupById(groupId);
+                if (!group) continue;
+
+                // If this group has children, ensure all children are also selected
+                if (group.children && group.children.length > 0) {
+                    const unselectedChildren = group.children.filter(child => !selectedSet.has(child.id));
+
+                    if (unselectedChildren.length > 0) {
+                        const childNames = unselectedChildren.map(child => child.name).join(', ');
+                        errors.push(`Parent group "${group.name}" cannot be removed because these child groups are not selected: ${childNames}`);
+                    }
+                }
+            }
+
+            return errors;
+        }
+
+
         async function hideSelectedWaypoints() {
             const selectedCheckboxes = document.querySelectorAll('.waypoint-select:checked');
             
@@ -1462,6 +1826,7 @@
         }
         
         // Initialize
+        loadWaypointTypeColors();
         refreshWaypoints();
         refreshGroups();
         setInterval(updateStatus, 5000);

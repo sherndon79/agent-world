@@ -73,7 +73,7 @@ class WaypointCaptureToolbar(WidgetGroup):
         
         self._toolbar_button = None
         self._is_capture_mode = False
-        self._selected_waypoint_type = "camera_position"
+        self._selected_waypoint_type = WaypointTypeRegistry.get_default_type_id()
         self._click_subscription = None
         
         # UI references
@@ -699,8 +699,8 @@ class WaypointCaptureToolbar(WidgetGroup):
     def _place_waypoint_at_crosshair(self):
         """Place waypoint - camera waypoints capture exact camera state, others use crosshair placement."""
         try:
-            # Special handling for camera and directional lighting waypoints - capture exact camera state
-            if self._selected_waypoint_type in ['camera_position', 'directional_lighting']:
+            # Special handling for camera behavior waypoints - capture exact camera state
+            if WaypointTypeRegistry.get_type_behavior(self._selected_waypoint_type) == 'camera':
                 self._capture_handler.capture_exact_waypoint(self._selected_waypoint_type)
                 return
             
@@ -749,10 +749,10 @@ class WaypointCaptureToolbar(WidgetGroup):
             
             # Use correct remove_waypoint POST endpoint
             import requests
-            
+
             base_url = self._config.get_server_url()
             response = requests.post(
-                f"{base_url}/remove_waypoint",
+                f"{base_url}/waypoints/remove",
                 json={'waypoint_id': waypoint_id},
                 timeout=5.0,
                 headers={'Content-Type': 'application/json'}

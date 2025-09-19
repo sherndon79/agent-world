@@ -7,6 +7,7 @@ from typing import Any, Dict, Tuple
 
 from isaacsim.util.debug_draw import _debug_draw
 from .models import Waypoint
+from .ui.waypoint_types import get_waypoint_type_behavior, get_waypoint_type_color, get_waypoint_type_marker_size
 
 logger = logging.getLogger(__name__)
 
@@ -38,27 +39,14 @@ class WaypointMarkerManager:
             return
             
         try:
-            # Color coding for different waypoint types (RGBA tuples)
-            colors = {
-                'camera_position': (1.0, 0.0, 0.0, 1.0),      # Red for camera waypoints
-                'directional_lighting': (1.0, 1.0, 0.0, 1.0), # Yellow for directional lighting
-                'point_of_interest': (0.0, 0.0, 1.0, 1.0),    # Blue for POI waypoints  
-                'asset_placement': (0.0, 1.0, 0.0, 1.0),      # Green for asset placement
-                'default': (1.0, 1.0, 0.0, 1.0)               # Yellow for others
-            }
-            
-            color = colors.get(waypoint_type, colors['default'])
-            
-            # Draw points for different waypoint types with varying sizes
-            if waypoint_type in ['camera_position', 'directional_lighting']:
-                # Large points for camera and directional lighting waypoints (same size for orientation feedback)
-                debug_draw.draw_points([position], [color], [20])
-            elif waypoint_type == 'point_of_interest':
-                # Medium blue point for POI waypoints
-                debug_draw.draw_points([position], [color], [15])
-            else:
-                # Small point for other waypoint types
-                debug_draw.draw_points([position], [color], [12])
+            # Get color from waypoint type configuration
+            rgb_color = get_waypoint_type_color(waypoint_type)
+            # Convert RGB [0-1] to RGBA tuple for debug draw
+            color = (rgb_color[0], rgb_color[1], rgb_color[2], 1.0)
+
+            # Draw points with configurable sizes
+            marker_size = get_waypoint_type_marker_size(waypoint_type)
+            debug_draw.draw_points([position], [color], [marker_size])
                 
             # Store marker info
             self._markers[waypoint_id] = {
@@ -100,34 +88,25 @@ class WaypointMarkerManager:
         positions = []
         colors = []
         sizes = []
-        
-        # Color coding
-        color_map = {
-            'camera_position': (1.0, 0.0, 0.0, 1.0),
-            'point_of_interest': (0.0, 0.0, 1.0, 1.0),
-            'asset_placement': (0.0, 1.0, 0.0, 1.0),
-            'default': (1.0, 1.0, 0.0, 1.0)
-        }
-        
-        size_map = {
-            'camera_position': 20,
-            'point_of_interest': 15,
-            'default': 12
-        }
-        
+
         for waypoint_id, waypoint in waypoints.items():
             should_show = False
-            
+
             if self._selective_mode:
                 should_show = waypoint_id in self._visible_markers
             else:
                 should_show = waypoint_id not in self._hidden_markers
-            
+
             if should_show:
                 positions.append(waypoint.position)
-                color = color_map.get(waypoint.waypoint_type, color_map['default'])
+
+                # Get color from waypoint type configuration
+                rgb_color = get_waypoint_type_color(waypoint.waypoint_type)
+                color = (rgb_color[0], rgb_color[1], rgb_color[2], 1.0)
                 colors.append(color)
-                size = size_map.get(waypoint.waypoint_type, size_map['default'])
+
+                # Get size from waypoint type configuration
+                size = get_waypoint_type_marker_size(waypoint.waypoint_type)
                 sizes.append(size)
                 
                 # Store marker info for tracking

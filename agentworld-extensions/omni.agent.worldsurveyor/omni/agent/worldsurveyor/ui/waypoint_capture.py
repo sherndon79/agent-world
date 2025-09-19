@@ -12,6 +12,8 @@ import json
 from typing import Optional, Tuple, List
 import asyncio
 
+from .waypoint_types import WaypointTypeRegistry
+
 try:
     import omni.usd
     from pxr import UsdGeom, Gf
@@ -198,7 +200,7 @@ class WaypointCaptureHandler:
         """
         try:
             if waypoint_type is None:
-                waypoint_type = getattr(self.toolbar_controller, '_selected_waypoint_type', 'point_of_interest')
+                waypoint_type = getattr(self.toolbar_controller, '_selected_waypoint_type', WaypointTypeRegistry.get_default_type_id())
             
             # Get next available number for naming
             next_number = self._get_next_waypoint_number(waypoint_type)
@@ -216,13 +218,13 @@ class WaypointCaptureHandler:
             
             # Use unified HTTP client if available
             if self._http_client:
-                response = self._http_client.post("/create_waypoint", json=waypoint_data)
+                response = self._http_client.post("/waypoints/create", json=waypoint_data)
             else:
                 # Fallback to basic HTTP
                 import requests
                 port = getattr(self._config, 'server_port', getattr(self._config, 'http_port', 8891))
                 response = requests.post(
-                    f"http://localhost:{port}/create_waypoint",
+                    f"http://localhost:{port}/waypoints/create",
                     json=waypoint_data,
                     timeout=5
                 )

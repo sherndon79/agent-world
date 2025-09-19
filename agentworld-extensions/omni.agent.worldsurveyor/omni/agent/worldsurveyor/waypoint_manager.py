@@ -39,9 +39,9 @@ class WaypointManager:
         self._migrate_to_database_if_needed()
         
     def create_waypoint(
-        self, 
+        self,
         position: Tuple[float, float, float],
-        waypoint_type: str = "point_of_interest",
+        waypoint_type: Optional[str] = None,
         name: Optional[str] = None,
         target: Optional[Tuple[float, float, float]] = None,
         metadata: Optional[Dict] = None,
@@ -49,6 +49,10 @@ class WaypointManager:
     ) -> str:
         """Create a new waypoint with thread safety and database persistence."""
         with self._lock:
+            # Use default waypoint type if none provided
+            if waypoint_type is None:
+                waypoint_type = self._config.get_default_waypoint_type_id()
+
             # Create in database (handles max waypoints check internally)
             waypoint_id = self._database.create_waypoint(
                 position=position,
@@ -228,7 +232,8 @@ class WaypointManager:
         """Update waypoint fields like name, notes, metadata with thread safety."""
         with self._lock:
             # Handle special metadata updates
-            for field, value in updates.items():
+            # Create a copy of items to avoid "dictionary changed size during iteration" error
+            for field, value in list(updates.items()):
                 if field == 'notes':
                     # Update metadata in database
                     waypoint = self._database.get_waypoint(waypoint_id)
@@ -272,9 +277,17 @@ class WaypointManager:
         with self._lock:
             return self._database.get_group_hierarchy()
 
+    def update_group(self, group_id: str, **updates) -> bool:
+        with self._lock:
+            return self._database.update_group(group_id, **updates)
+
     def remove_group(self, group_id: str, cascade: bool = False) -> bool:
         with self._lock:
             return self._database.remove_group(group_id, cascade)
+
+    def clear_groups(self) -> int:
+        with self._lock:
+            return self._database.clear_groups()
 
     def add_waypoint_to_groups(self, waypoint_id: str, group_ids: List[str]) -> int:
         with self._lock:

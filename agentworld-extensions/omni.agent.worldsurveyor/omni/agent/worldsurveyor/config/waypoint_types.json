@@ -1,0 +1,58 @@
+{
+  "waypoint_types": [
+    {
+      "id": "camera_position",
+      "name": "Camera Position",
+      "description": "Capture current camera view",
+      "color": [0.2, 0.6, 1.0],
+      "icon": "📷",
+      "behavior": "camera",
+      "marker_size": 20
+    },
+    {
+      "id": "directional_lighting",
+      "name": "Directional Lighting",
+      "description": "Light source position and direction",
+      "color": [1.0, 0.9, 0.3],
+      "icon": "💡",
+      "behavior": "camera",
+      "marker_size": 20
+    },
+    {
+      "id": "point_of_interest",
+      "name": "Point of Interest",
+      "description": "Mark interesting location",
+      "color": [0.0, 0.8, 0.0],
+      "icon": "📍",
+      "behavior": "crosshair",
+      "marker_size": 15
+    },
+    {
+      "id": "observation_point",
+      "name": "Observation Point",
+      "description": "Good viewing position",
+      "color": [0.8, 0.4, 0.8],
+      "icon": "👁️",
+      "behavior": "crosshair",
+      "marker_size": 12
+    },
+    {
+      "id": "target_location",
+      "name": "Target Location",
+      "description": "Goal or destination",
+      "color": [1.0, 0.2, 0.2],
+      "icon": "🎯",
+      "behavior": "crosshair",
+      "marker_size": 12
+    },
+    {
+      "id": "walkable_area",
+      "name": "Walkable Area",
+      "description": "Navigable space",
+      "color": [0.0, 0.8, 0.8],
+      "icon": "🚶",
+      "behavior": "crosshair",
+      "marker_size": 12
+    }
+  ]
+}

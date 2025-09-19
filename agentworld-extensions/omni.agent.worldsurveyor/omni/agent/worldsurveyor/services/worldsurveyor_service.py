@@ -6,6 +6,7 @@ from dataclasses import asdict
 from typing import Any, Dict, List, Optional
 
 from ..errors import error_response, ValidationFailure, MethodNotAllowed
+from ..config import get_config
 
 
 def _asdict_waypoints(waypoints: List[Any]) -> List[Dict[str, Any]]:
@@ -116,9 +117,10 @@ class WorldSurveyorService:
         target = payload.get("target")
         if target is not None and (not isinstance(target, (list, tuple)) or len(target) != 3):
             raise ValidationFailure("target must be [x, y, z]", details={"parameter": "target"})
+        config = get_config()
         waypoint_id = self._manager.create_waypoint(
             position=tuple(position),
-            waypoint_type=payload.get("waypoint_type", "point_of_interest"),
+            waypoint_type=payload.get("waypoint_type", config.get_default_waypoint_type_id()),
             name=payload.get("name"),
             target=tuple(target) if target else None,
             metadata=payload.get("metadata", {}),
@@ -213,7 +215,8 @@ class WorldSurveyorService:
             raise ValidationFailure('name is required', details={'parameter': 'name'})
         parent_id = payload.get('parent_group_id')
         description = payload.get('description')
-        group_id = self._manager.create_group(name=name, parent_group_id=parent_id, description=description)
+        color = payload.get('color')  # Add color support
+        group_id = self._manager.create_group(name=name, parent_group_id=parent_id, description=description, color=color)
         return {'success': True, 'group_id': group_id}
 
     def list_groups(self, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -230,6 +233,32 @@ class WorldSurveyorService:
             return error_response('NOT_FOUND', f'Group {group_id} not found')
         return {'success': True, 'group': group}
 
+    def update_group(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        group_id = payload.get('group_id')
+        if not group_id:
+            raise ValidationFailure('group_id is required', details={'parameter': 'group_id'})
+
+        # Extract updateable fields
+        updates = {}
+        if 'name' in payload:
+            updates['name'] = payload['name']
+        if 'description' in payload:
+            updates['description'] = payload['description']
+        if 'color' in payload:
+            updates['color'] = payload['color']
+        if 'parent_group_id' in payload:
+            updates['parent_group_id'] = payload['parent_group_id']
+
+        if not updates:
+            raise ValidationFailure('At least one field to update is required',
+                                  details={'valid_fields': ['name', 'description', 'color', 'parent_group_id']})
+
+        success = self._manager.update_group(group_id, **updates)
+        if not success:
+            return error_response('NOT_FOUND', f'Group {group_id} not found or update failed')
+
+        return {'success': True, 'group_id': group_id}
+
     def remove_group(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         group_id = payload.get('group_id')
         if not group_id:
@@ -239,6 +268,13 @@ class WorldSurveyorService:
         if not removed:
             return error_response('NOT_FOUND', f'Group {group_id} not found')
         return {'success': True, 'group_id': group_id, 'cascade': cascade}
+
+    def clear_groups(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        confirm = bool(payload.get('confirm', False))
+        if not confirm:
+            raise ValidationFailure('confirm flag is required to clear all groups', details={'parameter': 'confirm'})
+        count = self._manager.clear_groups()
+        return {'success': True, 'groups_cleared': count}
 
     def group_hierarchy(self) -> Dict[str, Any]:
         hierarchy = self._manager.get_group_hierarchy()
@@ -339,6 +375,13 @@ class WorldSurveyorService:
         include_nested = bool(payload.get('include_nested', False))
         waypoints = self._manager.get_group_waypoints(group_id, include_nested)
         return {'success': True, 'waypoints': _asdict_waypoints(waypoints)}
+
+    def get_waypoint_types(self) -> Dict[str, Any]:
+        """Get all waypoint types with their configurations."""
+        from ..config import get_config
+        config = get_config()
+        waypoint_types = config.waypoint_types
+        return {'success': True, 'waypoint_types': waypoint_types}
 
     # ------------------------------------------------------------------
     # Internal helpers

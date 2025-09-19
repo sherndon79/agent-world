@@ -85,8 +85,14 @@ class WorldSurveyorController:
     def get_group(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         return self._safe_call('get_group', lambda: self._service.get_group(payload), 'GET_GROUP_FAILED')
 
+    def update_group(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        return self._safe_call('update_group', lambda: self._service.update_group(payload), 'UPDATE_GROUP_FAILED')
+
     def remove_group(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         return self._safe_call('remove_group', lambda: self._service.remove_group(payload), 'REMOVE_GROUP_FAILED')
+
+    def clear_groups(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        return self._safe_call('clear_groups', lambda: self._service.clear_groups(payload), 'CLEAR_GROUPS_FAILED')
 
     def group_hierarchy(self) -> Dict[str, Any]:
         return self._safe_call('group_hierarchy', self._service.group_hierarchy, 'GROUP_HIERARCHY_FAILED')
@@ -102,6 +108,9 @@ class WorldSurveyorController:
 
     def get_group_waypoints(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         return self._safe_call('get_group_waypoints', lambda: self._service.get_group_waypoints(payload), 'GET_GROUP_WAYPOINTS_FAILED')
+
+    def get_waypoint_types(self) -> Dict[str, Any]:
+        return self._safe_call('get_waypoint_types', lambda: self._service.get_waypoint_types(), 'GET_WAYPOINT_TYPES_FAILED')
 
     # ------------------------------------------------------------------
     def _safe_call(self, operation: str, func: Callable[[], Dict[str, Any]], default_error_code: str) -> Dict[str, Any]:

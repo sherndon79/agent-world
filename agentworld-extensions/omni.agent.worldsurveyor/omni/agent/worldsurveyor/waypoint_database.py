@@ -165,11 +165,62 @@ class WaypointDatabase:
             row = conn.execute(
                 "SELECT * FROM groups WHERE id = ?", (group_id,)
             ).fetchone()
-            
+
             if row:
                 return dict(row)
             return None
-    
+
+    def update_group(self, group_id: str, **updates) -> bool:
+        """Update group fields."""
+        with self._lock:
+            conn = self._get_connection()
+
+            # Check if group exists
+            existing = conn.execute(
+                "SELECT id FROM groups WHERE id = ?", (group_id,)
+            ).fetchone()
+            if not existing:
+                return False
+
+            # Build dynamic update query
+            update_fields = []
+            values = []
+
+            if 'name' in updates:
+                update_fields.append("name = ?")
+                values.append(updates['name'])
+
+            if 'description' in updates:
+                update_fields.append("description = ?")
+                values.append(updates['description'])
+
+            if 'color' in updates:
+                update_fields.append("color = ?")
+                values.append(updates['color'])
+
+            if 'parent_group_id' in updates:
+                # Validate parent group exists if specified
+                if updates['parent_group_id']:
+                    parent = conn.execute(
+                        "SELECT id FROM groups WHERE id = ?", (updates['parent_group_id'],)
+                    ).fetchone()
+                    if not parent:
+                        raise ValueError(f"Parent group {updates['parent_group_id']} not found")
+
+                update_fields.append("parent_group_id = ?")
+                values.append(updates['parent_group_id'])
+
+            if not update_fields:
+                return False
+
+            values.append(group_id)
+            query = f"UPDATE groups SET {', '.join(update_fields)} WHERE id = ?"
+
+            conn.execute(query, values)
+            conn.commit()
+            logger.info(f"Updated group {group_id} with fields: {list(updates.keys())}")
+            return True
+
     def list_groups(self, parent_group_id: Optional[str] = None) -> List[Dict[str, Any]]:
         """List groups, optionally filtered by parent."""
         with self._lock:
@@ -269,7 +320,7 @@ class WaypointDatabase:
     def create_waypoint(
         self,
         position: Tuple[float, float, float],
-        waypoint_type: str = "point_of_interest",
+        waypoint_type: Optional[str] = None,
         name: Optional[str] = None,
         target: Optional[Tuple[float, float, float]] = None,
         metadata: Optional[Dict] = None,
@@ -278,8 +329,12 @@ class WaypointDatabase:
     ) -> str:
         """Create waypoint with optional group assignments."""
         with self._lock:
+            # Use default waypoint type if none provided
+            if waypoint_type is None:
+                waypoint_type = self._config.get_default_waypoint_type_id()
+
             conn = self._get_connection()
-            
+
             # Check waypoint limit
             count = conn.execute("SELECT COUNT(*) as count FROM waypoints").fetchone()['count']
             if count >= self._config.max_waypoints:
