@@ -10,10 +10,9 @@ import time
 from collections import deque
 from datetime import datetime
 from http.server import ThreadingHTTPServer
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 from pathlib import Path
 import sys
-import logging
 
 # Import unified metrics system
 try:
@@ -33,6 +32,7 @@ except ImportError as e:
 
 from .config import get_config
 from agent_world_logging import setup_logging
+from agent_world_requests import RequestTracker
 from .http_handler import WorldSurveyorHTTPHandler
 from .waypoint_manager import WaypointManager
 from .security import WorldSurveyorAuth
@@ -60,7 +60,12 @@ class HTTPAPIInterface:
         # Camera operation queue for main thread processing
         self._camera_queue = deque()
         self._queue_lock = threading.Lock()
-        self._request_tracking = {}
+        tracker_ttl = getattr(self._config, 'request_tracker_ttl', 300.0)
+        tracker_capacity = getattr(self._config, 'request_tracker_max_entries', 500)
+        self._request_tracker = RequestTracker(
+            max_entries=tracker_capacity,
+            ttl_seconds=tracker_ttl,
+        )
         self.max_operations_per_tick = 5  # Limit operations per update cycle
         
         # Always initialize _api_stats for backward compatibility
@@ -197,13 +202,17 @@ class HTTPAPIInterface:
                     request = self._camera_queue.popleft()
                 else:
                     break
-            
+
             self._process_camera_request(request)
             operations_processed += 1
+
+        if operations_processed:
+            self._request_tracker.prune()
 
     def _process_camera_request(self, request: Dict):
         """Process a camera operation request on the main thread."""
         try:
+            request_id = request.get('request_id')
             operation = request['operation']
             params = request['params']
             
@@ -217,10 +226,12 @@ class HTTPAPIInterface:
                 # Execute camera positioning
                 waypoint_id = params.get('waypoint_id')
                 waypoint = self.waypoint_manager.get_waypoint(waypoint_id)
-                
+
                 if not waypoint:
                     request['error'] = f'Waypoint not found: {waypoint_id}'
                     request['completed'] = True
+                    if request_id:
+                        self._request_tracker.mark_completed(request_id, error=request['error'])
                     return
                 
                 # Use exact same logic as original WorldViewer frontend call
@@ -238,7 +249,7 @@ class HTTPAPIInterface:
                 
                 # Execute camera positioning using Isaac Sim APIs
                 success = self._execute_camera_positioning(camera_position, camera_target)
-                
+
                 if success:
                     request['result'] = {
                         'success': True,
@@ -254,6 +265,8 @@ class HTTPAPIInterface:
                         'positioning_type': positioning_type
                     }
                     logger.info(f"Camera positioned at waypoint '{waypoint.name}' using {positioning_type}")
+                    if request_id:
+                        self._request_tracker.mark_completed(request_id, result=request['result'])
                 else:
                     request['result'] = {
                         'success': False,
@@ -265,15 +278,22 @@ class HTTPAPIInterface:
                             'target': list(waypoint.target) if waypoint.target else None
                         }
                     }
+                    if request_id:
+                        self._request_tracker.mark_completed(request_id, result=request['result'])
             else:
                 request['error'] = f'Unknown camera operation: {operation}'
-                
+                if request_id:
+                    self._request_tracker.mark_completed(request_id, error=request['error'])
+
             request['completed'] = True
-                
+
         except Exception as e:
             logger.error(f"Error processing camera request: {e}")
             request['error'] = str(e)
             request['completed'] = True
+            request_id = request.get('request_id')
+            if request_id:
+                self._request_tracker.mark_completed(request_id, error=request['error'])
 
     def _execute_camera_positioning(self, position: list, target: list) -> bool:
         """Execute camera positioning using Isaac Sim APIs (must run on main thread)."""

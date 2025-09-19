@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import json
 from typing import Any, Dict, Optional, TYPE_CHECKING
 import time
 
@@ -44,18 +45,50 @@ class WorldBuilderService:
 
     @property
     def _stats(self) -> Dict[str, Any]:
-        return getattr(self._api, '_api_stats', {})
+        stats_provider = getattr(self._api, 'get_stats', None)
+        if callable(stats_provider):
+            return stats_provider()
+        return dict(getattr(self._api, '_api_stats', {}))
+
+    def _execute_on_main_thread(self, func, *, error_code: str) -> Dict[str, Any]:
+        queue_manager = getattr(self._scene_builder, '_queue_manager', None)
+        if queue_manager and hasattr(queue_manager, 'run_sync_operation'):
+            return queue_manager.run_sync_operation(func, error_code=error_code)
+
+        runner = getattr(self._api, 'run_on_main_thread', None)
+        if callable(runner):
+            try:
+                return runner(func)
+            except Exception as exc:  # pragma: no cover
+                return error_response(error_code, str(exc))
+
+        try:
+            return func()
+        except Exception as exc:  # pragma: no cover
+            return error_response(error_code, str(exc))
 
     # ------------------------------------------------------------------
     # Basic endpoints
     def get_stats(self) -> Dict[str, Any]:
-        return {
-            'success': True,
-            'stats': self._stats.copy(),
+        stats = self._stats.copy()
+        startup_error = getattr(self._api, '_startup_error', None)
+        response = {
+            'success': startup_error is None,
+            'stats': stats,
             'timestamp': datetime.now().isoformat()
         }
+        if startup_error is not None:
+            response['error'] = str(startup_error)
+        return response
 
     def get_health(self) -> Dict[str, Any]:
+        startup_error = getattr(self._api, '_startup_error', None)
+        if startup_error is not None:
+            return {
+                'success': False,
+                'error': str(startup_error),
+                'timestamp': time.time(),
+            }
         port = self._api.get_port() if self._api else 8899
         scene_object_count = self._scene_object_count()
 
@@ -76,11 +109,25 @@ class WorldBuilderService:
         }
 
     def get_metrics(self) -> Dict[str, Any]:
+        startup_error = getattr(self._api, '_startup_error', None)
+        if startup_error is not None:
+            return {
+                'success': False,
+                'error': str(startup_error),
+                'metrics': collect_metrics(self._stats, scene_counter=self._scene_object_count),
+            }
         metrics = collect_metrics(self._stats, scene_counter=self._scene_object_count)
         return {'success': True, 'metrics': metrics}
 
     def get_prometheus_metrics(self) -> str:
+        startup_error = getattr(self._api, '_startup_error', None)
         metrics = collect_metrics(self._stats, scene_counter=self._scene_object_count)
+        if startup_error is not None:
+            reason = json.dumps(str(startup_error))
+            return '\n'.join([
+                '# ERROR worldbuilder_startup_failed WorldBuilder HTTP server failed to start',
+                f"worldbuilder_startup_failed{{reason={reason}}} 1",
+            ])
         lines = [
             '# HELP worldbuilder_requests_total Total HTTP requests received',
             '# TYPE worldbuilder_requests_total counter',
@@ -91,6 +138,9 @@ class WorldBuilderService:
             '# HELP worldbuilder_scene_objects Scene objects present in /World',
             '# TYPE worldbuilder_scene_objects gauge',
             f"worldbuilder_scene_objects {metrics['scene_object_count']}",
+            '# HELP worldbuilder_objects_queried Total objects inspected by query endpoints',
+            '# TYPE worldbuilder_objects_queried counter',
+            f"worldbuilder_objects_queried {metrics.get('objects_queried', 0)}",
         ]
         return '\n'.join(lines)
 
@@ -109,7 +159,12 @@ class WorldBuilderService:
         )
         response = self._scene_builder.add_element_to_stage(element)
         if response.get('success'):
-            self._stats['scene_elements_created'] = self._stats.get('scene_elements_created', 0) + 1
+            increment_elements = getattr(self._api, 'increment_elements_created', None)
+            if callable(increment_elements):
+                increment_elements(1)
+            increment_success = getattr(self._api, 'increment_successful_requests', None)
+            if callable(increment_success):
+                increment_success()
         return response
 
     def create_batch(self, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -165,35 +220,69 @@ class WorldBuilderService:
     def get_scene(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         path = payload.get('path', '/World')
         include_metadata = payload.get('include_metadata', True)
-        return self._scene_builder.get_scene_contents(path, include_metadata)
+        return self._execute_on_main_thread(
+            lambda: self._scene_builder.get_scene_contents(path, include_metadata),
+            error_code='GET_SCENE_FAILED'
+        )
 
     def get_scene_status(self) -> Dict[str, Any]:
-        stage = None
-        try:
-            stage = self._scene_builder._usd_context.get_stage()
-        except Exception:
+        def _compute_status():
             stage = None
+            try:
+                stage = self._scene_builder._usd_context.get_stage()
+            except Exception:
+                stage = None
 
-        if not stage:
-            return error_response('STAGE_UNAVAILABLE', 'No USD stage available')
+            if not stage:
+                return error_response('STAGE_UNAVAILABLE', 'No USD stage available')
 
-        world_prim = stage.GetPrimAtPath('/World')
-        if not world_prim or not world_prim.IsValid():
-            return error_response('STAGE_UNAVAILABLE', "'/World' prim not found")
+            world_prim = stage.GetPrimAtPath('/World')
+            if not world_prim or not world_prim.IsValid():
+                return error_response('STAGE_UNAVAILABLE', "'/World' prim not found")
 
-        stats = self._scene_builder.get_statistics()
-        scene_info = {
-            'has_stage': True,
-            'prim_count': stats.get('total_prims', 0),
-            'asset_count': stats.get('geometric_prims', 0),
-            'queue_status': stats.get('queue_status', {}),
-            'batch_statistics': stats.get('batch_statistics', {}),
-        }
-        return {'success': True, 'scene': scene_info}
+            stats = self._scene_builder.get_statistics()
+            scene_info = {
+                'has_stage': True,
+                'prim_count': stats.get('total_prims', 0),
+                'asset_count': stats.get('geometric_prims', 0),
+                'queue_status': stats.get('queue_status', {}),
+                'batch_statistics': stats.get('batch_statistics', {}),
+            }
+            return {'success': True, 'scene': scene_info}
+
+        return self._execute_on_main_thread(_compute_status, error_code='SCENE_STATUS_FAILED')
 
     def list_elements(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         filter_type = payload.get('filter_type', '') if payload else ''
-        return self._scene_builder.list_elements_in_scene(filter_type)
+        page = max(1, int(payload.get('page', 1)))
+        page_size = max(1, min(int(payload.get('page_size', 50)), 500))
+
+        def _list_elements():
+            result = self._scene_builder.list_elements_in_scene(filter_type)
+            if not isinstance(result, dict) or not result.get('success', False):
+                return result
+
+            elements = result.get('elements', [])
+            total = len(elements)
+            start = (page - 1) * page_size
+            end = start + page_size
+            paged = elements[start:end]
+
+            return {
+                **result,
+                'elements': paged,
+                'pagination': {
+                    'page': page,
+                    'page_size': page_size,
+                    'total_items': total,
+                    'total_pages': max(1, (total + page_size - 1) // page_size),
+                },
+            }
+
+        return self._execute_on_main_thread(
+            _list_elements,
+            error_code='LIST_ELEMENTS_FAILED'
+        )
 
     def get_batch_info(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         batch_name = payload.get('batch_name')
@@ -203,10 +292,16 @@ class WorldBuilderService:
                 'batch_name is required',
                 details={'parameter': 'batch_name'}
             )
-        return self._scene_builder.get_batch_info(batch_name)
+        return self._execute_on_main_thread(
+            lambda: self._scene_builder.get_batch_info(batch_name),
+            error_code='BATCH_INFO_FAILED'
+        )
 
     def list_batches(self) -> Dict[str, Any]:
-        return self._scene_builder.list_batches()
+        return self._execute_on_main_thread(
+            self._scene_builder.list_batches,
+            error_code='LIST_BATCHES_FAILED'
+        )
 
     def get_request_status(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         request_id = payload.get('request_id')
@@ -231,7 +326,10 @@ class WorldBuilderService:
                 details={'parameter': 'type'}
             )
         if hasattr(self._api, '_query_objects_by_type'):
-            normalized = self._api._query_objects_by_type(object_type)
+            normalized = self._execute_on_main_thread(
+                lambda: self._api._query_objects_by_type(object_type),
+                error_code='QUERY_OBJECTS_FAILED'
+            )
             if isinstance(normalized, dict) and normalized.get('success', True) and 'query_type' not in normalized:
                 normalized['query_type'] = object_type
             return normalized
@@ -249,7 +347,10 @@ class WorldBuilderService:
         min_bounds = ensure_vector3(min_bounds)
         max_bounds = ensure_vector3(max_bounds)
         if hasattr(self._api, '_query_objects_in_bounds'):
-            return self._api._query_objects_in_bounds(min_bounds, max_bounds)
+            return self._execute_on_main_thread(
+                lambda: self._api._query_objects_in_bounds(min_bounds, max_bounds),
+                error_code='QUERY_OBJECTS_IN_BOUNDS_FAILED'
+            )
         return error_response('HELPER_UNAVAILABLE', 'Bounds query helper unavailable')
 
     def query_objects_near_point(self, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -263,7 +364,10 @@ class WorldBuilderService:
         point = ensure_vector3(point)
         radius = payload.get('radius', 5.0)
         if hasattr(self._api, '_query_objects_near_point'):
-            return self._api._query_objects_near_point(point, radius)
+            return self._execute_on_main_thread(
+                lambda: self._api._query_objects_near_point(point, radius),
+                error_code='QUERY_OBJECTS_NEAR_POINT_FAILED'
+            )
         return error_response('HELPER_UNAVAILABLE', 'Near-point query helper unavailable')
 
     def calculate_bounds(self, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -275,7 +379,10 @@ class WorldBuilderService:
                 details={'parameter': 'objects'}
             )
         if hasattr(self._api, '_calculate_bounds'):
-            return self._api._calculate_bounds(objects)
+            return self._execute_on_main_thread(
+                lambda: self._api._calculate_bounds(objects),
+                error_code='CALCULATE_BOUNDS_FAILED'
+            )
         return error_response('HELPER_UNAVAILABLE', 'Bounds helper unavailable')
 
     def find_ground_level(self, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -289,7 +396,10 @@ class WorldBuilderService:
         position = ensure_vector3(position)
         radius = payload.get('search_radius', 10.0)
         if hasattr(self._api, '_find_ground_level'):
-            return self._api._find_ground_level(position, radius)
+            return self._execute_on_main_thread(
+                lambda: self._api._find_ground_level(position, radius),
+                error_code='FIND_GROUND_LEVEL_FAILED'
+            )
         return error_response(
             'HELPER_UNAVAILABLE',
             'Ground level helper unavailable'
@@ -307,7 +417,10 @@ class WorldBuilderService:
                 details={'parameters': ['objects', 'axis']}
             )
         if hasattr(self._api, '_align_objects'):
-            return self._api._align_objects(objects, axis, alignment, spacing)
+            return self._execute_on_main_thread(
+                lambda: self._api._align_objects(objects, axis, alignment, spacing),
+                error_code='ALIGN_OBJECTS_FAILED'
+            )
         return error_response('HELPER_UNAVAILABLE', 'Align helper unavailable')
 
     # ------------------------------------------------------------------

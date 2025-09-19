@@ -11,17 +11,26 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _WORLD_BUILDER_ROOT = _PROJECT_ROOT / "omni.agent.worldbuilder" / "omni"
 _WORLD_VIEWER_ROOT = _PROJECT_ROOT / "omni.agent.worldviewer" / "omni"
 _WORLD_SURVEYOR_ROOT = _PROJECT_ROOT / "omni.agent.worldsurveyor" / "omni"
+_WORLD_RECORDER_ROOT = _PROJECT_ROOT / "omni.agent.worldrecorder" / "omni"
+_WORLD_STREAMER_RTMP_ROOT = _PROJECT_ROOT / "omni.agent.worldstreamer.rtmp" / "omni"
+_WORLD_STREAMER_SRT_ROOT = _PROJECT_ROOT / "omni.agent.worldstreamer.srt" / "omni"
 
 _PACKAGE_PATHS = {
     "omni": [
         _WORLD_BUILDER_ROOT,
         _WORLD_VIEWER_ROOT,
         _WORLD_SURVEYOR_ROOT,
+        _WORLD_RECORDER_ROOT,
+        _WORLD_STREAMER_RTMP_ROOT,
+        _WORLD_STREAMER_SRT_ROOT,
     ],
     "omni.agent": [
         _WORLD_BUILDER_ROOT / "agent",
         _WORLD_VIEWER_ROOT / "agent",
         _WORLD_SURVEYOR_ROOT / "agent",
+        _WORLD_RECORDER_ROOT / "agent",
+        _WORLD_STREAMER_RTMP_ROOT / "agent",
+        _WORLD_STREAMER_SRT_ROOT / "agent",
     ],
     "omni.agent.worldbuilder": [
         _WORLD_BUILDER_ROOT / "agent" / "worldbuilder",
@@ -31,6 +40,19 @@ _PACKAGE_PATHS = {
     ],
     "omni.agent.worldsurveyor": [
         _WORLD_SURVEYOR_ROOT / "agent" / "worldsurveyor",
+    ],
+    "omni.agent.worldrecorder": [
+        _WORLD_RECORDER_ROOT / "agent" / "worldrecorder",
+    ],
+    "omni.agent.worldstreamer": [
+        _WORLD_STREAMER_RTMP_ROOT / "agent" / "worldstreamer",
+        _WORLD_STREAMER_SRT_ROOT / "agent" / "worldstreamer",
+    ],
+    "omni.agent.worldstreamer.rtmp": [
+        _WORLD_STREAMER_RTMP_ROOT / "agent" / "worldstreamer" / "rtmp",
+    ],
+    "omni.agent.worldstreamer.srt": [
+        _WORLD_STREAMER_SRT_ROOT / "agent" / "worldstreamer" / "srt",
     ],
 }
 

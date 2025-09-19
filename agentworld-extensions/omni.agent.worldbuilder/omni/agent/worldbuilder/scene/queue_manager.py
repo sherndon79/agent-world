@@ -8,7 +8,7 @@ with proper thread safety and request lifecycle management.
 import logging
 import time
 import threading
-from typing import Dict, Any, List, Optional, Callable, TYPE_CHECKING
+from typing import Dict, Any, List, Optional, Callable, TYPE_CHECKING, Tuple
 from collections import OrderedDict
 
 from .scene_types import (
@@ -19,6 +19,7 @@ from .scene_types import (
     RequestState,
     RequestType
 )
+from ..errors import error_response
 
 if TYPE_CHECKING:  # pragma: no cover - only for typing
     from ..config import WorldBuilderConfig
@@ -39,6 +40,7 @@ class WorldBuilderQueueManager:
         self._batch_queue = []
         self._removal_queue = []
         self._asset_queue = []
+        self._sync_queue: List[Tuple[Callable[[], Dict[str, Any]], threading.Event, List[Dict[str, Any]], str]] = []
         self._completed_requests = OrderedDict()  # O(1) FIFO eviction
         self._request_counter = 0
         self._max_completed_requests = (
@@ -320,6 +322,29 @@ class WorldBuilderQueueManager:
             )
             
             try:
+                # Process synchronous operation queue first to unblock waiting threads
+                while self._sync_queue and processed_count < max_operations_per_update:
+                    operation, event, sink, error_code = self._sync_queue.pop(0)
+                    try:
+                        result = operation()
+                    except Exception as exc:
+                        result = error_response(error_code, str(exc))
+                    sink.append(result)
+                    event.set()
+                    processed_count += 1
+
+                if processed_count >= max_operations_per_update:
+                    return {
+                        'processed_count': processed_count,
+                        'queue_lengths': {
+                            'elements': len(self._element_queue),
+                            'batches': len(self._batch_queue),
+                            'assets': len(self._asset_queue),
+                            'removals': len(self._removal_queue)
+                        },
+                        'completed_requests': len(self._completed_requests)
+                    }
+
                 # Process element queue
                 while self._element_queue and processed_count < max_operations_per_update:
                     request = self._element_queue.pop(0)
@@ -438,7 +463,7 @@ class WorldBuilderQueueManager:
                     'processed_count': processed_count,
                     'error': str(e)
                 }
-    
+
     def get_queue_status(self) -> Dict[str, Any]:
         """Get current queue status and statistics."""
         with self._lock:
@@ -463,3 +488,15 @@ class WorldBuilderQueueManager:
         with self._lock:
             self._completed_requests.clear()
             logger.info("Cleared completed requests cache")
+
+    def run_sync_operation(self, operation: Callable[[], Dict[str, Any]], *, error_code: str, timeout: float = 5.0) -> Dict[str, Any]:
+        """Schedule a callable to run on the main thread and wait for result."""
+        event = threading.Event()
+        sink: List[Dict[str, Any]] = []
+
+        with self._lock:
+            self._sync_queue.append((operation, event, sink, error_code))
+
+        if event.wait(timeout):
+            return sink[0] if sink else error_response(error_code, 'No result returned')
+        return error_response(error_code, f'Operation timed out after {timeout}s')

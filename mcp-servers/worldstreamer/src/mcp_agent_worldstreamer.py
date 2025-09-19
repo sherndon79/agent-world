@@ -1,603 +1,231 @@
 #!/usr/bin/env python3
-"""
-WorldStreamer MCP Server
+"""StdIO MCP server for WorldStreamer using shared transport contracts."""
 
-Model Context Protocol server for Isaac Sim RTMP streaming control.
-Provides AI agents with tools to manage streaming sessions through HTTP API.
-"""
+from __future__ import annotations
 
 import asyncio
 import json
 import logging
-import httpx
-from typing import Any, Sequence
-from pathlib import Path
+import os
+import sys
+from typing import Any, Dict, List
 
+import aiohttp
+from mcp.server import Server
 from mcp.server.models import InitializationOptions
-from mcp.server import NotificationOptions, Server
-from mcp.types import (
-    Resource, Tool, TextContent, ImageContent, EmbeddedResource
-)
+from mcp.server.stdio import stdio_server
+from mcp.server.lowlevel import NotificationOptions
+from mcp.types import Tool, TextContent
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("worldstreamer-server")
+# Shared helpers ----------------------------------------------------------------
+shared_path = os.path.join(os.path.dirname(__file__), '..', '..', 'shared')
+if shared_path not in sys.path:
+    sys.path.insert(0, shared_path)
 
-# Configuration
-# Default base URLs for auto-detection - can be overridden via environment variable WORLDSTREAMER_BASE_URL
-# Ports come from agentworld-extensions/agent-world-config.json
-DEFAULT_RTMP_URL = "http://localhost:8906"  # worldstreamer.rtmp.server_port
-DEFAULT_SRT_URL = "http://localhost:8908"   # worldstreamer.srt.server_port
-REQUEST_TIMEOUT = 30.0
-HEALTH_CHECK_TIMEOUT = 5.0
+from logging_setup import setup_logging
+from mcp_base_client import MCPBaseClient
 
-class WorldStreamerMCPServer:
-    """MCP server for WorldStreamer streaming control with auto-detection."""
-    
-    def __init__(self, base_url: str = None):
-        """
-        Initialize WorldStreamer MCP server with auto-detection.
-        
-        Args:
-            base_url: Optional override base URL for WorldStreamer API
-        """
-        self.rtmp_url = DEFAULT_RTMP_URL.rstrip('/')
-        self.srt_url = DEFAULT_SRT_URL.rstrip('/')
-        self.base_url = None  # Will be set by auto-detection
-        self.active_protocol = None  # 'rtmp' or 'srt'
-        
-        # Override URLs if base_url provided
-        if base_url:
-            self.base_url = base_url.rstrip('/')
-            self.active_protocol = "manual"
-            logger.info(f"Manual mode: Using provided base URL: {self.base_url}")
-        
-        self.server = Server("worldstreamer-server")
-        
-        # Register tools and handlers
-        self._register_tools()
-        self._register_handlers()
-        
-        logger.info(f"WorldStreamer MCP server initialized - RTMP: {self.rtmp_url}, SRT: {self.srt_url}")
-    
-    async def _detect_active_service(self) -> str:
-        """
-        Auto-detect which WorldStreamer service is running.
-        
-        Returns:
-            Base URL of the active service
-            
-        Raises:
-            Exception if no service is available
-        """
-        if self.base_url and self.active_protocol == "manual":
-            return self.base_url
-        
-        # Test both services
-        services = [
-            (self.rtmp_url, "RTMP"),
-            (self.srt_url, "SRT")
-        ]
-        
-        for url, protocol in services:
+# Extension helpers --------------------------------------------------------------
+extensions_path = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'agentworld-extensions')
+if os.path.exists(extensions_path) and extensions_path not in sys.path:
+    sys.path.insert(0, extensions_path)
+
+from agent_world_transport import normalize_transport_response
+from omni.agent.worldstreamer.rtmp.transport import ToolContract, TOOL_CONTRACTS, MCP_OPERATIONS
+from omni.agent.worldstreamer.rtmp.errors import error_response, WorldStreamerError
+
+try:
+    from agent_world_config import create_worldstreamer_config
+    CONFIG = create_worldstreamer_config()
+except ImportError:  # pragma: no cover - fallback when extensions not available
+    CONFIG = None
+
+LOGGER = logging.getLogger('worldstreamer-stdio')
+SERVER = Server('worldstreamer')
+
+# Legacy tool name for backward compatibility
+LEGACY_ALIASES = {
+    'worldstreamer_health': 'worldstreamer_health_check',
+}
+
+ALIAS_CONTRACTS: List[ToolContract] = [
+    ToolContract(
+        operation=MCP_OPERATIONS[target].operation,
+        http_route=MCP_OPERATIONS[target].http_route,
+        http_method=MCP_OPERATIONS[target].http_method,
+        mcp_tool=alias,
+    )
+    for alias, target in LEGACY_ALIASES.items()
+]
+
+ALL_CONTRACTS: List[ToolContract] = TOOL_CONTRACTS + ALIAS_CONTRACTS
+CONTRACT_MAP: Dict[str, ToolContract] = {contract.mcp_tool: contract for contract in ALL_CONTRACTS}
+
+# Tool schemas -------------------------------------------------------------------
+DEFAULT_SCHEMA: Dict[str, Any] = {"type": "object", "additionalProperties": True}
+
+START_SCHEMA = {
+    'type': 'object',
+    'properties': {
+        'server_ip': {
+            'type': 'string',
+            'description': 'Optional server IP override for generated streaming URLs'
+        }
+    },
+    'additionalProperties': False,
+}
+
+SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
+    'worldstreamer_start_streaming': START_SCHEMA,
+    'worldstreamer_get_streaming_urls': START_SCHEMA,
+}
+
+TOOL_DEFINITIONS: List[Tool] = [
+    Tool(
+        name=contract.mcp_tool,
+        description=f"Proxy for WorldStreamer operation '{contract.operation}'",
+        inputSchema=SCHEMA_OVERRIDES.get(contract.mcp_tool, DEFAULT_SCHEMA),
+    )
+    for contract in ALL_CONTRACTS
+]
+
+
+class WorldStreamerClient:
+    """HTTP client wrapper that auto-detects RTMP vs SRT endpoints."""
+
+    def __init__(self) -> None:
+        self.rtmp_url = os.getenv('WORLDSTREAMER_RTMP_URL', 'http://localhost:8906').rstrip('/')
+        self.srt_url = os.getenv('WORLDSTREAMER_SRT_URL', 'http://localhost:8908').rstrip('/')
+        manual_url = os.getenv('WORLDSTREAMER_BASE_URL')
+
+        self.base_url = manual_url.rstrip('/') if manual_url else None
+        self.active_protocol = 'manual' if manual_url else None
+        self.client: MCPBaseClient | None = None
+
+    async def perform(self, tool_name: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        contract = CONTRACT_MAP.get(tool_name)
+        if not contract:
+            return error_response('UNKNOWN_TOOL', f'No contract for tool {tool_name}')
+
+        await self._ensure_client()
+        timeout = self._timeout(tool_name)
+        try:
+            if contract.http_method.upper() == 'GET':
+                response = await self.client.get(  # type: ignore[union-attr]
+                    f"/{contract.http_route}",
+                    params=self._prepare_params(payload),
+                    timeout=timeout,
+                )
+            else:
+                response = await self.client.post(  # type: ignore[union-attr]
+                    f"/{contract.http_route}",
+                    json=payload,
+                    timeout=timeout,
+                )
+            normalized = normalize_transport_response(contract.operation, response, default_error_code=f'{contract.operation.upper()}_FAILED')
+            if self.active_protocol:
+                normalized.setdefault('details', {})['active_protocol'] = self.active_protocol
+            if self.base_url:
+                normalized.setdefault('details', {})['base_url'] = self.base_url
+            return normalized
+        except asyncio.TimeoutError:
+            return error_response('REQUEST_TIMEOUT', 'Request timed out', details={'operation': contract.operation})
+        except aiohttp.ClientError as exc:
+            return error_response('CONNECTION_ERROR', f'Connection error: {exc}', details={'operation': contract.operation})
+        except Exception as exc:  # pragma: no cover - unexpected failure
+            LOGGER.exception('tool_execution_failed', extra={'tool': tool_name, 'error': str(exc)})
+            return error_response(f'{contract.operation.upper()}_FAILED', str(exc))
+
+    async def _ensure_client(self) -> None:
+        if not self.base_url or self.active_protocol != 'manual':
+            await self._detect_active_service()
+        if self.client is None or self.client.base_url != self.base_url:
+            self.client = MCPBaseClient('WORLDSTREAMER', self.base_url)
+            await self.client.initialize()
+
+    async def _detect_active_service(self) -> None:
+        if self.active_protocol == 'manual' and self.base_url:
+            return
+
+        for url, protocol in ((self.rtmp_url, 'rtmp'), (self.srt_url, 'srt')):
             try:
-                async with httpx.AsyncClient(timeout=HEALTH_CHECK_TIMEOUT) as client:
-                    response = await client.get(f"{url}/health")
-                    if response.status_code == 200:
-                        result = response.json()
-                        if result.get('success'):
-                            self.base_url = url
-                            self.active_protocol = protocol.lower()
-                            logger.info(f"Auto-detected active service: {protocol} at {url}")
-                            return url
-            except Exception as e:
-                logger.debug(f"{protocol} service at {url} not available: {e}")
+                async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=5)) as session:
+                    async with session.get(f"{url}/health") as response:
+                        if response.status == 200:
+                            payload = await response.json()
+                            if payload.get('success'):
+                                self.base_url = url
+                                self.active_protocol = protocol
+                                LOGGER.info('Detected %s WorldStreamer at %s', protocol.upper(), url)
+                                return
+            except Exception:  # pragma: no cover - detection best effort
                 continue
-        
-        # No service available
-        raise Exception(f"No WorldStreamer service available at {self.rtmp_url} or {self.srt_url}")
-    
-    def _register_tools(self):
-        """Register MCP tools for WorldStreamer operations."""
-        
-        @self.server.list_tools()
-        async def handle_list_tools() -> list[Tool]:
-            """List available WorldStreamer tools."""
-            return [
-                Tool(
-                    name="worldstreamer_start_streaming",
-                    description="Start Isaac Sim streaming session (auto-detects RTMP/SRT)",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {
-                            "server_ip": {
-                                "type": "string",
-                                "description": "Optional server IP override for streaming URLs"
-                            }
-                        },
-                        "additionalProperties": False
-                    }
-                ),
-                Tool(
-                    name="worldstreamer_stop_streaming", 
-                    description="Stop active Isaac Sim streaming session (auto-detects RTMP/SRT)",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {},
-                        "additionalProperties": False
-                    }
-                ),
-                Tool(
-                    name="worldstreamer_get_status",
-                    description="Get current streaming status and information (auto-detects RTMP/SRT)",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {},
-                        "additionalProperties": False
-                    }
-                ),
-                Tool(
-                    name="worldstreamer_get_streaming_urls",
-                    description="Get streaming client URLs for connection (auto-detects RTMP/SRT)",
-                    inputSchema={
-                        "type": "object", 
-                        "properties": {
-                            "server_ip": {
-                                "type": "string",
-                                "description": "Optional server IP override for streaming URLs"
-                            }
-                        },
-                        "additionalProperties": False
-                    }
-                ),
-                Tool(
-                    name="worldstreamer_validate_environment",
-                    description="Validate Isaac Sim environment for streaming (auto-detects RTMP/SRT)",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {},
-                        "additionalProperties": False
-                    }
-                ),
-                Tool(
-                    name="worldstreamer_health_check", 
-                    description="Check WorldStreamer extension health and connectivity (auto-detects RTMP/SRT)",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {},
-                        "additionalProperties": False
-                    }
-                )
-            ]
-    
-    def _register_handlers(self):
-        """Register MCP request handlers."""
-        
-        @self.server.call_tool()
-        async def handle_call_tool(name: str, arguments: dict | None) -> list[TextContent]:
-            """Handle tool execution requests."""
-            if arguments is None:
-                arguments = {}
-            
-            try:
-                # Route to appropriate handler
-                if name == "worldstreamer_start_streaming":
-                    return await self._start_streaming(arguments)
-                elif name == "worldstreamer_stop_streaming":
-                    return await self._stop_streaming(arguments)
-                elif name == "worldstreamer_get_status":
-                    return await self._get_status(arguments)
-                elif name == "worldstreamer_get_streaming_urls":
-                    return await self._get_streaming_urls(arguments)
-                elif name == "worldstreamer_validate_environment":
-                    return await self._validate_environment(arguments)
-                elif name == "worldstreamer_health_check":
-                    return await self._health_check(arguments)
-                else:
-                    return [TextContent(
-                        type="text",
-                        text=f"Unknown tool: {name}"
-                    )]
-                    
-            except Exception as e:
-                logger.error(f"Tool execution error for {name}: {e}")
-                return [TextContent(
-                    type="text",
-                    text=f"Tool execution failed: {str(e)}"
-                )]
-    
-    async def _start_streaming(self, arguments: dict) -> list[TextContent]:
-        """Start streaming session (auto-detects RTMP/SRT)."""
-        try:
-            # Auto-detect active service
-            base_url = await self._detect_active_service()
-            
-            async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
-                response = await client.post(
-                    f"{base_url}/streaming/start",
-                    json=arguments
-                )
-                response.raise_for_status()
-                result = response.json()
-                
-                if result.get('success'):
-                    # Format successful response with protocol info
-                    protocol_name = self.active_protocol.upper() if self.active_protocol != "manual" else "Streaming"
-                    message_lines = [f"✅ **{protocol_name} Streaming Started Successfully**", ""]
-                    
-                    if 'streaming_info' in result:
-                        info = result['streaming_info']
-                        port_label = f"**{protocol_name} Port:**" if protocol_name != "Streaming" else "**Port:**"
-                        message_lines.extend([
-                            f"{port_label} {info.get('rtmp_port', info.get('port', 'unknown'))}",
-                            f"**FPS:** {info.get('fps', 'unknown')}",
-                            f"**Resolution:** {info.get('resolution', 'unknown')}",
-                            f"**Start Time:** {info.get('start_time', 'unknown')}", 
-                            ""
-                        ])
-                        
-                        if 'urls' in info:
-                            urls = info['urls']
-                            message_lines.append("**Streaming URLs:**")
-                            if 'rtmp_stream_url' in urls:
-                                message_lines.append(f"• RTMP Stream: {urls['rtmp_stream_url']}")
-                            if 'local_network_rtmp_url' in urls:
-                                message_lines.append(f"• Local Network: {urls['local_network_rtmp_url']}")
-                            if 'public_rtmp_url' in urls:
-                                message_lines.append(f"• Public: {urls['public_rtmp_url']}")
-                            if 'client_urls' in urls and 'obs_studio' in urls['client_urls']:
-                                message_lines.append(f"• OBS Studio: {urls['client_urls']['obs_studio']}")
-                            message_lines.append("")
-                            
-                            if 'recommendations' in urls:
-                                message_lines.append("**Recommendations:**")
-                                for rec in urls['recommendations']:
-                                    message_lines.append(f"• {rec}")
-                    
-                    return [TextContent(type="text", text="\n".join(message_lines))]
-                else:
-                    return [TextContent(
-                        type="text",
-                        text=f"❌ **Streaming Start Failed**\n\nError: {result.get('error', 'Unknown error')}"
-                    )]
-                    
-        except httpx.HTTPError as e:
-            logger.error(f"HTTP error starting streaming: {e}")
-            return [TextContent(
-                type="text", 
-                text=f"❌ **HTTP Error**\n\nFailed to start streaming: {str(e)}"
-            )]
-        except Exception as e:
-            logger.error(f"Error starting streaming: {e}")
-            return [TextContent(
-                type="text",
-                text=f"❌ **Error**\n\nFailed to start streaming: {str(e)}"
-            )]
-    
-    async def _stop_streaming(self, arguments: dict) -> list[TextContent]:
-        """Stop streaming session (auto-detects RTMP/SRT)."""
-        try:
-            # Auto-detect active service
-            base_url = await self._detect_active_service()
-            
-            async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
-                response = await client.post(f"{base_url}/streaming/stop")
-                response.raise_for_status()
-                result = response.json()
-                
-                if result.get('success'):
-                    # Format successful response
-                    message_lines = ["✅ **Streaming Stopped Successfully**", ""]
-                    
-                    if 'session_info' in result:
-                        info = result['session_info'] 
-                        message_lines.extend([
-                            f"**Duration:** {info.get('duration_seconds', 'unknown')} seconds",
-                            f"**Stop Time:** {info.get('stop_time', 'unknown')}"
-                        ])
-                    
-                    return [TextContent(type="text", text="\n".join(message_lines))]
-                else:
-                    return [TextContent(
-                        type="text",
-                        text=f"❌ **Streaming Stop Failed**\n\nError: {result.get('error', 'Unknown error')}"
-                    )]
-                    
-        except httpx.HTTPError as e:
-            logger.error(f"HTTP error stopping streaming: {e}")
-            return [TextContent(
-                type="text",
-                text=f"❌ **HTTP Error**\n\nFailed to stop streaming: {str(e)}"
-            )]
-        except Exception as e:
-            logger.error(f"Error stopping streaming: {e}")
-            return [TextContent(
-                type="text", 
-                text=f"❌ **Error**\n\nFailed to stop streaming: {str(e)}"
-            )]
-    
-    async def _get_status(self, arguments: dict) -> list[TextContent]:
-        """Get streaming status (auto-detects RTMP/SRT)."""
-        try:
-            # Auto-detect active service
-            base_url = await self._detect_active_service()
-            
-            async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
-                response = await client.get(f"{base_url}/streaming/status")
-                response.raise_for_status()
-                result = response.json()
-                
-                if result.get('success'):
-                    status = result.get('status', {})
-                    
-                    # Format status response with protocol info
-                    protocol_name = self.active_protocol.upper() if self.active_protocol != "manual" else "Streaming"
-                    message_lines = [f"📊 **{protocol_name} Streaming Status**", ""]
-                    message_lines.extend([
-                        f"**Protocol:** {protocol_name}",
-                        f"**State:** {status.get('state', 'unknown')}",
-                        f"**Active:** {'Yes' if status.get('is_active') else 'No'}",
-                        f"**Port:** {status.get('port', 'unknown')}"
-                    ])
-                    
-                    if status.get('is_active') and status.get('uptime_seconds'):
-                        uptime = status['uptime_seconds']
-                        hours = int(uptime // 3600)
-                        minutes = int((uptime % 3600) // 60)
-                        seconds = int(uptime % 60)
-                        message_lines.append(f"**Uptime:** {hours:02d}:{minutes:02d}:{seconds:02d}")
-                    
-                    if status.get('is_error') and status.get('error_message'):
-                        message_lines.extend(["", f"**Error:** {status['error_message']}"])
-                    
-                    if status.get('urls'):
-                        urls = status['urls']
-                        message_lines.extend(["", "**URLs:**"])
-                        for key, url in urls.items():
-                            if key.endswith('_url') and url:
-                                name = key.replace('_url', '').replace('_', ' ').title()
-                                message_lines.append(f"• {name}: {url}")
-                    
-                    return [TextContent(type="text", text="\n".join(message_lines))]
-                else:
-                    return [TextContent(
-                        type="text",
-                        text=f"❌ **Status Check Failed**\n\nError: {result.get('error', 'Unknown error')}"
-                    )]
-                    
-        except httpx.HTTPError as e:
-            logger.error(f"HTTP error getting status: {e}")
-            return [TextContent(
-                type="text",
-                text=f"❌ **HTTP Error**\n\nFailed to get status: {str(e)}"
-            )]
-        except Exception as e:
-            logger.error(f"Error getting status: {e}")
-            return [TextContent(
-                type="text",
-                text=f"❌ **Error**\n\nFailed to get status: {str(e)}"
-            )]
-    
-    async def _get_streaming_urls(self, arguments: dict) -> list[TextContent]:
-        """Get streaming URLs (auto-detects RTMP/SRT)."""
-        try:
-            # Auto-detect active service
-            base_url = await self._detect_active_service()
-            
-            params = {}
-            if 'server_ip' in arguments:
-                params['server_ip'] = arguments['server_ip']
-            
-            async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
-                response = await client.get(
-                    f"{base_url}/streaming/urls",
-                    params=params
-                )
-                response.raise_for_status()
-                result = response.json()
-                
-                if result.get('success'):
-                    urls = result.get('urls', {})
-                    
-                    # Format URLs response
-                    message_lines = ["🔗 **Streaming URLs**", ""]
-                    
-                    # Protocol-specific URL mappings
-                    if self.active_protocol == "rtmp":
-                        url_mapping = {
-                            'rtmp_stream_url': 'RTMP Stream',
-                            'local_network_rtmp_url': 'Local Network RTMP',
-                            'public_rtmp_url': 'Public RTMP'
-                        }
-                    else:  # SRT
-                        url_mapping = {
-                            'srt_uri': 'SRT Stream'
-                        }
-                    
-                    for key, label in url_mapping.items():
-                        if key in urls and urls[key]:
-                            message_lines.append(f"**{label}:** {urls[key]}")
-                    
-                    if 'connection_info' in urls:
-                        info = urls['connection_info']
-                        message_lines.extend(["", "**Connection Info:**"])
-                        message_lines.append(f"• Protocol: {info.get('protocol', 'unknown')}")
-                        message_lines.append(f"• Port: {info.get('port', 'unknown')}")
-                        if 'local_ip' in info:
-                            message_lines.append(f"• Local IP: {info['local_ip']}")
-                        if 'public_ip' in info:
-                            message_lines.append(f"• Public IP: {info['public_ip']}")
-                    
-                    if 'recommendations' in urls:
-                        message_lines.extend(["", "**Recommendations:**"])
-                        for rec in urls['recommendations']:
-                            message_lines.append(f"• {rec}")
-                    
-                    return [TextContent(type="text", text="\n".join(message_lines))]
-                else:
-                    return [TextContent(
-                        type="text",
-                        text=f"❌ **URL Generation Failed**\n\nError: {result.get('error', 'Unknown error')}"
-                    )]
-                    
-        except httpx.HTTPError as e:
-            logger.error(f"HTTP error getting URLs: {e}")
-            return [TextContent(
-                type="text",
-                text=f"❌ **HTTP Error**\n\nFailed to get URLs: {str(e)}"
-            )]
-        except Exception as e:
-            logger.error(f"Error getting URLs: {e}")
-            return [TextContent(
-                type="text",
-                text=f"❌ **Error**\n\nFailed to get URLs: {str(e)}"
-            )]
-    
-    async def _validate_environment(self, arguments: dict) -> list[TextContent]:
-        """Validate streaming environment (auto-detects RTMP/SRT)."""
-        try:
-            # Auto-detect active service
-            base_url = await self._detect_active_service()
-            
-            async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
-                response = await client.get(f"{base_url}/streaming/environment/validate")
-                response.raise_for_status()
-                result = response.json()
-                
-                if result.get('success'):
-                    validation = result.get('validation', {})
-                    
-                    # Format validation response
-                    status_icon = "✅" if validation.get('valid') else "⚠️"
-                    message_lines = [f"{status_icon} **Environment Validation**", ""]
-                    message_lines.append(f"**Valid:** {'Yes' if validation.get('valid') else 'No'}")
-                    
-                    if validation.get('errors'):
-                        message_lines.extend(["", "**Errors:**"])
-                        for error in validation['errors']:
-                            message_lines.append(f"❌ {error}")
-                    
-                    if validation.get('warnings'):
-                        message_lines.extend(["", "**Warnings:**"])
-                        for warning in validation['warnings']:
-                            message_lines.append(f"⚠️ {warning}")
-                    
-                    if validation.get('recommendations'):
-                        message_lines.extend(["", "**Recommendations:**"])
-                        for rec in validation['recommendations']:
-                            message_lines.append(f"💡 {rec}")
-                    
-                    if validation.get('environment_details'):
-                        details = validation['environment_details']
-                        message_lines.extend(["", "**Environment Details:**"])
-                        for key, value in details.items():
-                            formatted_key = key.replace('_', ' ').title()
-                            message_lines.append(f"• {formatted_key}: {value}")
-                    
-                    return [TextContent(type="text", text="\n".join(message_lines))]
-                else:
-                    return [TextContent(
-                        type="text",
-                        text=f"❌ **Validation Failed**\n\nError: {result.get('error', 'Unknown error')}"
-                    )]
-                    
-        except httpx.HTTPError as e:
-            logger.error(f"HTTP error validating environment: {e}")
-            return [TextContent(
-                type="text",
-                text=f"❌ **HTTP Error**\n\nFailed to validate environment: {str(e)}"
-            )]
-        except Exception as e:
-            logger.error(f"Error validating environment: {e}")
-            return [TextContent(
-                type="text",
-                text=f"❌ **Error**\n\nFailed to validate environment: {str(e)}"
-            )]
-    
-    async def _health_check(self, arguments: dict) -> list[TextContent]:
-        """Check extension health (auto-detects RTMP/SRT)."""
-        try:
-            # Auto-detect active service
-            base_url = await self._detect_active_service()
-            
-            async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
-                response = await client.get(f"{base_url}/health")
-                response.raise_for_status()
-                result = response.json()
-                
-                if result.get('success'):
-                    # Unified agent world health format: success=true indicates healthy
-                    status = "healthy" if result.get('success') else "unhealthy"
-                    status_icon = "✅"
-                    protocol_name = self.active_protocol.upper() if self.active_protocol != "manual" else "WorldStreamer"
-                    
-                    message_lines = [f"{status_icon} **{protocol_name} Health Check**", ""]
-                    message_lines.extend([
-                        f"**Service:** {result.get('service', 'WorldStreamer')} ({protocol_name})",
-                        f"**Version:** {result.get('version', 'unknown')}",
-                        f"**Status:** {status.title()}",
-                        f"**URL:** {base_url}",
-                        f"**Timestamp:** {result.get('timestamp', 'unknown')}"
-                    ])
-                    
-                    # Note: Unified agent world health format is simple - no complex details
-                    
-                    return [TextContent(type="text", text="\n".join(message_lines))]
-                else:
-                    return [TextContent(
-                        type="text",
-                        text=f"❌ **Health Check Failed**\n\nError: {result.get('error', 'Unknown error')}"
-                    )]
-                    
-        except httpx.HTTPError as e:
-            logger.error(f"HTTP error in health check: {e}")
-            return [TextContent(
-                type="text",
-                text=f"❌ **HTTP Error**\n\nHealth check failed: {str(e)}"
-            )]
-        except Exception as e:
-            logger.error(f"Error in health check: {e}")
-            return [TextContent(
-                type="text",
-                text=f"❌ **Error**\n\nHealth check failed: {str(e)}"
-            )]
 
-# Server instance
-server_instance = None
+        raise WorldStreamerError('No WorldStreamer service available', details={'rtmp_url': self.rtmp_url, 'srt_url': self.srt_url})
 
-async def main():
-    """Main server entry point."""
-    global server_instance
-    
-    # Get base URL from environment (optional override)
-    import os
-    base_url = os.getenv("WORLDSTREAMER_BASE_URL")  # None if not set - enables auto-detection
-    
-    # Get version from centralized config
+    def _timeout(self, tool_name: str) -> float:
+        if CONFIG:
+            mapping = {
+                'worldstreamer_start_streaming': CONFIG.get('standard_timeout', 30.0),
+                'worldstreamer_stop_streaming': CONFIG.get('standard_timeout', 30.0),
+                'worldstreamer_get_status': CONFIG.get('standard_timeout', 30.0),
+                'worldstreamer_get_streaming_urls': CONFIG.get('standard_timeout', 30.0),
+                'worldstreamer_validate_environment': CONFIG.get('standard_timeout', 30.0),
+                'worldstreamer_health_check': CONFIG.get('simple_timeout', 5.0),
+            }
+            return mapping.get(tool_name, CONFIG.get('standard_timeout', 30.0))
+
+        defaults = {
+            'worldstreamer_health_check': 5.0,
+        }
+        return defaults.get(tool_name, 30.0)
+
+    @staticmethod
+    def _prepare_params(payload: Dict[str, Any]) -> Dict[str, Any]:
+        params: Dict[str, Any] = {}
+        for key, value in payload.items():
+            if isinstance(value, bool):
+                params[key] = 'true' if value else 'false'
+            else:
+                params[key] = value
+        return params
+
+
+CLIENT = WorldStreamerClient()
+
+
+@SERVER.list_tools()
+async def list_tools() -> List[Tool]:
+    return TOOL_DEFINITIONS
+
+
+@SERVER.call_tool()
+async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
+    payload = arguments or {}
+    result = await CLIENT.perform(name, payload)
+    return [TextContent(type='text', text=json.dumps(result, indent=2, sort_keys=True))]
+
+
+async def main() -> None:
+    setup_logging('worldstreamer-stdio')
     try:
-        from . import __version__ as server_version
-    except ImportError:
-        server_version = "0.1.0"  # Fallback
-    
-    # Create and run server (auto-detection mode if base_url is None)
-    server_instance = WorldStreamerMCPServer(base_url=base_url)
-    
-    # Run the server
-    from mcp.server.stdio import stdio_server
-    
-    async with stdio_server() as (read_stream, write_stream):
-        await server_instance.server.run(
-            read_stream,
-            write_stream,
-            InitializationOptions(
-                server_name="worldstreamer-server",
-                server_version=server_version,
-                capabilities=server_instance.server.get_capabilities(
-                    notification_options=NotificationOptions(),
-                    experimental_capabilities={}
-                )
+        async with stdio_server() as (read_stream, write_stream):
+            await SERVER.run(
+                read_stream,
+                write_stream,
+                InitializationOptions(
+                    server_name='worldstreamer',
+                    server_version='1.0.0',
+                    capabilities=SERVER.get_capabilities(
+                        notification_options=NotificationOptions(),
+                        experimental_capabilities={},
+                    ),
+                ),
             )
-        )
+    finally:
+        if CLIENT.client:
+            await CLIENT.client.close()
 
-if __name__ == "__main__":
+
+if __name__ == '__main__':
     asyncio.run(main())

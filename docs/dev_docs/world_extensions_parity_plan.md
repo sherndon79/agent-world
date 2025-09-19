@@ -36,6 +36,20 @@ This document captures the sequence we just walked through on WorldBuilder so we
 - Added headless regression coverage under `tests/worldsurveyor/*`, reusing the shared stubs for Isaac-only modules.
 - Next clean-ups: extract queue/camera helpers from the service into an adapter, and align group/waypoint validation with the database layer to avoid duplicated checks.
 
+### Completed: WorldRecorder (Phase 2–4)
+
+- Introduced `WorldRecorderService`/`WorldRecorderController` so HTTP + MCP share validation, error handling, and transport contracts.
+- Both stdio and streaming MCP servers now enumerate tools from `transport/contract.py`, returning JSON payloads through `normalize_transport_response`.
+- Added light controller unit tests (`tests/worldrecorder/test_worldrecorder_controller.py`) covering the critical validation failures without requiring Isaac bindings.
+- HTTP routes now perform shared output-path validation and reuse the cleanup helpers, eliminating the inconsistent error shapes that previously surfaced as foreign-key crashes via the MCP tools.
+
+### Completed: WorldStreamer RTMP/SRT (Phase 2–4)
+
+- Added controller/service layers to both protocols so streaming, status, URL, and environment endpoints share the same validation + error scaffolding.
+- Stdio and streaming MCP servers now rely on the shared transport contract and deliver JSON responses, with auto-detection still reporting the active protocol in response details.
+- Introduced parity unit coverage (`tests/worldstreamer/test_worldstreamer_controller.py`) that exercises the RTMP/SRT controllers against stub streaming interfaces.
+- Cleaned up the HTTP handlers to route exclusively through the controller stack, dropping bespoke logic and ensuring health/metrics flow through the shared `WorldHTTPHandler`.
+
 ## Repeatable Sequence
 
 1. **Survey + Diff**

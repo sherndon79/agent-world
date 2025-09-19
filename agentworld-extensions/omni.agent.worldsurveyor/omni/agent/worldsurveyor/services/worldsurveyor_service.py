@@ -242,26 +242,87 @@ class WorldSurveyorService:
 
     def group_hierarchy(self) -> Dict[str, Any]:
         hierarchy = self._manager.get_group_hierarchy()
-        return {'success': True, 'hierarchy': hierarchy}
+        hierarchy_list = hierarchy.get('hierarchy', []) if isinstance(hierarchy, dict) else hierarchy
+        total_groups = hierarchy.get('total_groups') if isinstance(hierarchy, dict) else None
+
+        response: Dict[str, Any] = {
+            'success': True,
+            'hierarchy': hierarchy_list,
+            'groups': hierarchy_list,
+        }
+
+        if isinstance(total_groups, int):
+            response['total_groups'] = total_groups
+            response['group_count'] = total_groups
+        else:
+            calculated_total = len(hierarchy_list) if isinstance(hierarchy_list, list) else 0
+            response['group_count'] = calculated_total
+
+        return response
 
     def add_waypoint_to_groups(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         waypoint_id = payload.get('waypoint_id')
-        group_ids = payload.get('group_ids') or []
+        group_ids = payload.get('group_ids')
         if not waypoint_id:
             raise ValidationFailure('waypoint_id is required', details={'parameter': 'waypoint_id'})
-        if not isinstance(group_ids, list) or not group_ids:
-            raise ValidationFailure('group_ids must be a non-empty list', details={'parameter': 'group_ids'})
-        added = self._manager.add_waypoint_to_groups(waypoint_id, group_ids)
+        if group_ids is None:
+            raise ValidationFailure('group_ids must be provided', details={'parameter': 'group_ids'})
+        if not isinstance(group_ids, list):
+            raise ValidationFailure('group_ids must be a list', details={'parameter': 'group_ids'})
+        if len(group_ids) == 0:
+            return {'success': True, 'added': 0}
+        waypoint = self._manager.get_waypoint(waypoint_id)
+        if not waypoint:
+            return error_response('NOT_FOUND', f'Waypoint {waypoint_id} not found', details={'waypoint_id': waypoint_id})
+
+        normalized_group_ids = [gid for gid in group_ids if isinstance(gid, str) and gid]
+        if not normalized_group_ids:
+            raise ValidationFailure('group_ids must contain valid string identifiers', details={'parameter': 'group_ids'})
+
+        missing_groups = [gid for gid in dict.fromkeys(normalized_group_ids) if not self._manager.get_group(gid)]
+        if missing_groups:
+            return error_response(
+                'GROUP_NOT_FOUND',
+                'One or more groups were not found',
+                details={'missing_group_ids': missing_groups},
+            )
+
+        added = self._manager.add_waypoint_to_groups(waypoint_id, normalized_group_ids)
         return {'success': True, 'added': added}
 
     def remove_waypoint_from_groups(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         waypoint_id = payload.get('waypoint_id')
-        group_ids = payload.get('group_ids') or []
+        group_ids = payload.get('group_ids')
         if not waypoint_id:
             raise ValidationFailure('waypoint_id is required', details={'parameter': 'waypoint_id'})
-        if not isinstance(group_ids, list) or not group_ids:
-            raise ValidationFailure('group_ids must be a non-empty list', details={'parameter': 'group_ids'})
-        removed = self._manager.remove_waypoint_from_groups(waypoint_id, group_ids)
+        if group_ids is None:
+            raise ValidationFailure('group_ids must be provided', details={'parameter': 'group_ids'})
+        if not isinstance(group_ids, list):
+            raise ValidationFailure('group_ids must be a list', details={'parameter': 'group_ids'})
+        waypoint = self._manager.get_waypoint(waypoint_id)
+        if not waypoint:
+            return error_response('NOT_FOUND', f'Waypoint {waypoint_id} not found', details={'waypoint_id': waypoint_id})
+
+        normalized_group_ids = [gid for gid in group_ids if isinstance(gid, str) and gid]
+        if not normalized_group_ids:
+            current_groups = self._manager.get_waypoint_groups(waypoint_id)
+            ids_to_remove = [group['id'] for group in current_groups if isinstance(group, dict) and group.get('id')]
+            removed = self._manager.remove_waypoint_from_groups(waypoint_id, ids_to_remove)
+            return {
+                'success': True,
+                'removed': removed,
+                'cleared_all': True,
+            }
+
+        missing_groups = [gid for gid in dict.fromkeys(normalized_group_ids) if not self._manager.get_group(gid)]
+        if missing_groups:
+            return error_response(
+                'GROUP_NOT_FOUND',
+                'One or more groups were not found',
+                details={'missing_group_ids': missing_groups},
+            )
+
+        removed = self._manager.remove_waypoint_from_groups(waypoint_id, normalized_group_ids)
         return {'success': True, 'removed': removed}
 
     def get_waypoint_groups(self, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -298,9 +359,13 @@ class WorldSurveyorService:
             'error': None,
         }
 
+        tracker = getattr(self._api, '_request_tracker', None)
+        if tracker is None:
+            return error_response('CAMERA_QUEUE_UNAVAILABLE', 'Camera queue is not available')
+
         with self._api._queue_lock:
             self._api._camera_queue.append(request)
-            self._api._request_tracking[request_id] = request
+            tracker.add(request_id, request)
 
         return {
             'success': True,

@@ -36,7 +36,9 @@ class FakeAPI:
             "failed_requests": 1,
             "start_time": time.time() - 10,
             "server_running": True,
+            "objects_queried": 0,
         }
+        self._startup_error = None
 
     def get_port(self):
         return 8899
@@ -81,3 +83,15 @@ def test_add_element_passes_through(service):
     result = service.add_element(payload)
     assert result["success"] is True
     assert service._scene_builder.added == ["cube_1"]
+
+
+def test_startup_error_sets_failure_flags(service):
+    service._api._startup_error = RuntimeError("socket busy")
+
+    stats_response = service.get_stats()
+    assert stats_response["success"] is False
+    assert stats_response["error"] == "socket busy"
+
+    metrics_response = service.get_metrics()
+    assert metrics_response["success"] is False
+    assert metrics_response["metrics"]["requests_received"] == 3

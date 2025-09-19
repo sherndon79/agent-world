@@ -49,13 +49,15 @@ class HTTPAPIInterface:
         self._shutdown_requested = threading.Event()
         
         # Always initialize _api_stats for backward compatibility
+        self._stats_lock = threading.Lock()
         self._api_stats = {
             'requests_received': 0,
             'successful_requests': 0,
             'failed_requests': 0,
             'server_running': False,
             'start_time': None,
-            'scene_elements_created': 0
+            'scene_elements_created': 0,
+            'objects_queried': 0,
         }
         
         # Initialize unified metrics system (thread-safe)
@@ -66,6 +68,8 @@ class HTTPAPIInterface:
         
         # Add server ready synchronization
         self._server_ready = threading.Event()
+        self._startup_error: Optional[Exception] = None
+        self._max_query_results = getattr(self._config, 'max_query_results', 200)
         
         # Start the HTTP server immediately with error protection
         try:
@@ -74,6 +78,7 @@ class HTTPAPIInterface:
             self._start_server()
         except Exception as e:
             logger.error(f"WorldBuilder API startup failed: {e}")
+            self._startup_error = e
             # Don't re-raise - allow object creation (protected constructor pattern)
     
     def _start_server(self):
@@ -134,6 +139,9 @@ class HTTPAPIInterface:
             # Start metrics system
             if METRICS_AVAILABLE:
                 self.metrics.start_server()
+                with self._stats_lock:
+                    self._api_stats['server_running'] = True
+                    self._api_stats['start_time'] = time.time()
                 # Register USD-dependent gauges after server starts (main thread safe)
                 try:
                     self.metrics.register_gauge(
@@ -145,8 +153,9 @@ class HTTPAPIInterface:
                     if self._config.debug_mode:
                         logger.warning(f"Could not register scene objects gauge: {e}")
             else:
-                self._api_stats['server_running'] = True
-                self._api_stats['start_time'] = time.time()
+                with self._stats_lock:
+                    self._api_stats['server_running'] = True
+                    self._api_stats['start_time'] = time.time()
                 
             self._server_ready.set()
             
@@ -162,18 +171,24 @@ class HTTPAPIInterface:
             # Stop metrics system
             if METRICS_AVAILABLE:
                 self.metrics.stop_server()
+                with self._stats_lock:
+                    self._api_stats['server_running'] = False
             else:
-                self._api_stats['server_running'] = False
+                with self._stats_lock:
+                    self._api_stats['server_running'] = False
                 
             if self._config.debug_mode:
                 logger.info("WorldBuilder HTTP server thread stopped")
     
     def is_running(self) -> bool:
         """Check if the server is running."""
+        if self._startup_error is not None:
+            return False
         if METRICS_AVAILABLE:
             return hasattr(self, 'metrics') and self.metrics.get_stats_dict().get('server_running', False)
         else:
-            return self._api_stats.get('server_running', False)
+            with self._stats_lock:
+                return self._api_stats.get('server_running', False)
     
     def _get_stage(self):
         """Get the current USD stage safely."""
@@ -192,21 +207,36 @@ class HTTPAPIInterface:
         if METRICS_AVAILABLE and hasattr(self, 'metrics'):
             self.metrics.increment_requests()
         else:
-            self._api_stats['requests_received'] += 1
+            with self._stats_lock:
+                self._api_stats['requests_received'] += 1
     
     def increment_error_counter(self):
         """Increment error counter - backward compatibility."""
         if METRICS_AVAILABLE and hasattr(self, 'metrics'):
             self.metrics.increment_errors()
         else:
-            self._api_stats['failed_requests'] += 1
-    
+            with self._stats_lock:
+                self._api_stats['failed_requests'] += 1
+
+    def increment_successful_requests(self, amount: int = 1):
+        """Track successful requests for metrics."""
+        with self._stats_lock:
+            self._api_stats['successful_requests'] = self._api_stats.get('successful_requests', 0) + max(amount, 0)
+
+    def increment_elements_created(self, amount: int = 1):
+        """Track elements created through the API."""
+        if amount <= 0:
+            return
+        with self._stats_lock:
+            self._api_stats['scene_elements_created'] = self._api_stats.get('scene_elements_created', 0) + amount
+
     def get_stats(self):
         """Get statistics - backward compatibility."""
         if METRICS_AVAILABLE and hasattr(self, 'metrics'):
             return self.metrics.get_stats_dict()
         else:
-            return self._api_stats.copy()
+            with self._stats_lock:
+                return self._api_stats.copy()
     
     def process_queued_operations(self):
         """Process any queued operations from the scene builder."""
@@ -222,7 +252,8 @@ class HTTPAPIInterface:
             if METRICS_AVAILABLE and hasattr(self, 'metrics'):
                 self.metrics.stop_server()
             else:
-                self._api_stats['server_running'] = False
+                with self._stats_lock:
+                    self._api_stats['server_running'] = False
             
             if self._server:
                 if self._config.debug_mode:
@@ -256,7 +287,8 @@ class HTTPAPIInterface:
             
             matching_objects = []
             object_type_lower = object_type.lower()
-            
+            max_results = max(1, int(getattr(self, '_max_query_results', 200) or 200))
+
             # Traverse stage to find matching objects
             for prim in stage.Traverse():
                 if not prim.IsValid():
@@ -283,7 +315,12 @@ class HTTPAPIInterface:
                     obj_info = self._extract_object_info(prim)
                     if obj_info:
                         matching_objects.append(obj_info)
-            
+                if len(matching_objects) >= max_results:
+                    break
+
+            with self._stats_lock:
+                self._api_stats['objects_queried'] = self._api_stats.get('objects_queried', 0) + len(matching_objects)
+
             return {
                 'success': True,
                 'objects': matching_objects,
@@ -315,7 +352,8 @@ class HTTPAPIInterface:
             matching_objects = []
             min_x, min_y, min_z = min_bounds
             max_x, max_y, max_z = max_bounds
-            
+            max_results = max(1, int(getattr(self, '_max_query_results', 200) or 200))
+
             # Traverse stage to find objects within bounds
             for prim in stage.Traverse():
                 if not prim.IsValid() or not self._is_geometric_object(prim):
@@ -336,7 +374,12 @@ class HTTPAPIInterface:
                     obj_info = self._extract_object_info(prim)
                     if obj_info:
                         matching_objects.append(obj_info)
-            
+                if len(matching_objects) >= max_results:
+                    break
+
+            with self._stats_lock:
+                self._api_stats['objects_queried'] = self._api_stats.get('objects_queried', 0) + len(matching_objects)
+
             return {
                 'success': True,
                 'objects': matching_objects,
@@ -368,6 +411,7 @@ class HTTPAPIInterface:
             
             matching_objects = []
             px, py, pz = point
+            max_results = max(1, int(getattr(self, '_max_query_results', 200) or 200))
             
             # Traverse stage to find objects near point
             for prim in stage.Traverse():
@@ -389,10 +433,17 @@ class HTTPAPIInterface:
                     if obj_info:
                         obj_info['distance_from_point'] = distance
                         matching_objects.append(obj_info)
+                if len(matching_objects) >= max_results:
+                    break
             
             # Sort by distance (closest first)
             matching_objects.sort(key=lambda obj: obj.get('distance_from_point', float('inf')))
-            
+            if len(matching_objects) > max_results:
+                matching_objects = matching_objects[:max_results]
+
+            with self._stats_lock:
+                self._api_stats['objects_queried'] = self._api_stats.get('objects_queried', 0) + len(matching_objects)
+
             return {
                 'success': True,
                 'objects': matching_objects,
@@ -480,6 +531,7 @@ class HTTPAPIInterface:
             # Find all objects within search radius
             objects_in_area = []
             lowest_points = []
+            max_results = max(1, int(getattr(self, '_max_query_results', 200) or 200))
             
             for prim in stage.Traverse():
                 if not prim.IsValid() or not self._is_geometric_object(prim):
@@ -528,7 +580,9 @@ class HTTPAPIInterface:
                             'distance': distance,
                             'lowest_y': float(y)
                         })
-            
+                if len(objects_in_area) >= max_results:
+                    break
+
             if not lowest_points:
                 return {
                     'success': True,

@@ -60,13 +60,13 @@ class WorldViewerService:
 
         queue_lock = getattr(self._api, '_queue_lock', None)
         camera_queue = getattr(self._api, '_camera_queue', None)
-        request_tracking = getattr(self._api, '_request_tracking', None)
-        if queue_lock is None or camera_queue is None or request_tracking is None:
+        tracker = getattr(self._api, '_request_tracker', None)
+        if queue_lock is None or camera_queue is None or tracker is None:
             return error_response('QUEUE_UNAVAILABLE', 'Camera queue infrastructure unavailable')
 
         with queue_lock:
             camera_queue.append(request)
-            request_tracking[request_id] = request
+            tracker.add(request_id, request)
 
         return {
             'success': True,
@@ -213,24 +213,23 @@ class WorldViewerService:
         if not request_id:
             return error_response('MISSING_PARAMETER', 'request_id parameter required', details={'parameter': 'request_id'})
 
-        queue_lock = getattr(self._api, '_queue_lock', None)
-        request_tracking = getattr(self._api, '_request_tracking', None)
-        if queue_lock is None or request_tracking is None:
+        tracker = getattr(self._api, '_request_tracker', None)
+        if tracker is None:
             return error_response('QUEUE_UNAVAILABLE', 'Request tracking unavailable')
 
-        with queue_lock:
-            if request_id not in request_tracking:
-                return error_response('REQUEST_NOT_FOUND', f'Request {request_id} not found')
-            request = request_tracking[request_id]
-            return {
-                'success': True,
-                'request_id': request_id,
-                'operation': request.get('operation'),
-                'completed': request.get('completed', False),
-                'result': request.get('result'),
-                'error': request.get('error'),
-                'timestamp': request.get('timestamp'),
-            }
+        request = tracker.get(request_id)
+        if not request:
+            return error_response('REQUEST_NOT_FOUND', f'Request {request_id} not found')
+
+        return {
+            'success': True,
+            'request_id': request_id,
+            'operation': request.get('operation'),
+            'completed': request.get('completed', False),
+            'result': request.get('result'),
+            'error': request.get('error'),
+            'timestamp': request.get('timestamp'),
+        }
 
 
 __all__ = ['WorldViewerService']

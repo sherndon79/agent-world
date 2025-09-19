@@ -497,7 +497,53 @@
         let waypoints = [];
         let groups = [];
         let currentGroupFilter = null;
-        
+        let groupStats = { total: 0 };
+
+        const toArray = (value) => {
+            if (!value) return [];
+            if (Array.isArray(value)) return value;
+            if (typeof value === 'object') {
+                try {
+                    return Object.values(value);
+                } catch (error) {
+                    return [];
+                }
+            }
+            return [];
+        };
+
+        const normalizeHierarchy = (payload) => {
+            if (!payload) return [];
+            if (Array.isArray(payload)) {
+                return payload;
+            }
+            if (typeof payload === 'object') {
+                if (Array.isArray(payload.hierarchy)) {
+                    return payload.hierarchy;
+                }
+                if (Array.isArray(payload.groups)) {
+                    return payload.groups;
+                }
+                return toArray(payload);
+            }
+            return [];
+        };
+
+        const countGroups = (groupList) => {
+            return toArray(groupList).reduce((total, group) => {
+                return total + 1 + countGroups(group.children);
+            }, 0);
+        };
+
+        const getGroupName = (group) => {
+            if (!group) return 'Unnamed Group';
+            const raw = group.name || group.display_name || group.label || '';
+            const label = String(raw).trim();
+            return label.length ? label : 'Unnamed Group';
+        };
+
+        const escapeAttr = (value) => String(value ?? '').replace(/'/g, "\'");
+
         async function apiCall(endpoint, method = 'GET', data = null) {
             try {
                 const options = {
@@ -516,17 +562,23 @@
         
         // Status and refresh functions
         async function updateStatus() {
-            const status = await apiCall('debug_status');
+            const status = await apiCall('markers/debug');
             const statusEl = document.getElementById('statusText');
-            
+
             if (status.success) {
-                const ds = status.debug_status;
+                const debugData = status.debug_status || status.status || {};
+                const available = typeof debugData.available === 'boolean' ? debugData.available : false;
+                const debugPoints = typeof debugData.num_points === 'number' ? debugData.num_points : '—';
+                const markersVisible = typeof debugData.markers_visible === 'boolean' ? debugData.markers_visible : null;
+                const waypointCount = typeof status.waypoint_count === 'number' ? status.waypoint_count : (Array.isArray(waypoints) ? waypoints.length : '—');
                 const groupText = currentGroupFilter ? ` | Filtered by: ${currentGroupFilter}` : '';
+                const markersText = markersVisible === null ? 'Unknown' : markersVisible ? '✅' : '❌';
+                const groupCount = Number.isFinite(groupStats.total) && groupStats.total > 0 ? ` | Groups: ${groupStats.total}` : '';
                 statusEl.innerHTML = `
-                    Debug Draw: ${ds.available ? '✅' : '❌'} | 
-                    Waypoints: ${status.waypoint_count} | 
-                    Debug Points: ${ds.num_points} | 
-                    Markers Visible: ${ds.markers_visible ? '✅' : '❌'}${groupText}
+                    Debug Draw: ${available ? '✅' : '❌'} | 
+                    Waypoints: ${waypointCount} | 
+                    Debug Points: ${debugPoints} | 
+                    Markers Visible: ${markersText}${groupCount}${groupText}
                 `;
             } else {
                 statusEl.textContent = `Error: ${status.error}`;
@@ -549,9 +601,9 @@
             let endpoint;
             if (groupId) {
                 const includeNested = document.getElementById('includeChildGroupsToggle').checked;
-                endpoint = `get_group_waypoints?group_id=${groupId}&include_nested=${includeNested}`;
+                endpoint = `groups/waypoints?group_id=${groupId}&include_nested=${includeNested}`;
             } else {
-                endpoint = 'list_waypoints';
+                endpoint = 'waypoints/list';
             }
             
             try {
@@ -583,9 +635,14 @@
         }
         
         async function refreshGroups() {
-            const result = await apiCall('get_group_hierarchy');
+            const result = await apiCall('groups/hierarchy');
             if (result.success) {
-                groups = result.hierarchy || [];
+                const hierarchyPayload = result.hierarchy ?? result.groups ?? [];
+                groups = normalizeHierarchy(hierarchyPayload);
+                const total = (hierarchyPayload && typeof hierarchyPayload === 'object' && !Array.isArray(hierarchyPayload))
+                    ? (hierarchyPayload.total_groups ?? hierarchyPayload.count ?? hierarchyPayload.length ?? 0)
+                    : countGroups(groups);
+                groupStats.total = Number.isFinite(total) ? total : countGroups(groups);
                 renderGroups();
             }
         }
@@ -593,24 +650,31 @@
         // Group management functions
         function renderGroups() {
             const container = document.getElementById('groupsList');
-            
-            if (groups.length === 0) {
+            const groupList = toArray(groups);
+
+            if (groupList.length === 0) {
                 container.innerHTML = '<div style="color: #666; font-style: italic;">No groups created</div>';
                 return;
             }
-            
-            function renderGroupHierarchy(groups, indent = 0) {
-                return groups.map(group => {
+
+            function renderGroupHierarchy(groupList, indent = 0) {
+                return toArray(groupList).map(group => {
+                    if (!group || !group.id) {
+                        return '';
+                    }
+                    const groupId = group.id;
+                    const groupLabel = getGroupName(group);
+                    const safeGroupName = escapeAttr(groupLabel);
                     const style = indent > 0 ? `margin-left: ${indent * 15}px;` : '';
                     let html = `
-                        <div class="group-item ${currentGroupFilter === group.id ? 'active' : ''}" 
+                        <div class="group-item ${currentGroupFilter === groupId ? 'active' : ''}" 
                              style="${style}" 
-                             onclick="filterByGroup('${group.id}', '${group.name}')">
+                             onclick="filterByGroup('${groupId}', '${safeGroupName}')">
                             <div style="display: flex; justify-content: space-between; align-items: center;">
-                                <span>📁 ${group.name}</span>
+                                <span>📁 ${groupLabel}</span>
                                 <div style="display: flex; gap: 5px;">
                                     <button class="btn btn-danger btn-small" 
-                                            onclick="event.stopPropagation(); removeGroup('${group.id}')"
+                                            onclick="event.stopPropagation(); removeGroup('${groupId}')"
                                             style="padding: 2px 6px; font-size: 10px;">🗑️</button>
                                 </div>
                             </div>
@@ -619,15 +683,16 @@
                     `;
                     
                     // Add children recursively
-                    if (group.children && group.children.length > 0) {
-                        html += renderGroupHierarchy(group.children, indent + 1);
+                    const childGroups = toArray(group.children);
+                    if (childGroups.length > 0) {
+                        html += renderGroupHierarchy(childGroups, indent + 1);
                     }
                     
                     return html;
-                }).join('');
+                }).filter(Boolean).join('');
             }
             
-            container.innerHTML = renderGroupHierarchy(groups);
+            container.innerHTML = renderGroupHierarchy(groupList);
         }
         
         function createGroup() {
@@ -635,16 +700,21 @@
             const parentSelect = document.getElementById('groupParent');
             parentSelect.innerHTML = '<option value="">No Parent (Root Level)</option>';
             
-            function addGroupOptions(groups, prefix = '') {
-                groups.forEach(group => {
-                    parentSelect.innerHTML += `<option value="${group.id}">${prefix}${group.name}</option>`;
-                    if (group.children) {
-                        addGroupOptions(group.children, prefix + '└─ ');
+            function addGroupOptions(groupList, prefix = '') {
+                toArray(groupList).forEach(group => {
+                    if (!group || !group.id) {
+                        return;
+                    }
+                    const groupLabel = getGroupName(group);
+                    parentSelect.innerHTML += `<option value="${group.id}">${prefix}${groupLabel}</option>`;
+                    const childGroups = toArray(group.children);
+                    if (childGroups.length > 0) {
+                        addGroupOptions(childGroups, prefix + '└─ ');
                     }
                 });
             }
             
-            addGroupOptions(groups);
+            addGroupOptions(toArray(groups));
             
             // Clear form
             document.getElementById('groupName').value = '';
@@ -673,7 +743,7 @@
                 groupData.parent_group_id = parentId;
             }
             
-            const result = await apiCall('create_group', 'POST', groupData);
+            const result = await apiCall('groups/create', 'POST', groupData);
             if (result.success) {
                 console.log('Created group:', result.group_id);
                 closeGroupModal();
@@ -689,7 +759,7 @@
         
         async function removeGroup(groupId) {
             if (confirm('Are you sure you want to remove this group? This will unassign all waypoints from the group.')) {
-                const result = await apiCall('remove_group', 'POST', { group_id: groupId });
+                const result = await apiCall('groups/remove', 'POST', { group_id: groupId });
                 if (result.success) {
                     await refreshGroups();
                     if (currentGroupFilter === groupId) {
@@ -866,20 +936,28 @@
         function assignWaypointToGroups(waypointId) {
             // Populate group checkboxes
             const container = document.getElementById('groupCheckboxList');
+            delete container.dataset.waypointIds;
+            container.dataset.waypointId = waypointId;
             
-            function renderGroupCheckboxes(groups, prefix = '') {
-                return groups.map(group => {
+            function renderGroupCheckboxes(groupList, prefix = '') {
+                return toArray(groupList).map(group => {
+                    if (!group || !group.id) {
+                        return '';
+                    }
+                    const groupLabel = getGroupName(group);
+                    const childGroups = toArray(group.children);
+                    const childrenMarkup = childGroups.length ? renderGroupCheckboxes(childGroups, prefix + '└─ ') : '';
                     return `
                         <label>
                             <input type="checkbox" value="${group.id}">
-                            ${prefix}${group.name}
+                            ${prefix}${groupLabel}
                         </label>
-                        ${group.children ? renderGroupCheckboxes(group.children, prefix + '└─ ') : ''}
+                        ${childrenMarkup}
                     `;
-                }).join('');
+                }).filter(Boolean).join('');
             }
             
-            container.innerHTML = renderGroupCheckboxes(groups);
+            container.innerHTML = renderGroupCheckboxes(toArray(groups));
             
             // Pre-check groups this waypoint is already in
             const waypoint = waypoints.find(wp => wp.id === waypointId);
@@ -908,23 +986,36 @@
             }
             
             const container = document.getElementById('groupCheckboxList');
+            delete container.dataset.waypointId;
             
-            function renderGroupCheckboxes(groups, prefix = '') {
-                return groups.map(group => {
+            function renderGroupCheckboxes(groupList, prefix = '') {
+                return toArray(groupList).map(group => {
+                    if (!group || !group.id) {
+                        return '';
+                    }
+                    const groupLabel = getGroupName(group);
+                    const childGroups = toArray(group.children);
+                    const childrenMarkup = childGroups.length ? renderGroupCheckboxes(childGroups, prefix + '└─ ') : '';
                     return `
                         <label>
                             <input type="checkbox" value="${group.id}">
-                            ${prefix}${group.name}
+                            ${prefix}${groupLabel}
                         </label>
-                        ${group.children ? renderGroupCheckboxes(group.children, prefix + '└─ ') : ''}
+                        ${childrenMarkup}
                     `;
-                }).join('');
+                }).filter(Boolean).join('');
             }
             
-            container.innerHTML = renderGroupCheckboxes(groups);
+            container.innerHTML = renderGroupCheckboxes(toArray(groups));
             
             // Store selected waypoint IDs
-            const waypointIds = Array.from(selectedCheckboxes).map(cb => cb.dataset.waypointId);
+            const waypointIds = Array.from(selectedCheckboxes)
+                .map(cb => cb.dataset.waypointId)
+                .filter(id => id && waypoints.some(wp => wp.id === id));
+            if (waypointIds.length === 0) {
+                alert('No valid waypoints selected for group assignment');
+                return;
+            }
             container.dataset.waypointIds = JSON.stringify(waypointIds);
             
             document.getElementById('assignModal').style.display = 'block';
@@ -933,40 +1024,56 @@
         async function saveGroupAssignment() {
             const container = document.getElementById('groupCheckboxList');
             const selectedGroups = Array.from(container.querySelectorAll('input[type="checkbox"]:checked'))
-                                        .map(cb => cb.value);
-            
+                                        .map(cb => cb.value)
+                                        .filter(id => id && id !== 'undefined');
+
             let waypointIds;
             if (container.dataset.waypointId) {
                 // Single waypoint assignment
                 waypointIds = [container.dataset.waypointId];
             } else if (container.dataset.waypointIds) {
-                // Multiple waypoint assignment
-                waypointIds = JSON.parse(container.dataset.waypointIds);
+                try {
+                    waypointIds = JSON.parse(container.dataset.waypointIds);
+                } catch (error) {
+                    console.error('Failed to parse waypoint IDs:', error);
+                    alert('Unable to determine selected waypoints');
+                    return;
+                }
             } else {
                 alert('No waypoints selected');
                 return;
             }
-            
+
+            waypointIds = (Array.isArray(waypointIds) ? waypointIds : [waypointIds])
+                .filter(id => id && waypoints.some(wp => wp.id === id));
+
+            if (waypointIds.length === 0) {
+                alert('No valid waypoints found for assignment');
+                return;
+            }
+
             // Process each waypoint
             for (const waypointId of waypointIds) {
                 console.log(`Processing waypoint: ${waypointId}`);
                 try {
                     // Get current groups for this waypoint
-                    const currentGroupsResult = await apiCall(`get_waypoint_groups?waypoint_id=${waypointId}`);
-                    if (!currentGroupsResult.success) {
+                    const currentGroupsResult = await apiCall(`groups/of_waypoint?waypoint_id=${waypointId}`);
+                    if (!currentGroupsResult.success || !Array.isArray(currentGroupsResult.groups)) {
                         console.error(`Failed to get current groups for waypoint ${waypointId}:`, currentGroupsResult.error);
                         continue;
                     }
-                    
-                    const currentGroups = currentGroupsResult.groups.map(g => g.id);
-                    
+
+                    const currentGroups = currentGroupsResult.groups
+                        .map(g => (g && g.id ? g.id : null))
+                        .filter(Boolean);
+
                     // Calculate differences
                     const groupsToAdd = selectedGroups.filter(g => !currentGroups.includes(g));
                     const groupsToRemove = currentGroups.filter(g => !selectedGroups.includes(g));
-                    
+
                     // Add to new groups
                     if (groupsToAdd.length > 0) {
-                        const addResult = await apiCall('add_waypoint_to_groups', 'POST', {
+                        const addResult = await apiCall('groups/add_waypoint', 'POST', {
                             waypoint_id: waypointId,
                             group_ids: groupsToAdd
                         });
@@ -974,10 +1081,10 @@
                             console.error(`Failed to add waypoint ${waypointId} to groups:`, addResult.error);
                         }
                     }
-                    
+
                     // Remove from old groups (including all groups if selectedGroups is empty)
                     if (groupsToRemove.length > 0) {
-                        const removeResult = await apiCall('remove_waypoint_from_groups', 'POST', {
+                        const removeResult = await apiCall('groups/remove_waypoint', 'POST', {
                             waypoint_id: waypointId,
                             group_ids: groupsToRemove
                         });
@@ -985,23 +1092,26 @@
                             console.error(`Failed to remove waypoint ${waypointId} from groups:`, removeResult.error);
                         }
                     }
-                    
+
                 } catch (error) {
                     console.error(`Error processing waypoint ${waypointId}:`, error);
                 }
             }
-            
+
             closeAssignModal();
             await refreshWaypoints(currentGroupFilter);
         }
-        
+
         function closeAssignModal() {
+            const container = document.getElementById('groupCheckboxList');
+            delete container.dataset.waypointId;
+            delete container.dataset.waypointIds;
             document.getElementById('assignModal').style.display = 'none';
         }
         
         // Export/Import functions
         async function exportWaypoints() {
-            const result = await apiCall('export_waypoints?include_groups=true');
+            const result = await apiCall('waypoints/export?include_groups=true');
             if (result.success) {
                 const dataStr = JSON.stringify(result.export, null, 2);
                 const dataBlob = new Blob([dataStr], { type: 'application/json' });
@@ -1034,7 +1144,7 @@
                     return;
                 }
                 
-                const result = await apiCall('import_waypoints', 'POST', {
+                const result = await apiCall('waypoints/import', 'POST', {
                     import_data: importData,
                     merge_mode: mergeMode
                 });
@@ -1066,7 +1176,7 @@
             item.classList.remove('edit-mode');
             
             try {
-                const result = await apiCall('update_waypoint', 'POST', {
+                const result = await apiCall('waypoints/update', 'POST', {
                     waypoint_id: waypointId,
                     name: newName
                 });
@@ -1103,7 +1213,7 @@
             item.classList.remove('edit-notes-mode');
             
             try {
-                const result = await apiCall('update_waypoint', 'POST', {
+                const result = await apiCall('waypoints/update', 'POST', {
                     waypoint_id: waypointId,
                     notes: notes
                 });
@@ -1140,7 +1250,7 @@
                     console.log(`Positioning camera at waypoint: ${waypoint.name}`);
                     
                     // Use internal WorldSurveyor goto endpoint (no external dependencies)
-                    const response = await fetch(`${API_BASE}/goto_waypoint`, {
+                    const response = await fetch(`${API_BASE}/waypoints/goto`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ waypoint_id: waypointId })
@@ -1168,7 +1278,7 @@
         
         async function removeWaypoint(waypointId) {
             if (confirm('Are you sure you want to remove this waypoint?')) {
-                const result = await apiCall('remove_waypoint', 'POST', { waypoint_id: waypointId });
+                const result = await apiCall('waypoints/remove', 'POST', { waypoint_id: waypointId });
                 if (result.success) {
                     await refreshWaypoints(currentGroupFilter);
                 } else {
@@ -1178,19 +1288,19 @@
         }
         
         async function showAllMarkers() {
-            const result = await apiCall('set_markers_visible', 'POST', { visible: true });
+            const result = await apiCall('markers/visible', 'POST', { visible: true });
             if (result.success) await updateStatus();
         }
         
         async function hideAllMarkers() {
-            const result = await apiCall('set_markers_visible', 'POST', { visible: false });
+            const result = await apiCall('markers/visible', 'POST', { visible: false });
             if (result.success) await updateStatus();
         }
         
         async function clearAllWaypoints() {
             if (confirm('Are you sure you want to clear ALL waypoints? This cannot be undone.')) {
                 try {
-                    const result = await apiCall('clear_all_waypoints', 'POST', { confirm: true });
+                    const result = await apiCall('waypoints/clear', 'POST', { confirm: true });
                     if (result.success) {
                         console.log(`Cleared ${result.cleared_count} waypoints`);
                         currentGroupFilter = null; // Reset filter when all waypoints are cleared
@@ -1253,7 +1363,7 @@
             // Hide each selected waypoint individually
             for (const waypointId of selectedWaypointIds) {
                 try {
-                    const result = await apiCall('set_individual_marker_visible', 'POST', {
+                    const result = await apiCall('markers/individual', 'POST', {
                         waypoint_id: waypointId,
                         visible: false
                     });
@@ -1281,7 +1391,7 @@
             const waypointIds = Array.from(selectedCheckboxes).map(cb => cb.dataset.waypointId);
             
             try {
-                const result = await apiCall('set_selective_markers_visible', 'POST', {
+                const result = await apiCall('markers/selective', 'POST', {
                     visible_waypoint_ids: waypointIds
                 });
                 
@@ -1312,7 +1422,7 @@
             }
             
             try {
-                const result = await apiCall('remove_selected_waypoints', 'POST', {
+                const result = await apiCall('waypoints/remove_selected', 'POST', {
                     waypoint_ids: waypointIds
                 });
                 

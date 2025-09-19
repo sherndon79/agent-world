@@ -65,6 +65,9 @@ class AgentWorldBuilderExtension(omni.ext.IExt):
         try:
             # Initialize HTTP API interface for real-time communication
             self._http_api_interface = HTTPAPIInterface(port=self._config.server_port)
+            startup_error = getattr(self._http_api_interface, '_startup_error', None)
+            if startup_error is not None:
+                raise RuntimeError(f"HTTP API failed to start: {startup_error}")
             logger.info(f"HTTP API interface created on port {self._config.server_port}")
             
             # Create UI window
@@ -80,8 +83,7 @@ class AgentWorldBuilderExtension(omni.ext.IExt):
             
         except Exception as e:
             logger.error(f"❌ Failed to start Agent WorldBuilder Extension: {e}")
-            # Don't re-raise - allow object creation (protected constructor pattern)
-            logger.error(f"Extension will continue with limited functionality")
+            raise
 
     def on_shutdown(self):
         """Coordinated shutdown with proper thread communication."""

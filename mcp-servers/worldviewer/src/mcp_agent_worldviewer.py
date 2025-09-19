@@ -8,7 +8,8 @@ import json
 import logging
 import os
 import sys
-from typing import Any, Dict, List
+import time
+from typing import Any, Dict, List, Optional
 
 import aiohttp
 from mcp.server import Server
@@ -33,6 +34,13 @@ if os.path.exists(extensions_path) and extensions_path not in sys.path:
 from agent_world_transport import normalize_transport_response
 from omni.agent.worldviewer.errors import error_response
 from omni.agent.worldviewer.transport import ToolContract, TOOL_CONTRACTS, MCP_OPERATIONS
+
+try:
+    from agent_world_requests import RequestTracker
+    HAS_REQUEST_TRACKER = True
+except ImportError:  # pragma: no cover - older environments
+    RequestTracker = None  # type: ignore
+    HAS_REQUEST_TRACKER = False
 
 try:
     from agent_world_config import create_worldviewer_config
@@ -126,6 +134,11 @@ class WorldViewerClient:
         )
         self.base_url = base_url.rstrip('/')
         self.client = MCPBaseClient('WORLDVIEWER', self.base_url)
+        self._request_tracker: Optional[RequestTracker] = None
+        if HAS_REQUEST_TRACKER:
+            ttl = CONFIG.get('mcp_request_tracker_ttl', 300.0) if CONFIG else 300.0
+            capacity = CONFIG.get('mcp_request_tracker_max_entries', 500) if CONFIG else 500
+            self._request_tracker = RequestTracker(max_entries=capacity, ttl_seconds=ttl)
 
     async def initialize(self) -> None:
         if not self.client._initialized:
@@ -139,6 +152,31 @@ class WorldViewerClient:
             return CONFIG.get(f'{kind}_timeout', 10.0)
         defaults = {'simple': 5.0, 'standard': 10.0, 'complex': 20.0}
         return defaults.get(kind, defaults['standard'])
+
+    # ------------------------------------------------------------------
+    def _record_request_state(self, tool_name: str, response: Dict[str, Any]) -> None:
+        tracker = self._request_tracker
+        if not tracker or not isinstance(response, dict):
+            return
+
+        request_id = response.get('request_id')
+        if not request_id:
+            return
+
+        entry = {
+            'operation': tool_name,
+            'timestamp': response.get('timestamp', time.time()),
+            'status': response.get('status'),
+            'completed': bool(response.get('completed')),
+            'result': response.get('result'),
+            'error': response.get('error'),
+        }
+
+        if tracker.get(request_id, remove_if_expired=False):
+            tracker.update(request_id, **entry)
+        else:
+            tracker.add(request_id, entry)
+        tracker.prune()
 
     @staticmethod
     def _prepare_params(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -162,7 +200,9 @@ class WorldViewerClient:
                 response = await self.client.get(f"/{contract.http_route}", params=self._prepare_params(payload), timeout=timeout)
             else:
                 response = await self.client.post(f"/{contract.http_route}", json=payload, timeout=timeout)
-            return normalize_transport_response(contract.operation, response, default_error_code=f'{contract.operation.upper()}_FAILED')
+            normalized = normalize_transport_response(contract.operation, response, default_error_code=f'{contract.operation.upper()}_FAILED')
+            self._record_request_state(tool_name, normalized)
+            return normalized
         except asyncio.TimeoutError:
             return error_response('REQUEST_TIMEOUT', 'Request timed out', details={'operation': contract.operation})
         except aiohttp.ClientError as exc:

@@ -332,20 +332,24 @@ class SceneBuilder:
         
         return stats
 
-    def list_elements_in_scene(self, filter_type: str = "") -> Dict[str, Any]:
+    def list_elements_in_scene(self, filter_type: str = "", *, start: int = 0, limit: Optional[int] = None) -> Dict[str, Any]:
         """List all elements in the scene with optional type filtering."""
         try:
             stage = self._usd_context.get_stage()
             if not stage:
                 return {'success': False, 'error': "No USD stage available"}
-            
+
             elements = []
             world_prim = stage.GetPrimAtPath("/World")
             if not world_prim.IsValid():
                 return {'success': False, 'error': "/World prim not found"}
-            
+
             # Traverse and collect elements
-            for child in world_prim.GetChildren():
+            children = list(world_prim.GetChildren())
+            total_children = len(children)
+            slice_start = start if start >= 0 else 0
+            slice_end = total_children if limit is None else min(total_children, slice_start + max(limit, 0))
+            for child in children[slice_start:slice_end]:
                 if not child.IsActive():
                     continue
                     

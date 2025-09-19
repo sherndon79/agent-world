@@ -1,6 +1,8 @@
 """Request schema definitions for WorldBuilder HTTP endpoints."""
 
-from typing import Any, Dict, List
+from __future__ import annotations
+
+from typing import Any, Dict
 
 try:  # Optional Pydantic validation
     from pydantic import BaseModel, Field, ValidationError
@@ -10,6 +12,21 @@ except ImportError:  # pragma: no cover - validation becomes a no-op
     Field = None  # type: ignore
     ValidationError = Exception  # type: ignore
     conlist = list  # type: ignore
+
+
+def _coerce_int(value: Any, default: int, minimum: int = 1, maximum: int | None = None) -> int:
+    """Best-effort coercion for pagination values."""
+    if value is None:
+        return default
+    try:
+        coerced = int(value)
+    except (TypeError, ValueError):
+        return default
+    if coerced < minimum:
+        coerced = minimum
+    if maximum is not None and coerced > maximum:
+        coerced = maximum
+    return coerced
 
 
 schemas_available = BaseModel is not None
@@ -38,7 +55,7 @@ if schemas_available:  # pragma: no branch
 
     class CreateBatchPayload(BaseModel):
         batch_name: str
-        elements: List[BatchElement]
+        elements: list[BatchElement]
         parent_path: str | None = Field(default="/World")
 
     class PlaceAssetPayload(BaseModel):
@@ -60,34 +77,50 @@ if schemas_available:  # pragma: no branch
     class ClearPathPayload(BaseModel):
         path: str
 
+    class PaginationParams(BaseModel):
+        page: int = Field(default=1, ge=1)
+        page_size: int = Field(default=50, ge=1, le=500)
+
 else:  # Fallback definitions when Pydantic is unavailable
 
-    class AddElementPayload:  # type: ignore
-        def __init__(self, **data: Any) -> None:
-            self.__dict__ = data
-
-        def model_dump(self) -> Dict[str, Any]:  # pragma: no cover
-            return self.__dict__
-
-    BatchElement = AddElementPayload  # type: ignore
-
-    class CreateBatchPayload:  # type: ignore
+    class _BaseSchema:  # type: ignore
         def __init__(self, **data: Any) -> None:
             self.__dict__ = data
 
         def model_dump(self) -> Dict[str, Any]:
             return self.__dict__
 
-    class PlaceAssetPayload(AddElementPayload):
+    class AddElementPayload(_BaseSchema):
         pass
 
-    class TransformAssetPayload(AddElementPayload):
+    BatchElement = AddElementPayload  # type: ignore
+
+    class CreateBatchPayload(_BaseSchema):
         pass
 
-    class ClearPathPayload(AddElementPayload):
+    class PlaceAssetPayload(_BaseSchema):
         pass
 
-    ValidationError = Exception  # type: ignore
+    class TransformAssetPayload(_BaseSchema):
+        pass
+
+    class ClearPathPayload(_BaseSchema):
+        pass
+
+    class PaginationParams:
+        def __init__(self, page: int = 1, page_size: int = 50) -> None:
+            self.page = page
+            self.page_size = page_size
+
+        @classmethod
+        def from_payload(cls, payload: Dict[str, Any]) -> 'PaginationParams':
+            return cls(
+                page=_coerce_int(payload.get('page'), 1, minimum=1),
+                page_size=_coerce_int(payload.get('page_size'), 50, minimum=1, maximum=500),
+            )
+
+        def model_dump(self) -> Dict[str, Any]:  # pragma: no cover - parity helper
+            return {'page': self.page, 'page_size': self.page_size}
 
 
 def validate_payload(model_cls, data: Dict[str, Any]) -> Dict[str, Any]:
@@ -98,3 +131,22 @@ def validate_payload(model_cls, data: Dict[str, Any]) -> Dict[str, Any]:
         return model_cls(**data).model_dump()
     except ValidationError as exc:  # pragma: no cover
         raise ValueError(str(exc)) from exc
+
+
+def parse_pagination(payload: Dict[str, Any]) -> PaginationParams:
+    """Return a PaginationParams instance regardless of Pydantic availability."""
+    if schemas_available:
+        return PaginationParams(**{k: payload.get(k) for k in ('page', 'page_size') if k in payload})
+    return PaginationParams.from_payload(payload)
+
+
+__all__ = [
+    "AddElementPayload",
+    "CreateBatchPayload",
+    "PlaceAssetPayload",
+    "TransformAssetPayload",
+    "ClearPathPayload",
+    "PaginationParams",
+    "validate_payload",
+    "parse_pagination",
+]

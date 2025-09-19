@@ -12,6 +12,7 @@ from .schemas import (
     PlaceAssetPayload,
     TransformAssetPayload,
     ClearPathPayload,
+    parse_pagination,
     validate_payload,
 )
 from ..services.worldbuilder_service import WorldBuilderService
@@ -104,9 +105,13 @@ class WorldBuilderController:
         return self._safe_call('scene_status', self._service.get_scene_status, default_error_code='SCENE_STATUS_FAILED')
 
     def list_elements(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        def handler():
+            pagination = parse_pagination(payload)
+            return self._service.list_elements({**payload, 'page': pagination.page, 'page_size': pagination.page_size})
+
         return self._safe_call(
             'list_elements',
-            lambda: self._service.list_elements(payload),
+            handler,
             default_error_code='LIST_ELEMENTS_FAILED'
         )
 

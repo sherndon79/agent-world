@@ -8,7 +8,8 @@ import json
 import logging
 import os
 import sys
-from typing import Any, Dict, List
+import time
+from typing import Any, Dict, List, Optional
 
 import aiohttp
 from mcp.server import Server
@@ -40,6 +41,13 @@ from agent_world_transport import normalize_transport_response
 from omni.agent.worldsurveyor.errors import error_response
 from omni.agent.worldsurveyor.transport import TOOL_CONTRACTS, MCP_OPERATIONS
 
+try:
+    from agent_world_requests import RequestTracker
+    HAS_REQUEST_TRACKER = True
+except ImportError:  # pragma: no cover
+    RequestTracker = None  # type: ignore
+    HAS_REQUEST_TRACKER = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -50,6 +58,11 @@ class WorldSurveyorMCP:
         self.base_url = base_url.rstrip('/')
         self.server = Server("worldsurveyor")
         self.client = MCPBaseClient("WORLDSURVEYOR", self.base_url)
+        self._request_tracker: Optional[RequestTracker] = None
+        if HAS_REQUEST_TRACKER:
+            ttl = config.get('mcp_request_tracker_ttl', 300.0) if config else 300.0
+            capacity = config.get('mcp_request_tracker_max_entries', 500) if config else 500
+            self._request_tracker = RequestTracker(max_entries=capacity, ttl_seconds=ttl)
         self._register_tools()
         self._contract_map = MCP_OPERATIONS
         logger.info("WorldSurveyor MCP initialized at %s", self.base_url)
@@ -471,6 +484,30 @@ class WorldSurveyorMCP:
                 params[key] = value
         return params
 
+    def _record_request_state(self, tool_name: str, response: Dict[str, Any]) -> None:
+        tracker = self._request_tracker
+        if not tracker or not isinstance(response, dict):
+            return
+
+        request_id = response.get('request_id')
+        if not request_id:
+            return
+
+        entry = {
+            'operation': tool_name,
+            'timestamp': response.get('timestamp', time.time()),
+            'status': response.get('status'),
+            'completed': bool(response.get('completed')),
+            'result': response.get('result'),
+            'error': response.get('error'),
+        }
+
+        if tracker.get(request_id, remove_if_expired=False):
+            tracker.update(request_id, **entry)
+        else:
+            tracker.add(request_id, entry)
+        tracker.prune()
+
     async def _perform_operation(self, operation: str, method: str, route: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         await self._initialize_client()
         timeout = self._get_timeout()
@@ -481,7 +518,9 @@ class WorldSurveyorMCP:
                 response = await self.client.post(f"/{route}", json=payload, timeout=timeout)
             else:
                 return error_response('METHOD_NOT_SUPPORTED', f'Unsupported method {method}', details={'operation': operation})
-            return normalize_transport_response(operation, response, default_error_code=f'{operation.upper()}_FAILED')
+            normalized = normalize_transport_response(operation, response, default_error_code=f'{operation.upper()}_FAILED')
+            self._record_request_state(operation, normalized)
+            return normalized
         except asyncio.TimeoutError:
             return error_response('REQUEST_TIMEOUT', 'Request timed out', details={'operation': operation})
         except aiohttp.ClientError as exc:

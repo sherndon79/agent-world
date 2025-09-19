@@ -295,6 +295,19 @@ class WorldBuilderMCP:
                                 "type": "string",
                                 "description": "Filter by element type (cube, sphere, etc.)",
                                 "default": ""
+                            },
+                            "page": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "description": "Page number (1-indexed)",
+                                "default": 1
+                            },
+                            "page_size": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 500,
+                                "description": "Number of elements per page (max 500)",
+                                "default": 50
                             }
                         }
                     }
@@ -903,29 +916,48 @@ class WorldBuilderMCP:
         """Get flat listing of scene elements."""
         try:
             await self._initialize_client()
-            result = await self.client.get('/list_elements', timeout=10)
+            params = {
+                key: value
+                for key, value in (
+                    ('filter_type', args.get('filter_type')),
+                    ('page', args.get('page')),
+                    ('page_size', args.get('page_size')),
+                )
+                if value is not None
+            }
+            result = await self.client.get(
+                '/list_elements',
+                params=self._prepare_params(params),
+                timeout=self._get_timeout('standard')
+            )
             
             if result.get("success"):
-                    elements = result.get("elements", [])
-                    if not elements:
-                        return [types.TextContent(
-                            type="text",
-                            text="📋 Scene is empty - no elements found"
-                        )]
-                    
-                    filter_type = args.get("filter_type", "")
-                    if filter_type:
-                        elements = [e for e in elements if filter_type.lower() in e.get("type", "").lower()]
-                    
-                    element_list = "\n".join([
-                        f"• {e.get('path', 'Unknown')} ({e.get('type', 'Unknown')})"
-                        for e in elements
-                    ])
-                    
+                elements = result.get("elements", [])
+                pagination = result.get('pagination', {})
+                if not elements:
+                    page_info = f" (page {pagination.get('page', 1)})" if pagination else ""
                     return [types.TextContent(
                         type="text",
-                        text=f"📋 Scene Elements ({len(elements)} found):\n{element_list}"
+                        text=f"📋 Scene is empty{page_info}"
                     )]
+
+                element_list = "\n".join([
+                    f"• {e.get('path', 'Unknown')} ({e.get('type', 'Unknown')})"
+                    for e in elements
+                ])
+
+                footer = ""
+                if pagination:
+                    footer = (
+                        f"\n\nPage {pagination.get('page', 1)}"
+                        f" of {pagination.get('total_pages', '?')}"
+                        f" — showing {len(elements)} of {pagination.get('total_items', '?')} elements"
+                    )
+
+                return [types.TextContent(
+                    type="text",
+                    text=f"📋 Scene Elements:\n{element_list}{footer}"
+                )]
             else:
                 return [types.TextContent(
                     type="text",

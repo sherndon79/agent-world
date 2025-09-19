@@ -6,6 +6,7 @@ from typing import Any, Dict
 
 from omni.agent.worldsurveyor.http.controller import WorldSurveyorController
 from omni.agent.worldsurveyor.services.worldsurveyor_service import WorldSurveyorService
+from agent_world_requests import RequestTracker
 
 
 class DummyWaypointManager:
@@ -14,6 +15,7 @@ class DummyWaypointManager:
         self._groups: Dict[str, Dict[str, Any]] = {}
         self._counter = 0
         self.markers_visible = True
+        self._group_membership: Dict[str, set[str]] = {}
 
     def get_waypoint_count(self) -> int:
         return len(self._waypoints)
@@ -33,6 +35,7 @@ class DummyWaypointManager:
             'metadata': metadata or {},
             'group_ids': group_ids or [],
         }
+        self._group_membership.setdefault(waypoint_id, set()).update(group_ids or [])
         return waypoint_id
 
     def list_waypoints(self, waypoint_type=None, group_id=None):
@@ -104,16 +107,29 @@ class DummyWaypointManager:
         return group_id
 
     def get_group_hierarchy(self):
-        return {'groups': list(self._groups.values())}
+        return {
+            'hierarchy': list(self._groups.values()),
+            'total_groups': len(self._groups),
+        }
 
     def add_waypoint_to_groups(self, waypoint_id, group_ids):
-        return len(group_ids)
+        membership = self._group_membership.setdefault(waypoint_id, set())
+        before = len(membership)
+        membership.update(group_ids)
+        return len(membership) - before
 
     def remove_waypoint_from_groups(self, waypoint_id, group_ids):
-        return len(group_ids)
+        membership = self._group_membership.setdefault(waypoint_id, set())
+        removed = 0
+        for gid in group_ids:
+            if gid in membership:
+                membership.remove(gid)
+                removed += 1
+        return removed
 
     def get_waypoint_groups(self, waypoint_id):
-        return []
+        membership = self._group_membership.get(waypoint_id, set())
+        return [self._groups[g] for g in membership if g in self._groups]
 
     def get_group_waypoints(self, group_id, include_nested=False):
         return self.list_waypoints()
@@ -126,7 +142,7 @@ class DummyAPI:
         self.waypoint_manager = DummyWaypointManager()
         self._queue_lock = threading.Lock()
         self._camera_queue = deque()
-        self._request_tracking: Dict[str, Any] = {}
+        self._request_tracker = RequestTracker(ttl_seconds=30.0)
 
     def get_port(self):
         return 8891
@@ -177,3 +193,66 @@ def test_set_markers_visible_updates_state():
     result = controller.set_markers_visible({'visible': False})
     assert result['success'] is True
     assert result['visible'] is False
+
+
+def test_add_waypoint_to_groups_missing_waypoint_returns_not_found():
+    controller = build_controller()
+    manager = controller._service._manager  # type: ignore[attr-defined]
+    group_id = manager.create_group(name='Exploration')
+
+    response = controller.add_waypoint_to_groups({
+        'waypoint_id': 'missing-waypoint',
+        'group_ids': [group_id],
+    })
+
+    assert response['success'] is False
+    assert response['error_code'] == 'NOT_FOUND'
+    assert response['details']['waypoint_id'] == 'missing-waypoint'
+
+
+def test_add_waypoint_to_groups_missing_group_returns_error():
+    controller = build_controller()
+    waypoint_resp = controller.create_waypoint({
+        'position': [1.0, 2.0, 3.0],
+        'waypoint_type': 'point_of_interest',
+        'name': 'Test Waypoint',
+    })
+    waypoint_id = waypoint_resp['waypoint_id']
+
+    response = controller.add_waypoint_to_groups({
+        'waypoint_id': waypoint_id,
+        'group_ids': ['non-existent-group'],
+    })
+
+    assert response['success'] is False
+    assert response['error_code'] == 'GROUP_NOT_FOUND'
+    assert 'non-existent-group' in response['details']['missing_group_ids']
+
+
+def test_group_hierarchy_flattens_structure():
+    controller = build_controller()
+    group_resp = controller.create_group({'name': 'Exploration'})
+    assert group_resp['success'] is True
+
+    result = controller.group_hierarchy()
+    assert result['success'] is True
+    assert isinstance(result['hierarchy'], list)
+    assert result['group_count'] == 1
+    assert result['hierarchy'][0]['name'] == 'Exploration'
+
+
+def test_remove_waypoint_groups_accepts_empty_list():
+    controller = build_controller()
+    waypoint = controller.create_waypoint({'position': [0, 0, 0], 'waypoint_type': 'point_of_interest'})
+    waypoint_id = waypoint['waypoint_id']
+    group_id = controller.create_group({'name': 'Exploration'})['group_id']
+    add_response = controller.add_waypoint_to_groups({'waypoint_id': waypoint_id, 'group_ids': [group_id]})
+    assert add_response['success'] is True
+
+    remove_response = controller.remove_waypoint_from_groups({'waypoint_id': waypoint_id, 'group_ids': []})
+    assert remove_response['success'] is True
+    assert remove_response.get('cleared_all') is True
+
+    groups_response = controller.get_waypoint_groups({'waypoint_id': waypoint_id})
+    assert groups_response['success'] is True
+    assert groups_response['groups'] == []

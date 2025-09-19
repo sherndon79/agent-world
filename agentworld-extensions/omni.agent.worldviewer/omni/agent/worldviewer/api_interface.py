@@ -10,10 +10,10 @@ import threading
 import time
 from collections import deque
 from http.server import ThreadingHTTPServer
-from typing import Optional, Dict, Any
 from pathlib import Path
-import sys
+from typing import Any, Dict, Optional
 import logging
+import sys
 
 # Import unified metrics system
 try:
@@ -35,6 +35,7 @@ from .config import get_config
 from agent_world_logging import setup_logging
 from .http_handler import WorldViewerHTTPHandler
 from .security import WorldViewerAuth
+from agent_world_requests import RequestTracker
 
 logger = logging.getLogger(__name__)
 
@@ -64,8 +65,13 @@ class HTTPAPIInterface:
         
         # Thread-safe operation queues (for extension compatibility)
         self._camera_queue = deque()
-        self._request_tracking: Dict[str, Any] = {}
         self._queue_lock = threading.Lock()
+        tracker_ttl = getattr(self._config, 'request_tracker_ttl', 300.0)
+        tracker_capacity = getattr(self._config, 'request_tracker_max_entries', 500)
+        self._request_tracker = RequestTracker(
+            max_entries=tracker_capacity,
+            ttl_seconds=tracker_ttl,
+        )
         
         # Controllers (will be initialized in initialize())
         self.camera_controller = None
@@ -100,7 +106,7 @@ class HTTPAPIInterface:
     def process_queued_operations(self):
         """Process queued operations from the main thread (extension compatibility method)."""
         operations_processed = 0
-        
+
         # Process camera operations
         while operations_processed < self.max_operations_per_tick and self._camera_queue:
             with self._queue_lock:
@@ -108,16 +114,23 @@ class HTTPAPIInterface:
                     request = self._camera_queue.popleft()
                 else:
                     break
-            
+
             self._process_camera_request(request)
             operations_processed += 1
+
+        if operations_processed:
+            self._request_tracker.prune()
 
     def _process_camera_request(self, request: Dict):
         """Process a camera operation request on the main thread."""
         try:
+            request_id = request.get('request_id')
+
             if not self.camera_controller:
                 request['error'] = 'Camera controller not initialized'
                 request['completed'] = True
+                if request_id:
+                    self._request_tracker.mark_completed(request_id, error=request['error'])
                 return
             
             operation = request['operation']
@@ -161,11 +174,15 @@ class HTTPAPIInterface:
             
             request['result'] = result
             request['completed'] = True
-            
+            if request_id:
+                self._request_tracker.mark_completed(request_id, result=result)
+
         except Exception as e:
             request['error'] = str(e)
             request['completed'] = True
             logger.error(f"Camera operation failed: {e}")
+            if request_id:
+                self._request_tracker.mark_completed(request_id, error=request['error'])
 
     def _start_cinematic_operation(self, operation: str, params: Dict) -> Dict:
         """Start a cinematic camera operation (these run asynchronously)"""

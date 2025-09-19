@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from omni.agent.worldviewer.http.controller import WorldViewerController
 from omni.agent.worldviewer.services.worldviewer_service import WorldViewerService
+from agent_world_requests import RequestTracker
 
 
 class _FakeService:
@@ -42,7 +43,7 @@ def test_controller_frame_object_missing_parameter_returns_error():
 class _StubAPI:
     def __init__(self):
         self._camera_queue = []
-        self._request_tracking = {}
+        self._request_tracker = RequestTracker(ttl_seconds=30.0)
         import threading
         self._queue_lock = threading.Lock()
         self.camera_controller = None
