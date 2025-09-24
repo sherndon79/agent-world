@@ -28,6 +28,18 @@
     "access_control_max_age": "86400",
     "vary_header": "Origin"
   },
+
+  "security_headers": {
+    "_comment": "Security headers to prevent various web-based attacks",
+    "content_security_policy": "default-src 'self'; script-src 'none'; object-src 'none'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self'; media-src 'none'; frame-src 'none'; form-action 'self'",
+    "x_content_type_options": "nosniff",
+    "x_frame_options": "DENY",
+    "x_xss_protection": "1; mode=block",
+    "referrer_policy": "strict-origin-when-cross-origin",
+    "permissions_policy": "geolocation=(), microphone=(), camera=(), payment=(), usb=(), magnetometer=(), gyroscope=()",
+    "enable_hsts": false,
+    "hsts_max_age": "max-age=31536000; includeSubDomains"
+  },
   
   "standard_endpoints": {
     "health_path": "health",

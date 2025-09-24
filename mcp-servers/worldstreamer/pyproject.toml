@@ -39,7 +39,7 @@ dev = [
 ]
 
 [project.scripts]
-mcp-worldstreamer = "mcp_agent_worldstreamer:main"
+mcp-worldstreamer = "main:main"
 
 [project.urls]
 Homepage = "https://github.com/your-org/agent-world"

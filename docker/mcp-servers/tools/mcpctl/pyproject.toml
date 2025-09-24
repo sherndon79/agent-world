@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mcpctl"
+version = "0.1.0"
+description = "CLI for Agent World extension APIs (HMAC/Bearer via MCPBaseClient)"
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+  "aiohttp>=3.9",
+]
+
+[project.scripts]
+mcpctl = "mcpctl:main"
+
+[tool.setuptools]
+py-modules = ["mcpctl"]

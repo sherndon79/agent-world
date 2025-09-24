@@ -7,6 +7,7 @@ Provides hardware-accelerated video encoding with multiple fallback options:
 - GStreamer software encoding
 
 Designed for 24fps SRT (MPEG-TS/H.264) streaming from Isaac Sim viewport capture.
+Includes secure command injection prevention.
 """
 
 import logging
@@ -17,6 +18,14 @@ import os
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional, Tuple
 import queue
+
+# Import secure subprocess utilities
+from agent_world_subprocess_security import (
+    create_secure_srt_pipeline,
+    validate_gstreamer_element_availability,
+    safe_subprocess_run,
+    CommandInjectionError
+)
 
 logger = logging.getLogger(__name__)
 
@@ -228,61 +237,34 @@ class GStreamerEncoder(BaseEncoder):
         return "x264"
     
     def _test_encoder_availability(self, encoder_element: str) -> bool:
-        """Test if a GStreamer encoder element is available."""
+        """Test if a GStreamer encoder element is available using secure validation."""
         try:
-            cmd = ['gst-inspect-1.0', encoder_element]
-            result = subprocess.run(cmd, capture_output=True, timeout=3)
-            return result.returncode == 0
-        except Exception:
+            return validate_gstreamer_element_availability(encoder_element)
+        except Exception as e:
+            logger.debug(f"Error testing encoder availability for {encoder_element}: {e}")
             return False
     
     def _build_pipeline(self) -> Optional[list]:
-        """Build GStreamer pipeline command."""
+        """Build secure GStreamer pipeline command with input validation."""
         try:
             width, height = self.resolution
-            
-            # Build pipeline as single command string, then split
-            # This avoids potential issues with list construction
-            
-            if self.encoder_type == "nvenc":
-                pipeline_str = (
-                    f"gst-launch-1.0 fdsrc do-timestamp=true ! "
-                    f"rawvideoparse width={width} height={height} format=rgb framerate={self.fps}/1 ! "
-                    f"videoconvert ! queue max-size-buffers=1 leaky=downstream ! "
-                    f"video/x-raw,format=NV12 ! "
-                    f"nvh264enc bitrate={self.bitrate_kbps} preset=low-latency-hq ! "
-                    f"h264parse config-interval=1 ! "
-                    f"mpegtsmux alignment=7 ! "
-                    f"srtsink uri={self.rtmp_url} sync=false async=false"
-                )
-            elif self.encoder_type == "vaapi":
-                pipeline_str = (
-                    f"gst-launch-1.0 fdsrc do-timestamp=true ! "
-                    f"rawvideoparse width={width} height={height} format=rgb framerate={self.fps}/1 ! "
-                    f"videoconvert ! queue max-size-buffers=1 leaky=downstream ! "
-                    f"video/x-raw,format=NV12 ! "
-                    f"vaapih264enc bitrate={self.bitrate_kbps} quality-level=7 ! "
-                    f"h264parse config-interval=1 ! "
-                    f"mpegtsmux alignment=7 ! "
-                    f"srtsink uri={self.rtmp_url} sync=false async=false"
-                )
-            else:  # x264 software encoding
-                pipeline_str = (
-                    f"gst-launch-1.0 fdsrc do-timestamp=true ! "
-                    f"rawvideoparse width={width} height={height} format=rgb framerate={self.fps}/1 ! "
-                    f"videoconvert ! queue max-size-buffers=1 leaky=downstream ! "
-                    f"x264enc bitrate={self.bitrate_kbps} speed-preset=ultrafast tune=zerolatency key-int-max=24 bframes=0 ! "
-                    f"h264parse config-interval=1 ! "
-                    f"mpegtsmux alignment=7 ! "
-                    f"srtsink uri={self.rtmp_url} sync=false async=false"
-                )
-            
-            # Split into arguments for subprocess
-            import shlex
-            pipeline = shlex.split(pipeline_str)
-            
+
+            # Use secure pipeline builder to prevent command injection
+            pipeline = create_secure_srt_pipeline(
+                width=width,
+                height=height,
+                fps=self.fps,
+                bitrate_kbps=self.bitrate_kbps,
+                srt_url=self.rtmp_url,  # Note: rtmp_url is used for SRT URL in this context
+                encoder_type=self.encoder_type
+            )
+
+            logger.debug(f"Built secure SRT pipeline with {len(pipeline)} arguments")
             return pipeline
-            
+
+        except CommandInjectionError as e:
+            logger.error(f"Security violation in pipeline parameters: {e}")
+            return None
         except Exception as e:
             logger.error(f"Pipeline build failed: {e}")
             return None

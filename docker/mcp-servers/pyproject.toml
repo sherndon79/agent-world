@@ -1,0 +1,151 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-world-mcp-servers"
+version = "0.1.0"
+description = "Unified MCP servers for agenTW∞rld - Isaac Sim extensions integration"
+authors = [
+    {name = "agenTW∞rld Contributors", email = "contributors@agentworld.dev"}
+]
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.8"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+dependencies = [
+    # Core MCP and HTTP
+    "mcp>=1.13.1",
+    "aiohttp>=3.8.0",
+    "uvicorn>=0.24.0",
+    
+    # Data handling
+    "pydantic>=2.0.0",
+    "typing-extensions>=4.0.0",
+    
+    # Async utilities
+    "asyncio-mqtt>=0.16.1",
+    "aiofiles>=23.1.0",
+    
+    # Desktop screenshot dependencies
+    "mss>=9.0.0",
+    "pygetwindow>=0.0.9", 
+    "pillow>=10.0.0",
+    "pyscreenshot>=3.1",
+    
+    # Platform-specific screenshot dependencies
+    "python-xlib>=0.33; sys_platform=='linux'",
+    "ewmh>=0.1.6; sys_platform=='linux'",
+    "pywin32>=306; sys_platform=='win32'",
+    "win32gui>=0.1.0; sys_platform=='win32'",
+    "pyobjc-framework-Quartz>=10.0; sys_platform=='darwin'",
+    "pyobjc-framework-Cocoa>=10.0; sys_platform=='darwin'",
+    
+    # Utilities
+    "rich>=13.7.0",
+    "structlog>=23.2.0", 
+    "click>=8.1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-mock>=3.12.0",
+    "mypy>=1.0.0",
+    "black>=23.0.0",
+    "isort>=5.0.0",
+    "flake8>=6.0.0",
+]
+
+enhanced-screenshot = [
+    "opencv-python>=4.8.0",
+    "easyocr>=1.7.0",
+    "numpy>=1.24.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/sherndon79/agent-adventures"
+Repository = "https://github.com/sherndon79/agent-adventures"
+Documentation = "https://github.com/sherndon79/agent-adventures#readme"
+
+[tool.setuptools.packages.find]
+where = [
+    "worldbuilder/src",
+    "worldviewer/src", 
+    "worldsurveyor/src",
+    "worldrecorder/src",
+    "desktop-screenshot/src",
+    "shared"
+]
+
+[tool.setuptools.package-data]
+"*" = ["*.md", "*.txt", "*.yml", "*.yaml"]
+
+[tool.black]
+line-length = 88
+target-version = ['py38']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 88
+known_first_party = [
+    "mcp_agent_worldbuilder",
+    "mcp_agent_worldviewer", 
+    "mcp_agent_worldsurveyor",
+    "mcp_agent_worldrecorder",
+    "mcp_screenshot_server"
+]
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+ignore_errors = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+]

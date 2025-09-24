@@ -56,6 +56,17 @@ Capture screenshots and record videos from Isaac Sim viewports. Generate visual 
 - Configurable quality and resolution
 - Automatic output management
 
+### 📡 WorldStreamer
+Stream Isaac Sim viewport content in real-time via SRT and RTMP protocols. Enable live streaming of 3D scenes and simulations for remote viewing, broadcasting, and collaborative workflows.
+
+**Key Features:**
+- **SRT Streaming**: Low-latency streaming with automatic error recovery
+- **RTMP Streaming**: Compatible with streaming platforms and RTMP servers
+- **Hardware Acceleration**: GPU-accelerated encoding for optimal performance
+- **Adaptive Bitrate**: Dynamic quality adjustment based on network conditions
+- **Multi-Protocol Support**: Both SRT and RTMP protocols in parallel
+- **OME Integration**: Powered by OvenMediaEngine for production-grade streaming
+
 ## Quick Start
 
 Get up and running in minutes with the automated installer:
@@ -130,6 +141,28 @@ Rather than hard-coded workflows, **AI agents orchestrate extensions dynamically
 
 This architecture enables emergent, intelligent workflows that weren't explicitly programmed.
 
+## MCP Server Architecture
+
+agenTW∞rld provides **dual MCP server architectures** for different deployment scenarios:
+
+### 📡 STDIO MCP Servers (Development/Local)
+Located in `~/agent-world/mcp-servers/`
+- **Direct Integration**: Connect directly to Isaac Sim extension HTTP APIs
+- **Local Development**: Perfect for development and local AI agent workflows
+- **Simple Setup**: Lightweight Python scripts with minimal dependencies
+- **Available Servers**: WorldBuilder, WorldViewer, WorldSurveyor, WorldRecorder, WorldStreamer, Screenshot
+
+### 🐳 HTTP Streaming MCP Servers (Production/Cloud)
+Located in `~/agent-world/docker/mcp-servers/`
+- **Container-Based**: Dockerized for scalable cloud deployment
+- **HTTP/SSE Streaming**: Server-sent events for real-time data streaming
+- **Production Ready**: Built for high-availability production environments
+- **Cloud Native**: Designed for Kubernetes, Docker Swarm, or container orchestration
+
+**Choose the architecture that fits your deployment:**
+- **Local Development & Testing**: Use STDIO MCP servers
+- **Production & Cloud Deployment**: Use HTTP streaming MCP servers
+
 ## Documentation
 
 - [Installation Guide](docs/installation.md)
@@ -148,6 +181,8 @@ This architecture enables emergent, intelligent workflows that weren't explicitl
 - **WorldViewer**: `8900` - Camera control and cinematics
 - **WorldSurveyor**: `8891` - Waypoints and spatial marking
 - **WorldRecorder**: `8892` - Screenshots and video recording
+- **WorldStreamer RTMP**: `8906` - RTMP streaming service management
+- **WorldStreamer SRT**: `8908` - SRT streaming service management
 
 ## Ports & Environment Variables
 
@@ -156,6 +191,8 @@ This architecture enables emergent, intelligent workflows that weren't explicitl
   - `WORLDVIEWER_API_URL` (default `http://localhost:8900`)
   - `WORLDSURVEYOR_API_URL` (default `http://localhost:8891`)
   - `WORLDRECORDER_API_URL` (default `http://localhost:8892`)
+  - `WORLDSTREAMER_RTMP_API_URL` (default `http://localhost:8906`)
+  - `WORLDSTREAMER_SRT_API_URL` (default `http://localhost:8908`)
 
 - Authentication (global):
   - `AGENT_EXT_AUTH_ENABLED` = `true|false` (global on/off; default on)
@@ -166,12 +203,16 @@ This architecture enables emergent, intelligent workflows that weren't explicitl
     - `AGENT_WORLDVIEWER_AUTH_TOKEN`, `AGENT_WORLDVIEWER_HMAC_SECRET`
     - `AGENT_WORLDSURVEYOR_AUTH_TOKEN`, `AGENT_WORLDSURVEYOR_HMAC_SECRET`
     - `AGENT_WORLDRECORDER_AUTH_TOKEN`, `AGENT_WORLDRECORDER_HMAC_SECRET`
+    - `AGENT_WORLDSTREAMER_RTMP_AUTH_TOKEN`, `AGENT_WORLDSTREAMER_RTMP_HMAC_SECRET`
+    - `AGENT_WORLDSTREAMER_SRT_AUTH_TOKEN`, `AGENT_WORLDSTREAMER_SRT_HMAC_SECRET`
 
 - Isaac settings (applied via launcher and UI):
   - `/exts/omni.agent.worldbuilder/auth_enabled=true`
   - `/exts/omni.agent.worldviewer/auth_enabled=true`
   - `/exts/omni.agent.worldsurveyor/auth_enabled=true`
   - `/exts/omni.agent.worldrecorder/auth_enabled=true`
+  - `/exts/omni.agent.worldstreamer.rtmp/auth_enabled=true`
+  - `/exts/omni.agent.worldstreamer.srt/auth_enabled=true`
 
 Config precedence (effective):
 - Environment variables → Isaac settings → JSON files → defaults

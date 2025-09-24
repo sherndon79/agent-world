@@ -76,7 +76,7 @@ pip install --upgrade pip setuptools wheel
 pip install -e .
 ```
 
-**Note:** The installer uses a unified virtual environment approach that installs all MCP servers from a single `pyproject.toml` file in the `mcp-servers` directory. This simplifies dependency management and reduces disk usage.
+**Note:** The installer uses a unified virtual environment approach that installs all MCP servers from a single `pyproject.toml` file in the `mcp-servers` directory. This simplifies dependency management and reduces disk usage. All MCP servers use the shared Python interpreter at `mcp-servers/venv/bin/python`.
 
 ### MCP Client Configuration
 
@@ -85,37 +85,44 @@ Add to your MCP client configuration (e.g., Claude Desktop):
 ```json
 {
   "mcpServers": {
-    "worldbuilder": {
-      "command": "python",
-      "args": ["/path/to/mcp-servers/worldbuilder/src/mcp_agent_worldbuilder.py"],
-      "env": {
-        "AGENT_WORLDBUILDER_BASE_URL": "http://localhost:8899"
-      }
+    "worldbuilder-server": {
+      "type": "stdio",
+      "command": "/path/to/agent-world/mcp-servers/venv/bin/python",
+      "args": [
+        "/path/to/agent-world/mcp-servers/worldbuilder/src/main.py"
+      ],
+      "env": {}
     },
-    "worldviewer": {
-      "command": "python",
-      "args": ["/path/to/mcp-servers/worldviewer/src/mcp_agent_worldviewer.py"], 
-      "env": {
-        "AGENT_WORLDVIEWER_BASE_URL": "http://localhost:8900"
-      }
+    "worldviewer-server": {
+      "type": "stdio",
+      "command": "/path/to/agent-world/mcp-servers/venv/bin/python",
+      "args": [
+        "/path/to/agent-world/mcp-servers/worldviewer/src/main.py"
+      ],
+      "env": {}
     },
-    "worldsurveyor": {
-      "command": "python",
-      "args": ["/path/to/mcp-servers/worldsurveyor/src/mcp_worldsurveyor.py"],
-      "env": {
-        "AGENT_WORLDSURVEYOR_BASE_URL": "http://localhost:8891"
-      }
+    "worldsurveyor-server": {
+      "type": "stdio",
+      "command": "/path/to/agent-world/mcp-servers/venv/bin/python",
+      "args": [
+        "/path/to/agent-world/mcp-servers/worldsurveyor/src/main.py"
+      ],
+      "env": {}
     },
-    "worldrecorder": {
-      "command": "python", 
-      "args": ["/path/to/mcp-servers/worldrecorder/src/mcp_agent_worldrecorder.py"],
-      "env": {
-        "AGENT_WORLDRECORDER_BASE_URL": "http://localhost:8892"
-      }
+    "worldrecorder-server": {
+      "type": "stdio",
+      "command": "/path/to/agent-world/mcp-servers/venv/bin/python",
+      "args": [
+        "/path/to/agent-world/mcp-servers/worldrecorder/src/main.py"
+      ],
+      "env": {}
     },
-    "screenshot": {
-      "command": "python",
-      "args": ["/path/to/mcp-servers/desktop-screenshot/src/mcp_screenshot_server.py"],
+    "screenshot-server": {
+      "type": "stdio",
+      "command": "/path/to/agent-world/mcp-servers/venv/bin/python",
+      "args": [
+        "/path/to/agent-world/mcp-servers/desktop-screenshot/src/mcp_screenshot_server.py"
+      ],
       "env": {
         "SCREENSHOT_OUTPUT_DIR": "/tmp/screenshots"
       }

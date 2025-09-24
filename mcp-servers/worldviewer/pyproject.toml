@@ -40,6 +40,9 @@ dev = [
     "flake8>=6.0.0",
 ]
 
+[project.scripts]
+worldviewer = "main:main"
+
 [project.urls]
 Homepage = "https://github.com/agent-world/mcp-worldviewer"
 Repository = "https://github.com/agent-world/mcp-worldviewer"

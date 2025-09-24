@@ -1,0 +1,37 @@
+# Core MCP and HTTP (FastMCP with Streamable HTTP transport)
+fastapi>=0.110.0    # ASGI framework used by FastMCP mounting
+mcp>=1.13.1         # Official MCP SDK with FastMCP
+aiohttp>=3.8.0      # HTTP client for extension communication
+uvicorn>=0.24.0     # ASGI server for FastMCP
+httpx>=0.27.0       # Used by tools (raw MCP checks) and probes
+httpx-sse>=0.4.1    # SSE support for raw MCP checks
+# Removed deprecated dependencies:
+# - starlette>=0.27.0      # No longer needed with FastMCP
+# - aiohttp-cors>=0.7.0    # No longer needed with FastMCP
+
+# Data handling
+pydantic>=2.0.0
+typing-extensions>=4.0.0
+
+# Async utilities
+asyncio-mqtt>=0.16.1
+aiofiles>=23.1.0
+
+# Desktop screenshot dependencies (for screenshot server)
+mss>=9.0.0
+pygetwindow>=0.0.9
+pillow>=10.0.0
+pyscreenshot>=3.1
+
+# Platform-specific screenshot dependencies
+python-xlib>=0.33; sys_platform=='linux'
+ewmh>=0.1.6; sys_platform=='linux'
+
+# Utilities
+rich>=13.7.0
+structlog>=23.2.0
+click>=8.1.0
+
+# Additional dependencies for Isaac Sim integration
+requests>=2.31.0
+numpy>=1.24.0

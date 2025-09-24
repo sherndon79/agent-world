@@ -117,11 +117,16 @@ class WorldHTTPHandler(BaseHTTPRequestHandler):
         self._handle_request('POST')
     
     def _send_cors_response(self):
-        """Send CORS preflight response."""
+        """Send CORS preflight response with security headers."""
         cors_config = HTTP_CONFIG.get('cors_headers', {})
-        
+
         self.send_response(200)
-        self.send_header('Access-Control-Allow-Origin', 
+
+        # Add security headers
+        self._add_security_headers()
+
+        # Add CORS headers
+        self.send_header('Access-Control-Allow-Origin',
                         cors_config.get('access_control_allow_origin', '*'))
         self.send_header('Access-Control-Allow-Methods',
                         cors_config.get('access_control_allow_methods', 'GET, POST, OPTIONS'))
@@ -370,21 +375,65 @@ class WorldHTTPHandler(BaseHTTPRequestHandler):
     def get_routes(self) -> Dict[str, Callable]:
         """
         Override in subclasses to define extension-specific routes.
-        
+
         Returns:
             Dictionary mapping endpoint names to handler functions.
             Handler functions receive (method, data) and return dict response.
         """
         return {}
+
+    def _add_security_headers(self):
+        """Add security headers to prevent various web-based attacks."""
+        security_config = HTTP_CONFIG.get('security_headers', {})
+
+        # Content Security Policy - prevent XSS and code injection
+        csp = security_config.get('content_security_policy',
+                                 "default-src 'self'; script-src 'none'; object-src 'none'; "
+                                 "style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
+                                 "connect-src 'self'; font-src 'self'; media-src 'none'; "
+                                 "frame-src 'none'; form-action 'self'")
+        self.send_header('Content-Security-Policy', csp)
+
+        # X-Content-Type-Options - prevent MIME type sniffing
+        self.send_header('X-Content-Type-Options',
+                        security_config.get('x_content_type_options', 'nosniff'))
+
+        # X-Frame-Options - prevent clickjacking
+        self.send_header('X-Frame-Options',
+                        security_config.get('x_frame_options', 'DENY'))
+
+        # X-XSS-Protection - enable browser XSS protection
+        self.send_header('X-XSS-Protection',
+                        security_config.get('x_xss_protection', '1; mode=block'))
+
+        # Referrer-Policy - control referrer information
+        self.send_header('Referrer-Policy',
+                        security_config.get('referrer_policy', 'strict-origin-when-cross-origin'))
+
+        # Permissions-Policy - control browser features
+        permissions_policy = security_config.get('permissions_policy',
+                                                 'geolocation=(), microphone=(), camera=(), '
+                                                 'payment=(), usb=(), magnetometer=(), gyroscope=()')
+        self.send_header('Permissions-Policy', permissions_policy)
+
+        # Strict-Transport-Security - enforce HTTPS (only if configured)
+        if security_config.get('enable_hsts', False):
+            hsts_value = security_config.get('hsts_max_age', 'max-age=31536000; includeSubDomains')
+            self.send_header('Strict-Transport-Security', hsts_value)
     
     def _send_json_response(self, data: Dict[str, Any], status_code: int = 200):
-        """Send JSON response with proper headers."""
+        """Send JSON response with proper headers including security headers."""
         response_config = HTTP_CONFIG.get('response_formats', {})
         cors_config = HTTP_CONFIG.get('cors_headers', {})
-        
+
         self.send_response(status_code)
         self.send_header('Content-Type', 'application/json')
-        self.send_header('Access-Control-Allow-Origin', 
+
+        # Add security headers
+        self._add_security_headers()
+
+        # Add CORS headers
+        self.send_header('Access-Control-Allow-Origin',
                         cors_config.get('access_control_allow_origin', '*'))
         self.send_header('Vary', cors_config.get('vary_header', 'Origin'))
         self.end_headers()
@@ -400,11 +449,16 @@ class WorldHTTPHandler(BaseHTTPRequestHandler):
         self.wfile.write(json_response.encode('utf-8'))
     
     def _send_raw_response(self, content: str, content_type: str, status_code: int = 200):
-        """Send raw text response (for Prometheus metrics)."""
+        """Send raw text response (for Prometheus metrics) with security headers."""
         cors_config = HTTP_CONFIG.get('cors_headers', {})
-        
+
         self.send_response(status_code)
         self.send_header('Content-Type', content_type)
+
+        # Add security headers
+        self._add_security_headers()
+
+        # Add CORS headers
         self.send_header('Access-Control-Allow-Origin',
                         cors_config.get('access_control_allow_origin', '*'))
         self.send_header('Vary', cors_config.get('vary_header', 'Origin'))
@@ -413,18 +467,25 @@ class WorldHTTPHandler(BaseHTTPRequestHandler):
         self.wfile.write(content.encode('utf-8'))
     
     def _send_error_response(self, status_code: int, error_message: str):
-        """Send error response with proper status code."""
+        """Send error response with proper status code and security headers."""
         cors_config = HTTP_CONFIG.get('cors_headers', {})
-        
+
         self.send_response(status_code)
         self.send_header('Content-Type', 'application/json')
+
+        # Add security headers
+        self._add_security_headers()
+
+        # Add CORS headers
         self.send_header('Access-Control-Allow-Origin',
                         cors_config.get('access_control_allow_origin', '*'))
         self.send_header('Vary', cors_config.get('vary_header', 'Origin'))
+
         # Add WWW-Authenticate header for 401 Unauthorized responses (uniform across extensions)
         if status_code == 401:
             realm = f"isaac-sim-{getattr(self, 'extension_name', 'world')}"
             self.send_header('WWW-Authenticate', f'HMAC-SHA256 realm="{realm}"')
+
         self.end_headers()
         
         response = {

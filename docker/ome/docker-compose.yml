@@ -1,0 +1,19 @@
+version: "3.8"
+
+services:
+  ome:
+    image: ${OME_IMAGE:-airensoft/ovenmediaengine:latest}
+    container_name: ${OME_NAME:-ome}
+    restart: unless-stopped
+    ports:
+      - "8080:8080/tcp"      # HTTP / LL-HLS
+      - "8088:8088/tcp"      # Management API
+      - "1935:1935/tcp"      # RTMP ingest
+      - "3333:3333/tcp"      # WebRTC signaling (WS)
+      - "3334:3334/tcp"      # WebRTC signaling (WSS)
+      - "9999:9999/udp"      # SRT ingest
+      - "10000-10010:10000-10010/udp"  # WebRTC ICE RTP/RTCP
+    # Bind custom config directory with API enabled
+    volumes:
+      - ./origin_conf:/opt/ovenmediaengine/bin/origin_conf
+

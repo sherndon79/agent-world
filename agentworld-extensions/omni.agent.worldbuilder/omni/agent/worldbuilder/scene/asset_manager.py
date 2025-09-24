@@ -6,12 +6,30 @@ Provides asset placement, transformation, and validation operations with proper 
 
 import logging
 import os
+import sys
 from typing import Dict, Any, Optional, Tuple, List
 from pxr import Usd, UsdGeom, Gf
 
 from .scene_types import AssetPlacement
 
 logger = logging.getLogger(__name__)
+
+# Add path for centralized security modules (relative to this file)
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+AGENTWORLD_EXTENSIONS_PATH = os.path.join(CURRENT_DIR, "..", "..", "..", "..", "..", "agentworld-extensions")
+AGENTWORLD_EXTENSIONS_PATH = os.path.abspath(AGENTWORLD_EXTENSIONS_PATH)
+
+if AGENTWORLD_EXTENSIONS_PATH not in sys.path:
+    sys.path.insert(0, AGENTWORLD_EXTENSIONS_PATH)
+
+# Try to import centralized asset security validator
+try:
+    from agent_world_asset_security import AssetPathValidator
+    CENTRALIZED_SECURITY_AVAILABLE = True
+    logger.info("✅ Centralized asset security module loaded")
+except ImportError as e:
+    logger.warning(f"⚠️ Could not import centralized asset security: {e}")
+    CENTRALIZED_SECURITY_AVAILABLE = False
 
 
 class AssetManager:
@@ -47,26 +65,29 @@ class AssetManager:
                     'error': f"Asset file not found: {asset.asset_path}"
                 }
             
-            # Create USD reference prim
-            prim_path = asset.prim_path if asset.prim_path.startswith('/') else f"/World/{asset.prim_path}"
-            
-            # Define the reference prim
-            prim = stage.DefinePrim(prim_path)
-            if not prim:
+            # Create USD reference container prim
+            # Use the asset name as the container (e.g., 'test_mug' -> '/World/test_mug')
+            container_path = asset.prim_path if asset.prim_path.startswith('/') else f"/World/{asset.name}"
+
+            # Define the container prim as an Xform (transformable container)
+            container_prim = stage.DefinePrim(container_path, "Xform")
+            if not container_prim:
                 return {
                     'success': False,
-                    'error': f"Failed to create prim at path: {prim_path}"
+                    'error': f"Failed to create container prim at path: {container_path}"
                 }
-            
-            # Add USD reference
-            references = prim.GetReferences()
+
+            # Add USD reference to the container
+            references = container_prim.GetReferences()
             references.AddReference(asset.asset_path)
+
+            logger.info(f"📦 Created USD reference container at {container_path}")
             
             # Apply transforms to the container prim (not the referenced content)
             if any(asset.position) or any(asset.rotation) or any(v != 1.0 for v in asset.scale):
                 try:
                     # Make the container prim transformable (correct approach for references)
-                    xformable = UsdGeom.Xformable(prim)
+                    xformable = UsdGeom.Xformable(container_prim)
                     
                     # Clear any existing transforms on the container
                     xformable.ClearXformOpOrder()
@@ -88,17 +109,17 @@ class AssetManager:
                     logger.warning(f"⚠️ Failed to apply transforms to asset reference: {transform_error}")
                     # Continue with asset placement even if transforms fail
             
-            logger.info(f"✅ Placed asset '{asset.name}' via USD reference at {prim_path}")
-            
+            logger.info(f"✅ Placed asset '{asset.name}' via USD reference at {container_path}")
+
             return {
                 'success': True,
                 'asset_name': asset.name,
                 'asset_path': asset.asset_path,
-                'prim_path': prim_path,
+                'prim_path': container_path,
                 'position': asset.position,
                 'rotation': asset.rotation,
                 'scale': asset.scale,
-                'message': f"Placed asset '{asset.name}' in USD scene via reference"
+                'message': f"Placed asset '{asset.name}' in USD scene via reference container"
             }
             
         except Exception as e:
@@ -196,32 +217,114 @@ class AssetManager:
                 'prim_path': prim_path
             }
     
-    def validate_asset_path(self, asset_path: str) -> bool:
-        """Validate that an asset file exists and is readable."""
+    def _get_safe_asset_paths(self) -> List[str]:
+        """Get safe asset search paths with proper fallback logic."""
+        # Calculate agent-world assets path once
+        agent_world_root = os.path.join(CURRENT_DIR, "..", "..", "..", "..", "..")
+        agent_world_assets = os.path.abspath(os.path.join(agent_world_root, "assets"))
+
+        # Return list of safe asset paths
+        safe_paths = []
+        if os.path.exists(agent_world_assets):
+            safe_paths.append(agent_world_assets)
+
+        return safe_paths
+
+    def _validate_usd_file_content(self, file_path: str) -> bool:
+        """Validate that file content matches USD format expectations."""
         try:
-            if not asset_path:
-                return False
-            
-            # Handle both absolute and relative paths
-            if not os.path.isabs(asset_path):
-                # Try common asset directories
-                search_paths = [
-                    os.getcwd(),
-                    "/World/assets",
-                    "../assets",
-                ]
-                
-                for search_path in search_paths:
-                    full_path = os.path.join(search_path, asset_path)
-                    if os.path.exists(full_path) and os.path.isfile(full_path):
+            with open(file_path, 'rb') as f:
+                header = f.read(16)
+
+                # Check for USD binary format
+                if header.startswith(b'PXR-USDC'):
+                    return True
+
+                # Check for USD ASCII format
+                if header.startswith(b'#usda'):
+                    return True
+
+                # For USDZ (ZIP format), check ZIP signature
+                if header.startswith(b'PK'):
+                    return True
+
+                # Sometimes USDA files don't start with #usda, check for USD-like content
+                try:
+                    header_text = header.decode('utf-8', errors='ignore')
+                    if 'usda' in header_text.lower() or 'def ' in header_text:
                         return True
+                except:
+                    pass
+
+            return False
+        except Exception as e:
+            logger.warning(f"Could not validate file content for {file_path}: {e}")
+            return False
+
+    def validate_asset_path(self, asset_path: str) -> bool:
+        """
+        Validate asset file exists and is readable.
+        Fast path for Isaac Sim USD formats with content validation.
+        """
+        try:
+            if not asset_path or not asset_path.strip():
                 return False
-            
-            return os.path.exists(asset_path) and os.path.isfile(asset_path)
-            
+
+            # Fast path: Isaac Sim directly usable formats (USD family only)
+            isaac_sim_extensions = ['.usd', '.usda', '.usdz']
+            if any(asset_path.lower().endswith(ext) for ext in isaac_sim_extensions):
+                # Verify file exists
+                if not (os.path.exists(asset_path) and os.path.isfile(asset_path)):
+                    logger.error(f"❌ USD asset file not found: {asset_path}")
+                    return False
+
+                # Validate file content matches expected format
+                if not self._validate_usd_file_content(asset_path):
+                    logger.error(f"❌ File does not contain valid USD content: {asset_path}")
+                    return False
+
+                logger.debug(f"✅ USD asset validated (fast path): {asset_path}")
+                return True
+
+            # For non-USD files, reject them - only directly loadable formats allowed
+            logger.error(f"❌ Unsupported file type for direct asset placement: {asset_path}")
+            logger.error("Only USD formats (.usd, .usda, .usdz) are supported for direct asset placement")
+            return False
+
         except Exception as e:
             logger.error(f"❌ Error validating asset path {asset_path}: {e}")
             return False
+
+    def _fallback_validate_asset_path(self, asset_path: str) -> bool:
+        """Simple fallback asset validation when centralized validation is unavailable."""
+        if not asset_path or not asset_path.strip():
+            return False
+
+        # Security check: prevent path traversal attacks
+        if '..' in asset_path:
+            logger.warning(f"Path traversal attempt blocked: {asset_path}")
+            return False
+
+        # Get safe search paths
+        search_paths = self._get_safe_asset_paths()
+
+        # For absolute paths, check against allowed directories
+        if os.path.isabs(asset_path):
+            for allowed_path in search_paths:
+                if asset_path.startswith(allowed_path):
+                    real_asset_path = os.path.realpath(asset_path)
+                    real_allowed_path = os.path.realpath(allowed_path)
+                    if real_asset_path.startswith(real_allowed_path + os.sep):
+                        return os.path.exists(asset_path) and os.path.isfile(asset_path)
+            return False
+
+        # For relative paths, search in safe directories
+        for search_path in search_paths:
+            full_path = os.path.join(search_path, asset_path)
+            if os.path.exists(full_path) and os.path.isfile(full_path):
+                return True
+
+        return False
     
     def get_asset_info(self, prim_path: str) -> Dict[str, Any]:
         """

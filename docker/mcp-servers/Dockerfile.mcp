@@ -1,0 +1,46 @@
+# Dockerfile for MCP servers
+FROM python:3.11-slim
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    curl \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /app
+
+# Create virtual environment
+RUN python -m venv /app/venv
+ENV PATH="/app/venv/bin:$PATH"
+
+# Install Python dependencies
+# Copy requirements from the actual mcp-servers
+COPY requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+# MCP SDK is already included in requirements.txt as 'mcp>=1.13.1'
+
+# Copy shared modules and MCP server source code
+COPY shared /app/shared
+COPY worldbuilder /app/worldbuilder
+COPY worldviewer /app/worldviewer
+COPY worldsurveyor /app/worldsurveyor
+COPY worldstreamer /app/worldstreamer
+COPY worldrecorder /app/worldrecorder
+
+# Set environment variables
+ENV PYTHONPATH="/app:/app/shared"
+ENV PYTHONUNBUFFERED=1
+
+# Create entrypoint script
+COPY entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD python -c "import sys; sys.exit(0)"
+
+# Default command
+ENTRYPOINT ["/app/entrypoint.sh"]

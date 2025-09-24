@@ -305,7 +305,19 @@ def create_worldbuilder_config() -> WorldExtensionConfig:
             'server_port': 8899,              # Extension-specific overrides
             'enable_batch_operations': True,
             'max_elements_per_batch': 100,
-            'auto_save_scene': False
+            'auto_save_scene': False,
+
+            # Asset path security settings
+            'asset_search_paths': [
+                './assets',
+                './models',
+                './textures',
+                './scenes'
+            ],
+            'allow_absolute_asset_paths': False,
+            'validate_asset_paths': True,
+            'max_asset_file_size_mb': 100,
+            'log_asset_access': False
         }
     
     return WorldBuilderConfig('worldbuilder', 'worldbuilder_config.json')

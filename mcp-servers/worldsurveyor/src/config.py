@@ -1,0 +1,87 @@
+#!/usr/bin/env python3
+"""
+WorldSurveyor Configuration
+
+Handles environment variables and configuration for the WorldSurveyor MCP server.
+"""
+
+import os
+import sys
+from typing import Optional
+
+# Add agentworld-extensions to path for unified config
+extensions_path = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'agentworld-extensions')
+if os.path.exists(extensions_path) and extensions_path not in sys.path:
+    sys.path.insert(0, extensions_path)
+
+try:
+    from agent_world_config import create_worldsurveyor_config
+    _unified_config = create_worldsurveyor_config()
+except ImportError:  # pragma: no cover - fallback when extensions not available
+    _unified_config = None
+
+
+class WorldSurveyorConfig:
+    """Configuration manager for WorldSurveyor MCP server."""
+
+    def __init__(self):
+        self.unified_config = _unified_config
+
+    @property
+    def server_port(self) -> int:
+        """Get the MCP server port."""
+        return int(os.getenv("MCP_SERVER_PORT", 8700))
+
+    @property
+    def worldsurveyor_base_url(self) -> str:
+        """Get the WorldSurveyor extension base URL."""
+        return (
+            os.getenv("AGENT_WORLDSURVEYOR_BASE_URL")
+            or os.getenv("WORLDSURVEYOR_API_URL")
+            or (self.unified_config.get_server_url() if self.unified_config else None)
+            or "http://localhost:8891"
+        )
+
+    @property
+    def log_level(self) -> str:
+        """Get the logging level."""
+        return os.getenv("LOG_LEVEL", "INFO").upper()
+
+    @property
+    def auth_enabled(self) -> bool:
+        """Check if authentication is enabled."""
+        return os.getenv("AGENT_EXT_AUTH_ENABLED", "0") == "1"
+
+    @property
+    def auth_token(self) -> Optional[str]:
+        """Get the authentication token."""
+        return os.getenv("AGENT_EXT_AUTH_TOKEN")
+
+    @property
+    def hmac_secret(self) -> Optional[str]:
+        """Get the HMAC secret."""
+        return os.getenv("AGENT_EXT_HMAC_SECRET")
+
+    def get_timeout(self, operation: str) -> float:
+        """Get timeout for specific operations."""
+        if self.unified_config:
+            return self.unified_config.get(f'{operation}_timeout', 30.0)
+
+        # Default timeouts for different operations
+        timeouts = {
+            'health_check': 5.0,
+            'scene_status': 10.0,
+            'add_element': 30.0,
+            'create_batch': 60.0,
+            'place_asset': 45.0,
+            'transform_asset': 30.0,
+            'query_objects': 30.0,
+            'align_objects': 45.0,
+            'clear_scene': 60.0,
+            'clear_path': 45.0,
+        }
+        return timeouts.get(operation, 30.0)
+
+
+# Global config instance
+config = WorldSurveyorConfig()

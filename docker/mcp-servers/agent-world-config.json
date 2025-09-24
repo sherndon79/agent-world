@@ -1,0 +1,45 @@
+{
+  "_comment": "agenTW∞rld MCP Servers Configuration",
+  "_usage": "Hierarchical config loading: Environment Variables > Isaac Sim Settings > JSON Config > Defaults",
+  "_environment_examples": "WORLDBUILDER_DEBUG_MODE=true, WORLDVIEWER_SERVER_PORT=8901",
+  
+  "worldbuilder": {
+    "server_port": 8899,
+    "debug_mode": false,
+    "verbose_logging": false,
+    "auth_enabled": true,
+    "enable_batch_operations": true,
+    "max_elements_per_batch": 100,
+    "auto_save_scene": false
+  },
+  
+  "worldviewer": {
+    "server_port": 8900,
+    "debug_mode": false,
+    "verbose_logging": false,
+    "auth_enabled": true,
+    "enable_cinematic_mode": true,
+    "default_movement_duration": 3.0,
+    "max_movement_duration": 60.0
+  },
+  
+  "worldsurveyor": {
+    "server_port": 8891,
+    "debug_mode": false,
+    "verbose_logging": false,
+    "auth_enabled": true,
+    "enable_waypoint_persistence": true,
+    "waypoint_marker_scale": 1.0,
+    "auto_save_waypoints": true
+  },
+  
+  "worldrecorder": {
+    "server_port": 8892,
+    "debug_mode": false,
+    "verbose_logging": false,
+    "auth_enabled": true,
+    "default_fps": 24,
+    "max_recording_duration": 300,
+    "output_directory": "/tmp/recordings"
+  }
+}

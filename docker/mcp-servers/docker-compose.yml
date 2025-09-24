@@ -1,0 +1,101 @@
+version: "3.8"
+
+services:
+  mcp-worldbuilder:
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp
+      args:
+        MCP_SERVER: worldbuilder
+    container_name: mcp-worldbuilder
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      - AGENT_EXT_AUTH_ENABLED=1
+      - AGENT_EXT_AUTH_TOKEN=${AGENT_EXT_AUTH_TOKEN}
+      - AGENT_EXT_HMAC_SECRET=${AGENT_EXT_HMAC_SECRET}
+      - MCP_SERVER=worldbuilder
+      - MCP_SERVER_NAME=worldbuilder
+      - MCP_SERVER_PORT=8700
+    volumes:
+      - ./worldbuilder:/app/worldbuilder:ro
+
+  mcp-worldviewer:
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp
+      args:
+        MCP_SERVER: worldviewer
+    container_name: mcp-worldviewer
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      - AGENT_EXT_AUTH_ENABLED=1
+      - AGENT_EXT_AUTH_TOKEN=${AGENT_EXT_AUTH_TOKEN}
+      - AGENT_EXT_HMAC_SECRET=${AGENT_EXT_HMAC_SECRET}
+      - MCP_SERVER=worldviewer
+      - MCP_SERVER_NAME=worldviewer
+      - MCP_SERVER_PORT=8701
+    volumes:
+      - ./worldviewer:/app/worldviewer:ro
+
+  mcp-worldsurveyor:
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp
+      args:
+        MCP_SERVER: worldsurveyor
+    container_name: mcp-worldsurveyor
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      - AGENT_EXT_AUTH_ENABLED=1
+      - AGENT_EXT_AUTH_TOKEN=${AGENT_EXT_AUTH_TOKEN}
+      - AGENT_EXT_HMAC_SECRET=${AGENT_EXT_HMAC_SECRET}
+      - MCP_SERVER=worldsurveyor
+      - MCP_SERVER_NAME=worldsurveyor
+      - MCP_SERVER_PORT=8703
+    volumes:
+      - ./worldsurveyor:/app/worldsurveyor:ro
+
+  mcp-worldstreamer:
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp
+      args:
+        MCP_SERVER: worldstreamer
+    container_name: mcp-worldstreamer
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      - AGENT_EXT_AUTH_ENABLED=1
+      - AGENT_EXT_AUTH_TOKEN=${AGENT_EXT_AUTH_TOKEN}
+      - AGENT_EXT_HMAC_SECRET=${AGENT_EXT_HMAC_SECRET}
+      - MCP_SERVER_NAME=worldstreamer
+      - MCP_SERVER_PORT=8702
+      - MCP_SERVER=worldstreamer
+    volumes:
+      - ./worldstreamer:/app/worldstreamer:ro
+
+  mcp-worldrecorder:
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp
+      args:
+        MCP_SERVER: worldrecorder
+    container_name: mcp-worldrecorder
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      - AGENT_EXT_AUTH_ENABLED=1
+      - AGENT_EXT_AUTH_TOKEN=${AGENT_EXT_AUTH_TOKEN}
+      - AGENT_EXT_HMAC_SECRET=${AGENT_EXT_HMAC_SECRET}
+      - MCP_SERVER_NAME=worldrecorder
+      - MCP_SERVER_PORT=8704
+      - MCP_SERVER=worldrecorder
+    volumes:
+      - ./worldrecorder:/app/worldrecorder:ro
+
+volumes:
+  mcp-data:
+    driver: local

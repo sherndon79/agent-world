@@ -39,6 +39,9 @@ dev = [
     "flake8>=6.0.0",
 ]
 
+[project.scripts]
+worldbuilder = "main:main"
+
 [project.urls]
 Homepage = "https://github.com/agent-world/mcp-worldbuilder"
 Repository = "https://github.com/agent-world/mcp-worldbuilder"
