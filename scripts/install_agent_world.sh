@@ -154,6 +154,23 @@ EOF
   chmod +x "$out_path"
 }
 
+create_env_symlinks() {
+  echo "Creating .env symlinks for Docker Compose locations..."
+  local env_file="$ROOT_DIR/.env"
+
+  # Create symlinks for MCP servers and OME compose locations
+  local mcp_link="$ROOT_DIR/docker/mcp-servers/.env"
+  local ome_link="$ROOT_DIR/docker/ome/.env"
+
+  # Remove existing files/links
+  [[ -f "$mcp_link" || -L "$mcp_link" ]] && rm "$mcp_link"
+  [[ -f "$ome_link" || -L "$ome_link" ]] && rm "$ome_link"
+
+  # Create symlinks
+  ln -s "../../.env" "$mcp_link" && echo "✓ Created $mcp_link -> .env"
+  ln -s "../../.env" "$ome_link" && echo "✓ Created $ome_link -> .env"
+}
+
 create_mcp_venvs() {
   local mcp_dir="$ROOT_DIR/mcp-servers"
   local venv_path="$mcp_dir/venv"
@@ -204,7 +221,7 @@ cleanup_extension_symlinks() {
   local exts_user="$1"
   echo "==> Removing Agent World extension symlinks from $exts_user..."
   
-  local extensions=("omni.agent.worldbuilder" "omni.agent.worldviewer" "omni.agent.worldsurveyor" "omni.agent.worldrecorder")
+  local extensions=("omni.agent.worldbuilder" "omni.agent.worldviewer" "omni.agent.worldsurveyor" "omni.agent.worldrecorder" "omni.agent.worldstreamer.rtmp" "omni.agent.worldstreamer.srt")
   for ext in "${extensions[@]}"; do
     local link_path="$exts_user/$ext"
     if [[ -L "$link_path" ]]; then
@@ -222,8 +239,14 @@ cleanup_extension_symlinks() {
 cleanup_generated_files() {
   echo "==> Removing generated files..."
   
-  # Remove .env file
+  # Remove .env file and symlinks
   local env_path="$ROOT_DIR/.env"
+  local mcp_link="$ROOT_DIR/docker/mcp-servers/.env"
+  local ome_link="$ROOT_DIR/docker/ome/.env"
+
+  [[ -f "$mcp_link" || -L "$mcp_link" ]] && rm "$mcp_link" && echo "✓ Removed $mcp_link"
+  [[ -f "$ome_link" || -L "$ome_link" ]] && rm "$ome_link" && echo "✓ Removed $ome_link"
+
   if [[ -f "$env_path" ]]; then
     echo "Removing environment file: $env_path"
     rm "$env_path"
@@ -342,7 +365,7 @@ main() {
 
   if prompt_yn "Enable API authentication and generate secrets now?" y; then
     local env_path="$ROOT_DIR/.env"
-    local token secret; token=$(generate_hex 32); secret=$(generate_hex 48)
+    local token secret ome_token; token=$(generate_hex 32); secret=$(generate_hex 48); ome_token=$(generate_hex 16)
     cat > "$env_path" <<ENV
 # Agent World environment
 AGENT_EXT_AUTH_ENABLED=1
@@ -360,8 +383,14 @@ AGENT_EXT_BEARER_AUTH_ENABLED=0
 # AGENT_WORLDSURVEYOR_HMAC_SECRET=$secret
 # AGENT_WORLDRECORDER_AUTH_TOKEN=$token
 # AGENT_WORLDRECORDER_HMAC_SECRET=$secret
+
+# OME (OvenMediaEngine) Configuration
+OME_IMAGE=airensoft/ovenmediaengine:latest
+OME_NAME=ome
+OME_API_TOKEN=$ome_token
 ENV
     echo "Wrote secrets to: $env_path"
+    create_env_symlinks
   fi
 
   if prompt_yn "Create Python virtual environment for MCP servers?" y; then

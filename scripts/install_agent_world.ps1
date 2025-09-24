@@ -98,10 +98,62 @@ function Invoke-PrecompileExtensions {
     (Join-Path $srcBase 'omni.agent.worldstreamer.srt')
 }
 
+function New-EnvSymlinks {
+  Write-Host "==> Creating .env symlinks for Docker Compose locations..." -ForegroundColor Yellow
+  $repoRoot = Split-Path $PSScriptRoot -Parent
+  $envFile = Join-Path $repoRoot ".env"
+
+  $mcpLink = Join-Path $repoRoot "docker\mcp-servers\.env"
+  $omeLink = Join-Path $repoRoot "docker\ome\.env"
+
+  @($mcpLink, $omeLink) | ForEach-Object {
+    $linkPath = $_
+    $linkDir = Split-Path $linkPath -Parent
+
+    # Ensure directory exists
+    if (-not (Test-Path $linkDir)) {
+      New-Item -ItemType Directory -Path $linkDir -Force | Out-Null
+    }
+
+    # Remove existing file or link
+    if (Test-Path $linkPath) {
+      Remove-Item -Path $linkPath -Force
+    }
+
+    # Create relative symlink
+    $relativePath = "..\..\..env"
+    New-Item -ItemType SymbolicLink -Path $linkPath -Target $relativePath | Out-Null
+    Write-Host "✓ Created symlink: $linkPath -> $relativePath" -ForegroundColor Green
+  }
+
+  Write-Host "==> .env symlinks creation complete!" -ForegroundColor Green
+}
+
+function Remove-EnvSymlinks {
+  Write-Host "==> Removing .env symlinks..." -ForegroundColor Yellow
+  $repoRoot = Split-Path $PSScriptRoot -Parent
+
+  $mcpLink = Join-Path $repoRoot "docker\mcp-servers\.env"
+  $omeLink = Join-Path $repoRoot "docker\ome\.env"
+
+  @($mcpLink, $omeLink) | ForEach-Object {
+    if (Test-Path $_) {
+      $item = Get-Item $_
+      if ($item.LinkType -eq "Junction" -or $item.LinkType -eq "SymbolicLink") {
+        Write-Host "Removing symlink: $_"
+        Remove-Item -Path $_ -Force
+        Write-Host "✓ Symlink removed" -ForegroundColor Green
+      }
+    }
+  }
+
+  Write-Host "==> .env symlinks cleanup complete!" -ForegroundColor Green
+}
+
 function Remove-GeneratedFiles {
   Write-Host "==> Removing generated files..." -ForegroundColor Yellow
   $repoRoot = Split-Path $PSScriptRoot -Parent
-  
+
   # Remove .env file
   $envPath = Join-Path $repoRoot ".env"
   if (Test-Path $envPath) {
@@ -109,7 +161,7 @@ function Remove-GeneratedFiles {
     Remove-Item -Path $envPath -Force
     Write-Host "✓ .env file removed" -ForegroundColor Green
   }
-  
+
   # Remove launch script
   $launcher = Join-Path $repoRoot "scripts/launch_agent_world.ps1"
   if (Test-Path $launcher) {
@@ -117,7 +169,7 @@ function Remove-GeneratedFiles {
     Remove-Item -Path $launcher -Force
     Write-Host "✓ launch script removed" -ForegroundColor Green
   }
-  
+
   Write-Host "==> Generated files cleanup complete!" -ForegroundColor Green
 }
 
@@ -139,6 +191,9 @@ function Invoke-Uninstall {
   # Clean up MCP virtual environments
   Remove-McpVenvs
   
+  # Clean up .env symlinks
+  Remove-EnvSymlinks
+
   # Clean up generated files (.env, launch script, etc.)
   Remove-GeneratedFiles
   
@@ -231,6 +286,7 @@ if (Read-Choice "Enable API authentication and generate secrets now?" $true) {
   $envPath = Join-Path (Split-Path $PSScriptRoot -Parent) ".env"
   $token = New-Hex 32
   $secret = New-Hex 48
+  $omeToken = New-Hex 16
   Set-Content -LiteralPath $envPath -Value @(
     "# Agent World environment",
     "AGENT_EXT_AUTH_ENABLED=1",
@@ -247,9 +303,17 @@ if (Read-Choice "Enable API authentication and generate secrets now?" $true) {
     "# AGENT_WORLDSURVEYOR_AUTH_TOKEN=$token",
     "# AGENT_WORLDSURVEYOR_HMAC_SECRET=$secret",
     "# AGENT_WORLDRECORDER_AUTH_TOKEN=$token",
-    "# AGENT_WORLDRECORDER_HMAC_SECRET=$secret"
+    "# AGENT_WORLDRECORDER_HMAC_SECRET=$secret",
+    "",
+    "# OME (OvenMediaEngine) Configuration",
+    "OME_IMAGE=airensoft/ovenmediaengine:latest",
+    "OME_NAME=ome",
+    "OME_API_TOKEN=$omeToken"
   ) -NoNewline:$false
   Write-Host "Wrote secrets to: $envPath"
+
+  # Create symlinks for Docker Compose locations
+  New-EnvSymlinks
 }
 
 # Create unified MCP virtual environment

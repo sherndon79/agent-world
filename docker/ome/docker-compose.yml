@@ -7,13 +7,17 @@ services:
     restart: unless-stopped
     ports:
       - "8080:8080/tcp"      # HTTP / LL-HLS
-      - "8088:8088/tcp"      # Management API
+      - "8088:8088/tcp"      # Management API (HTTP)
+      - "8089:8089/tcp"      # Management API (HTTPS)
       - "1935:1935/tcp"      # RTMP ingest
       - "3333:3333/tcp"      # WebRTC signaling (WS)
       - "3334:3334/tcp"      # WebRTC signaling (WSS)
       - "9999:9999/udp"      # SRT ingest
       - "10000-10010:10000-10010/udp"  # WebRTC ICE RTP/RTCP
-    # Bind custom config directory with API enabled
+    # Bind custom config directory with API enabled and media storage
     volumes:
       - ./origin_conf:/opt/ovenmediaengine/bin/origin_conf
+      - ./media:/opt/ovenmediaengine/media
+    environment:
+      - OME_API_TOKEN=${OME_API_TOKEN}
 
