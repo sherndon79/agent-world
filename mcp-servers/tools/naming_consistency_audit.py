@@ -58,8 +58,9 @@ def extract_mcp_tools_detailed(file_path):
 
 def analyze_naming_patterns():
     """Analyze naming consistency across extensions."""
-    
-    base_path = Path("/home/sherndon/agent-world-prod")
+
+    # Resolve repo root dynamically so the script works from any clone path
+    base_path = Path(__file__).resolve().parents[2]
     
     extensions = {
         'worldsurveyor': {

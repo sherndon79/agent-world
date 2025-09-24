@@ -101,16 +101,25 @@ class SecurityManager:
     def _load_env_from_project_root(self):
         """Load environment variables from .env file in project root."""
         try:
-            # Find agent-world directory (project root)
+            override = os.getenv('AGENT_WORLD_ENV_PATH')
+            if override:
+                env_candidate = Path(override).expanduser()
+                if env_candidate.is_dir():
+                    env_candidate = env_candidate / '.env'
+                if env_candidate.is_file():
+                    self._load_env_file(env_candidate)
+                    logger.debug(f"Loaded .env file from override path {env_candidate}")
+                    return
+                logger.warning(f"AGENT_WORLD_ENV_PATH set but no .env file found at {env_candidate}")
+
+            # Walk up the directory tree looking for the first .env file
             current = Path(__file__).resolve()
-            for _ in range(10):
-                if current.name == 'agent-world':
-                    env_file = current / '.env'
-                    if env_file.exists():
-                        self._load_env_file(env_file)
-                        logger.debug(f"Loaded .env file from {env_file}")
+            for candidate in [current, *current.parents]:
+                env_file = candidate / '.env'
+                if env_file.exists():
+                    self._load_env_file(env_file)
+                    logger.debug(f"Loaded .env file from {env_file}")
                     break
-                current = current.parent
         except Exception as e:
             logger.warning(f"Could not load .env file: {e}")
     
@@ -358,4 +367,3 @@ def validate_hmac_signature(method: str, path: str, timestamp: str, signature: s
     
     # Secure comparison
     return hmac.compare_digest(expected_sig, signature)
-

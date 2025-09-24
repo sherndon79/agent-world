@@ -35,9 +35,10 @@ class TestSecurityHeaders:
         )
 
         # Mock the HTTP request/response infrastructure
-        self.mock_request = BytesIO(b'')
         self.mock_wfile = BytesIO()
         self.mock_rfile = BytesIO(b'{"test": "data"}')
+        self.mock_request = MagicMock()
+        self.mock_request.makefile.return_value = self.mock_rfile
 
         # Create handler instance with mocked socket infrastructure
         with patch('socket.socket'):

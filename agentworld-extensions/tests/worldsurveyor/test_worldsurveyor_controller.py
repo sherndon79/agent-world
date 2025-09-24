@@ -96,13 +96,14 @@ class DummyWaypointManager:
     def remove_group(self, group_id, cascade=False):
         return self._groups.pop(group_id, None) is not None
 
-    def create_group(self, name, parent_group_id=None, description=None):
+    def create_group(self, name, parent_group_id=None, description=None, color=None):
         group_id = f"grp_{len(self._groups) + 1}"
         self._groups[group_id] = {
             'id': group_id,
             'name': name,
             'parent_group_id': parent_group_id,
             'description': description,
+            'color': color,
         }
         return group_id
 

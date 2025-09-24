@@ -14,6 +14,7 @@ Usage:
 """
 
 import os
+import re
 import logging
 from pathlib import Path
 from typing import List, Optional, Tuple, Any
@@ -75,7 +76,10 @@ class AssetPathValidator:
             logger.warning("Asset path validation is disabled - security risk!")
             return asset_path
 
-        # Use centralized validation for basic path security
+        allow_absolute = self.config.get('allow_absolute_asset_paths', False)
+        asset_path = self._pre_validate_path(asset_path, allow_absolute=allow_absolute)
+
+        # Use centralized validation for remaining checks
         try:
             # Validate as file path with basic security checks
             allowed_extensions = self.config.get('allowed_asset_extensions')
@@ -86,18 +90,35 @@ class AssetPathValidator:
                 check_exists=False
             )
         except ValidationError as e:
-            raise ValueError(str(e))
-
-        # Additional absolute path check based on configuration
-        if os.path.isabs(normalized):
-            if not self.config.get('allow_absolute_asset_paths', False):
-                raise ValueError(f"Absolute paths not allowed: {asset_path}")
-
-        # Additional security checks for Windows paths (even on Linux)
-        if ':' in normalized and not self.config.get('allow_absolute_asset_paths', False):
-            raise ValueError(f"Drive letters not allowed: {asset_path}")
+            message = str(e)
+            if 'dangerous character' in message and '\x00' in message:
+                raise ValueError("Null bytes not allowed") from None
+            if 'must have extension' in message:
+                suffix = Path(asset_path).suffix or '<none>'
+                raise ValueError(f"File extension {suffix} not allowed") from None
+            raise ValueError(message) from None
 
         return normalized
+
+    def _pre_validate_path(self, value: Any, *, allow_absolute: bool) -> str:
+        """Perform preliminary validation shared across file and directory checks."""
+        if not isinstance(value, str):
+            value = str(value)
+
+        if '\x00' in value:
+            raise ValueError("Null bytes not allowed")
+
+        if os.path.isabs(value) and not allow_absolute:
+            raise ValueError("Absolute paths not allowed")
+
+        if not allow_absolute and re.match(r'^[a-zA-Z]:[\\/]', value):
+            raise ValueError("Drive letters not allowed")
+
+        parts = value.replace('\\', '/').split('/')
+        if any(part == '..' for part in parts):
+            raise ValueError("Path traversal detected")
+
+        return value
 
     def asset_exists(self, asset_path: str) -> bool:
         """
@@ -242,7 +263,8 @@ class AssetPathValidator:
         try:
             # Validate the prefix
             if path_prefix:
-                self.validate_asset_path(path_prefix)
+                allow_absolute = self.config.get('allow_absolute_asset_paths', False)
+                self._pre_validate_path(path_prefix, allow_absolute=allow_absolute)
 
             for search_path in self._search_paths:
                 search_dir = os.path.join(search_path, path_prefix) if path_prefix else search_path

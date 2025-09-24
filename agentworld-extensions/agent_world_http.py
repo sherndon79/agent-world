@@ -26,7 +26,7 @@ import logging
 import time
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
-from typing import Dict, Any, Optional, Callable
+from typing import Dict, Any, Optional, Callable, Tuple
 from urllib.parse import parse_qs, urlparse
 
 logger = logging.getLogger(__name__)
@@ -137,39 +137,40 @@ class WorldHTTPHandler(BaseHTTPRequestHandler):
         self.send_header('Vary', cors_config.get('vary_header', 'Origin'))
         self.end_headers()
     
-    def _check_auth(self, method: str) -> bool:
-        """Check authentication using security manager."""
+    def _validate_security(self, method: str, client_ip: str) -> Tuple[bool, int, Optional[str]]:
+        """Run rate limiting and authentication checks using the security manager."""
+        manager = getattr(self.api_interface, 'security_manager', None)
+        if not manager:
+            return True, 200, None
+
         try:
-            if (hasattr(self.api_interface, 'security_manager') and 
-                self.api_interface.security_manager):
-                ok = self.api_interface.security_manager.check_auth(method, self.headers, self.path)
-                if (not ok) and hasattr(self.api_interface, 'metrics') and getattr(self.api_interface, 'metrics'):
-                    try:
-                        self.api_interface.metrics.increment_auth_failures()
-                    except Exception:
-                        pass
-                return ok
-        except Exception as e:
-            logger.warning(f"Authentication check failed: {e}")
-        return True  # Default to allowing if auth system unavailable
-    
-    def _check_rate_limit(self) -> bool:
-        """Check rate limiting."""
-        try:
-            if (hasattr(self.api_interface, 'security_manager') and 
-                self.api_interface.security_manager):
-                client_ip = self.client_address[0]
-                ok = self.api_interface.security_manager.check_rate_limit(client_ip)
-                if (not ok) and hasattr(self.api_interface, 'metrics') and getattr(self.api_interface, 'metrics'):
-                    try:
-                        self.api_interface.metrics.increment_rate_limited()
-                    except Exception:
-                        pass
-                return ok
-        except Exception as e:
-            logger.warning(f"Rate limit check failed: {e}")
-        return True  # Default to allowing if rate limiting unavailable
-    
+            is_valid, error_msg = manager.validate_request(self.headers, client_ip, method, self.path)
+        except Exception as exc:  # pragma: no cover - defensive fallback
+            logger.warning(f"Security validation failed: {exc}")
+            return True, 200, None
+
+        if is_valid:
+            return True, 200, None
+
+        status_code = 401
+        if error_msg == "Rate limit exceeded":
+            status_code = 429
+            metrics = getattr(self.api_interface, 'metrics', None)
+            if metrics:
+                try:
+                    metrics.increment_rate_limited()
+                except Exception:
+                    pass
+        else:
+            metrics = getattr(self.api_interface, 'metrics', None)
+            if metrics:
+                try:
+                    metrics.increment_auth_failures()
+                except Exception:
+                    pass
+
+        return False, status_code, error_msg
+
     def _handle_request(self, method: str):
         """Main request handler with unified routing."""
         try:
@@ -188,16 +189,14 @@ class WorldHTTPHandler(BaseHTTPRequestHandler):
             elif hasattr(self.api_interface, 'increment_request_counter'):
                 self.api_interface.increment_request_counter()
             
-            # Rate limiting check
-            if not self._check_rate_limit():
-                self._send_error_response(429, 'Rate limit exceeded')
+            client_ip = self.client_address[0] if self.client_address else '127.0.0.1'
+
+            # Combined rate limiting + authentication check
+            secure_ok, failure_status, failure_reason = self._validate_security(method, client_ip)
+            if not secure_ok:
+                self._send_error_response(failure_status, failure_reason or 'Unauthorized')
                 return
-            
-            # Authentication check
-            if not self._check_auth(method):
-                self._send_error_response(401, 'Unauthorized')
-                return
-            
+
             # Route the request
             start_t = time.time()
             if method == 'GET':
