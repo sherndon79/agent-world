@@ -6,11 +6,29 @@ Uses unified agent_world authentication system for consistency.
 """
 
 import logging
+import sys
+from pathlib import Path
 from typing import Optional, Dict, Any
+
+
+def _ensure_core_path() -> bool:
+    current = Path(__file__).resolve()
+    for candidate in (current, *current.parents):
+        core_path = candidate / 'agentworld-core' / 'src'
+        if core_path.exists():
+            core_str = str(core_path)
+            if core_str not in sys.path:
+                sys.path.insert(0, core_str)
+            return True
+    return False
+
+
+_ensure_core_path()
+
 
 # Import unified authentication system
 try:
-    from agent_world_auth import SecurityManager, is_bearer_auth_enabled
+    from agentworld_core.auth import SecurityManager, is_bearer_auth_enabled
     AUTH_AVAILABLE = True
 except ImportError as e:
     logging.getLogger(__name__).warning(f"Could not import unified auth system: {e}")
@@ -160,4 +178,3 @@ class WorldBuilderAuth:
             'bearer_auth_enabled': AUTH_AVAILABLE and is_bearer_auth_enabled('worldbuilder'),
             'extension_name': 'worldbuilder'
         }
-

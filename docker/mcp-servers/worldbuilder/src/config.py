@@ -7,18 +7,34 @@ Handles environment variables and configuration for the WorldBuilder MCP server.
 
 import os
 import sys
+from pathlib import Path
 from typing import Optional
 
-# Add agentworld-extensions to path for unified config
-extensions_path = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'agentworld-extensions')
-if os.path.exists(extensions_path) and extensions_path not in sys.path:
-    sys.path.insert(0, extensions_path)
+
+def _ensure_core_path() -> bool:
+    current = Path(__file__).resolve()
+    for candidate in (current, *current.parents):
+        core_path = candidate / 'agentworld-core' / 'src'
+        if core_path.exists():
+            core_str = str(core_path)
+            if core_str not in sys.path:
+                sys.path.insert(0, core_str)
+            return True
+    return False
+
 
 try:
-    from agent_world_config import create_worldbuilder_config
-    _unified_config = create_worldbuilder_config()
-except ImportError:  # pragma: no cover - fallback when extensions not available
-    _unified_config = None
+    from agentworld_core.config import create_worldbuilder_config
+except ImportError:  # pragma: no cover - attempt to locate source checkout
+    if _ensure_core_path():
+        try:
+            from agentworld_core.config import create_worldbuilder_config
+        except ImportError:  # pragma: no cover
+            create_worldbuilder_config = None
+    else:
+        create_worldbuilder_config = None
+
+_unified_config = create_worldbuilder_config() if create_worldbuilder_config else None
 
 
 class WorldBuilderConfig:

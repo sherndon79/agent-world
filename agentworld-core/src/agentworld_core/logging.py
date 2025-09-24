@@ -28,6 +28,12 @@ from typing import Optional
 
 _INITIALIZED = False
 
+__all__ = [
+    "setup_logging",
+    "get_logger",
+    "module_logger",
+]
+
 
 class _ServiceFilter(logging.Filter):
     def __init__(self, service: str):

@@ -14,11 +14,9 @@ readme = "docs/README.md"
 writeTarget.kit = true
 writeTarget.platform = true
 
-# Dependencies removed for external RTMP encoding approach
-# Isaac Sim WebRTC was replaced with external GStreamer/NVENC pipeline
-# [dependencies]
-# "omni.kit.viewport.utility" = {} # Used for viewport capture
-# External: GStreamer, NVENC, RTMP server
+[dependencies]
+"agent.world.core" = {}
+# External streaming stack still relies on GStreamer/NVENC outside Kit
 
 [fswatcher.patterns]
 include = ["*.py", "*.toml"]

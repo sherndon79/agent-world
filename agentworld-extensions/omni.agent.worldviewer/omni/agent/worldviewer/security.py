@@ -10,21 +10,38 @@ import logging
 from pathlib import Path
 from typing import Optional, Dict, Any
 
+
+def _ensure_core_path() -> bool:
+    current = Path(__file__).resolve()
+    for candidate in (current, *current.parents):
+        core_path = candidate / 'agentworld-core' / 'src'
+        if core_path.exists():
+            core_str = str(core_path)
+            if core_str not in sys.path:
+                sys.path.insert(0, core_str)
+            return True
+    return False
+
+
+# Make sure the core helpers can be imported before attempting to use them.
+_ensure_core_path()
+
+
 # Import unified authentication system
 try:
-    # Find the agentworld-extensions directory
-    current = Path(__file__).resolve()
-    for _ in range(10):  # Search up the directory tree
-        if current.name == 'agentworld-extensions':
-            sys.path.insert(0, str(current))
-            break
-        current = current.parent
-    
-    from agent_world_auth import SecurityManager, is_bearer_auth_enabled
+    from agentworld_core.auth import SecurityManager, is_bearer_auth_enabled
     AUTH_AVAILABLE = True
-except ImportError as e:
-    logging.getLogger(__name__).warning(f"Could not import unified auth system: {e}")
-    AUTH_AVAILABLE = False
+except ImportError:
+    if _ensure_core_path():
+        try:
+            from agentworld_core.auth import SecurityManager, is_bearer_auth_enabled
+            AUTH_AVAILABLE = True
+        except ImportError as exc:  # pragma: no cover
+            logging.getLogger(__name__).warning(f"Could not import unified auth system: {exc}")
+            AUTH_AVAILABLE = False
+    else:
+        logging.getLogger(__name__).warning("Could not locate agentworld-core/src for auth system")
+        AUTH_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -170,5 +187,3 @@ class WorldViewerAuth:
             'bearer_auth_enabled': AUTH_AVAILABLE and is_bearer_auth_enabled('worldviewer'),
             'extension_name': 'worldviewer'
         }
-
-

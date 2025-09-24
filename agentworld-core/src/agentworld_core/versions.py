@@ -8,7 +8,7 @@ Provides consistent versioning across all world* extensions with support for:
 - Environment variable overrides for CI/CD
 
 Usage:
-    from agent_world_versions import get_version, get_service_name
+    from agentworld_core.versions import get_version, get_service_name
     
     version = get_version('worldbuilder')
     service = get_service_name('worldviewer')

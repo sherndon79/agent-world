@@ -20,7 +20,7 @@ from typing import Dict, Any, Optional, Tuple
 import queue
 
 # Import secure subprocess utilities
-from agent_world_subprocess_security import (
+from agentworld_core.subprocess_security import (
     create_secure_srt_pipeline,
     validate_gstreamer_element_availability,
     safe_subprocess_run,

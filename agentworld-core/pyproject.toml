@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agentworld-core"
+version = "0.1.0"
+description = "Shared helpers for Agent World extensions and MCP servers"
+readme = "README.md"
+authors = [{name = "Agent Adventures"}]
+requires-python = ">=3.11"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+]
+
+[project.optional-dependencies]
+mcp = [
+    "aiohttp>=3.9",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.package-data]
+"agentworld_core" = ["agent-world-versions.json", "agent-world-http.json"]

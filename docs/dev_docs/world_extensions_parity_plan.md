@@ -20,7 +20,7 @@ This document captures the sequence we just walked through on WorldBuilder so we
 
 ### In Progress: WorldViewer (Phase 2–4)
 
-- Shared `agent_world_transport.normalize_transport_response` now powers both HTTP and MCP layers; the parity contract lives in `transport/contract.py`.
+- Shared `agentworld_core.transport.normalize_transport_response` now powers both HTTP and MCP layers; the parity contract lives in `transport/contract.py`.
 - HTTP handler refactored to controller/service/schemas structure with validation parity and centralized error responses.
 - MCP stdio server returns JSON payloads via the shared normalizer, replacing Markdown formatting.
 - Added lightweight unit coverage (`tests/worldviewer/test_controller.py`) to guard controller/service error paths ahead of USD-backed tests.
@@ -105,7 +105,7 @@ This document captures the sequence we just walked through on WorldBuilder so we
 ## Open Questions
 
 - Do we want a consolidated `scripts/test_world*.sh` wrapper that runs each suite sequentially?
-- Should we promote the transport contract to shared `agent_world_http` for runtime enforcement?
+- Should we promote the transport contract to shared `agentworld_core.http` for runtime enforcement?
 - Investigate automated doc generation of MCP tool metadata once transports are aligned.
 
 *Document prepared: 2025-09-18*

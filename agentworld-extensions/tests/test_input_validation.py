@@ -9,7 +9,7 @@ import pytest
 import json
 from pathlib import Path
 
-from agent_world_validation import (
+from agentworld_core.validation import (
     InputValidator,
     ValidationError,
     create_gstreamer_validator,

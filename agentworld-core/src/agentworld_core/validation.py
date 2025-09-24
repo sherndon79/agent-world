@@ -5,7 +5,7 @@ Provides standardized validation for common input types used across
 all extensions to ensure consistent security and data integrity.
 
 Usage:
-    from agent_world_validation import InputValidator, ValidationError
+    from agentworld_core.validation import InputValidator, ValidationError
 
     validator = InputValidator()
     safe_width = validator.validate_dimension('width', user_input, min_val=1, max_val=7680)
@@ -26,6 +26,15 @@ logger = logging.getLogger(__name__)
 class ValidationError(ValueError):
     """Raised when input validation fails."""
     pass
+
+
+__all__ = [
+    "ValidationError",
+    "InputValidator",
+    "create_gstreamer_validator",
+    "create_web_validator",
+    "create_asset_validator",
+]
 
 
 class InputValidator:

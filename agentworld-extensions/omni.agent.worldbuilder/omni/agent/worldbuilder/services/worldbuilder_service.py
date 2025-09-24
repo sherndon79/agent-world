@@ -15,7 +15,7 @@ if TYPE_CHECKING:  # pragma: no cover - only used for typing
     from ..config import WorldBuilderConfig
 
 try:
-    from agent_world_versions import get_version, get_service_name
+    from agentworld_core.versions import get_version, get_service_name
     VERSION_AVAILABLE = True
 except ImportError:
     get_version = get_service_name = None

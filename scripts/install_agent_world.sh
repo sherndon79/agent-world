@@ -100,6 +100,7 @@ link_extensions() {
   mkdir -p "$exts_user"
   local src_base="$ROOT_DIR/agentworld-extensions"
   local extensions=(
+    agent.world.core
     omni.agent.worldbuilder
     omni.agent.worldviewer
     omni.agent.worldsurveyor
@@ -139,6 +140,7 @@ done
 
 exec "\$LAUNCH_BIN" \\
   --ext-folder "\$EXTS_USER" \\
+  --enable agent.world.core \\
   --enable omni.agent.worldbuilder \\
   --enable omni.agent.worldviewer \\
   --enable omni.agent.worldsurveyor \\

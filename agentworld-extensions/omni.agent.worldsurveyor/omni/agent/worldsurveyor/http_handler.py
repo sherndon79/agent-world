@@ -5,14 +5,14 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict
 
-from agent_world_logging import module_logger
+from agentworld_core.logging import module_logger
 
 from .http import WorldSurveyorController
 from .services import WorldSurveyorService
 from .errors import MethodNotAllowed, ValidationFailure, error_response
 
 try:
-    from agent_world_http import WorldHTTPHandler
+    from agentworld_core.http import WorldHTTPHandler
     UNIFIED = True
 except ImportError:  # pragma: no cover - Isaac fallback
     from http.server import BaseHTTPRequestHandler as WorldHTTPHandler  # type: ignore

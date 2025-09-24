@@ -4,14 +4,14 @@ HTTP request handler for Agent WorldBuilder API endpoints (unified HTTP).
 
 import logging
 
-from agent_world_logging import module_logger
+from agentworld_core.logging import module_logger
 
 from .http import WorldBuilderController
 from .services import WorldBuilderService
 from .errors import error_response
 
 try:
-    from agent_world_http import WorldHTTPHandler
+    from agentworld_core.http import WorldHTTPHandler
     UNIFIED = True
 except ImportError:
     from http.server import BaseHTTPRequestHandler as WorldHTTPHandler  # type: ignore

@@ -11,7 +11,7 @@ import os
 from pathlib import Path
 from unittest.mock import Mock
 
-from agent_world_asset_security import AssetPathValidator, create_asset_validator
+from agentworld_core.asset_security import AssetPathValidator, create_asset_validator
 
 
 class TestAssetPathValidator:
@@ -225,7 +225,7 @@ class TestAssetManagerIntegration:
         # This would require mocking USD context and other Isaac Sim components
         # For now, we'll test the basic integration points
 
-        from agent_world_config import create_worldbuilder_config
+        from agentworld_core.config import create_worldbuilder_config
 
         config = create_worldbuilder_config()
 

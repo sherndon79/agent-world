@@ -13,7 +13,7 @@ This comprehensive review analyzes the stdio/streaming MCP servers and Isaac Sim
 ### 1. Isaac Sim Extensions - Exemplary Design
 
 #### **Unified HTTP Handler Pattern**
-- **Location**: `/home/sherndon/agent-world/agentworld-extensions/agent_world_http.py` (550 lines)
+- **Location**: `/home/sherndon/agent-world/agentworld-core/src/agentworld_core/http.py` (550 lines)
 - **Achievement**: Eliminates code duplication across all World* extensions
 - **Features**:
   - Unified request handling with standard endpoints (health, metrics, OpenAPI)

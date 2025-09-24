@@ -10,7 +10,7 @@ import json
 from unittest.mock import Mock, patch, MagicMock
 from io import BytesIO
 
-from agent_world_http import WorldHTTPHandler
+from agentworld_core.http import WorldHTTPHandler
 
 
 class MockHTTPServer:
@@ -194,7 +194,7 @@ class TestSecurityHeaders:
     def test_hsts_header_when_enabled(self):
         """Test HSTS header when enabled in configuration."""
         # Mock HTTP config with HSTS enabled
-        with patch('agent_world_http.HTTP_CONFIG', {
+        with patch('agentworld_core.http.HTTP_CONFIG', {
             'security_headers': {
                 'enable_hsts': True,
                 'hsts_max_age': 'max-age=31536000; includeSubDomains'
@@ -210,7 +210,7 @@ class TestSecurityHeaders:
     def test_hsts_header_when_disabled(self):
         """Test HSTS header is not included when disabled."""
         # Mock HTTP config with HSTS disabled (default)
-        with patch('agent_world_http.HTTP_CONFIG', {
+        with patch('agentworld_core.http.HTTP_CONFIG', {
             'security_headers': {
                 'enable_hsts': False
             }
@@ -231,7 +231,7 @@ class TestSecurityHeaders:
             }
         }
 
-        with patch('agent_world_http.HTTP_CONFIG', custom_config):
+        with patch('agentworld_core.http.HTTP_CONFIG', custom_config):
             self.handler._send_json_response({'test': 'data'})
 
             # Verify custom values are used

@@ -57,6 +57,7 @@ function Remove-ExtensionSymlinks {
   Write-Host "==> Removing Agent World extension symlinks from $ExtsUser..." -ForegroundColor Yellow
   
   $extensions = @(
+    "agent.world.core",
     "omni.agent.worldbuilder",
     "omni.agent.worldviewer",
     "omni.agent.worldsurveyor",
@@ -89,13 +90,17 @@ function Invoke-PrecompileExtensions {
     return
   }
   Write-Host "==> Precompiling extension modules"
-  python -m compileall -q \
-    (Join-Path $srcBase 'omni.agent.worldbuilder') \
-    (Join-Path $srcBase 'omni.agent.worldviewer') \
-    (Join-Path $srcBase 'omni.agent.worldsurveyor') \
-    (Join-Path $srcBase 'omni.agent.worldrecorder') \
-    (Join-Path $srcBase 'omni.agent.worldstreamer.rtmp') \
+  $targets = @(
+    (Join-Path $srcBase 'agent.world.core'),
+    (Join-Path $srcBase 'omni.agent.worldbuilder'),
+    (Join-Path $srcBase 'omni.agent.worldviewer'),
+    (Join-Path $srcBase 'omni.agent.worldsurveyor'),
+    (Join-Path $srcBase 'omni.agent.worldrecorder'),
+    (Join-Path $srcBase 'omni.agent.worldstreamer.rtmp'),
     (Join-Path $srcBase 'omni.agent.worldstreamer.srt')
+  )
+  $args = @('-m', 'compileall', '-q') + $targets
+  python @args
 }
 
 function New-EnvSymlinks {
@@ -347,6 +352,7 @@ if (Read-Choice "Create links for Agent World extensions into '$extsUser'?" $tru
   $repoRoot = Split-Path $PSScriptRoot -Parent
   $srcBase = Join-Path $repoRoot "agentworld-extensions"
   $exts = @(
+    'agent.world.core',
     'omni.agent.worldbuilder',
     'omni.agent.worldviewer',
     'omni.agent.worldsurveyor',
@@ -405,6 +411,7 @@ $ExtsUser = "$extsUser"
 $Bin = "$bin"
 
 & $Bin --ext-folder "$ExtsUser" `
+  --enable agent.world.core `
   --enable omni.agent.worldbuilder `
   --enable omni.agent.worldviewer `
   --enable omni.agent.worldsurveyor `

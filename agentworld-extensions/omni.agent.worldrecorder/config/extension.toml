@@ -13,6 +13,7 @@ writeTarget.kit = true
 writeTarget.platform = true
 
 [dependencies]
+"agent.world.core" = {}
 "omni.kit.capture.viewport" = {}
 
 [fswatcher.patterns]
@@ -24,4 +25,3 @@ name = "omni.agent.worldrecorder"
 
 [settings]
 "/exts/omni.agent.worldrecorder/auth_enabled" = { type="bool", default=true, description="Enable authentication for WorldRecorder API" }
-

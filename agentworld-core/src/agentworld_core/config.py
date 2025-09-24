@@ -8,7 +8,7 @@ Provides consistent configuration loading across all world* extensions with supp
 - Hierarchical configuration precedence: Environment > Carb Settings > JSON > Defaults
 
 Usage:
-    from agent_world_config import WorldExtensionConfig
+    from agentworld_core.config import WorldExtensionConfig
     
     class MyExtensionConfig(WorldExtensionConfig):
         DEFAULTS = {
@@ -31,6 +31,14 @@ from pathlib import Path
 from typing import Dict, Any, Optional, Union
 
 logger = logging.getLogger(__name__)
+
+__all__ = [
+    "WorldExtensionConfig",
+    "create_worldbuilder_config",
+    "create_worldviewer_config",
+    "create_worldsurveyor_config",
+    "create_worldrecorder_config",
+]
 
 # Try to import carb.settings, gracefully handle if not available
 try:
@@ -87,12 +95,17 @@ class WorldExtensionConfig:
             extension_dir_name = f"omni.agent.{self.extension_name}"
             
             # Search in current directory and parent directories
-            for _ in range(5):  # Reasonable search limit
+            for _ in range(6):  # Reasonable search limit
                 extension_path = current / extension_dir_name
                 if extension_path.exists():
-                    # Support nested names like 'worldstreamer.rtmp' -> omni/agent/worldstreamer/rtmp
                     parts = self.extension_name.split('.')
                     return extension_path / "omni" / "agent" / Path('/'.join(parts))
+
+                alt_path = current / "agentworld-extensions" / extension_dir_name
+                if alt_path.exists():
+                    parts = self.extension_name.split('.')
+                    return alt_path / "omni" / "agent" / Path('/'.join(parts))
+
                 current = current.parent
             
             logger.warning(f"Could not find extension directory for {self.extension_name}")
@@ -393,5 +406,5 @@ if __name__ == "__main__":
             logger.info(f"Available: {list(factory_map.keys())}")
     else:
         logger.info("agenTW∞rld Extensions Configuration")
-        logger.info("Usage: python agent_world_config.py <extension_name>")
+        logger.info("Usage: python -m agentworld_core.config <extension_name>")
         logger.info("Extensions: worldbuilder, worldviewer, worldsurveyor, worldrecorder")

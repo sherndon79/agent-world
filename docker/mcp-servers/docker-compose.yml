@@ -3,8 +3,8 @@ version: "3.8"
 services:
   mcp-worldbuilder:
     build:
-      context: .
-      dockerfile: Dockerfile.mcp
+      context: ../..
+      dockerfile: docker/mcp-servers/Dockerfile.mcp
       args:
         MCP_SERVER: worldbuilder
     container_name: mcp-worldbuilder
@@ -22,8 +22,8 @@ services:
 
   mcp-worldviewer:
     build:
-      context: .
-      dockerfile: Dockerfile.mcp
+      context: ../..
+      dockerfile: docker/mcp-servers/Dockerfile.mcp
       args:
         MCP_SERVER: worldviewer
     container_name: mcp-worldviewer
@@ -41,8 +41,8 @@ services:
 
   mcp-worldsurveyor:
     build:
-      context: .
-      dockerfile: Dockerfile.mcp
+      context: ../..
+      dockerfile: docker/mcp-servers/Dockerfile.mcp
       args:
         MCP_SERVER: worldsurveyor
     container_name: mcp-worldsurveyor
@@ -60,8 +60,8 @@ services:
 
   mcp-worldstreamer:
     build:
-      context: .
-      dockerfile: Dockerfile.mcp
+      context: ../..
+      dockerfile: docker/mcp-servers/Dockerfile.mcp
       args:
         MCP_SERVER: worldstreamer
     container_name: mcp-worldstreamer
@@ -79,8 +79,8 @@ services:
 
   mcp-worldrecorder:
     build:
-      context: .
-      dockerfile: Dockerfile.mcp
+      context: ../..
+      dockerfile: docker/mcp-servers/Dockerfile.mcp
       args:
         MCP_SERVER: worldrecorder
     container_name: mcp-worldrecorder

@@ -5,7 +5,7 @@ Ensures consistent metrics implementation across all extensions while allowing
 extension-specific metrics registration. Eliminates code duplication and prevents drift.
 
 Usage:
-    from agent_world_metrics import WorldExtensionMetrics
+    from agentworld_core.metrics import WorldExtensionMetrics
     
     # In api_interface.py
     self.metrics = WorldExtensionMetrics('worldbuilder')
@@ -30,6 +30,9 @@ from typing import Dict, Any, Callable, Optional, List
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+__all__ = ["WorldExtensionMetrics"]
 
 
 class WorldExtensionMetrics:

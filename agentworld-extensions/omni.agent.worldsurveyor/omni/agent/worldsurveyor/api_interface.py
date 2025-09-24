@@ -14,27 +14,42 @@ from typing import Any, Dict, Optional
 from pathlib import Path
 import sys
 
+
+def _ensure_core_path() -> bool:
+    current = Path(__file__).resolve()
+    for candidate in (current, *current.parents):
+        core_path = candidate / 'agentworld-core' / 'src'
+        if core_path.exists():
+            core_str = str(core_path)
+            if core_str not in sys.path:
+                sys.path.insert(0, core_str)
+            return True
+    return False
+
+
+_ensure_core_path()
+
 from .ui.waypoint_types import get_waypoint_type_behavior
 
 # Import unified metrics system
 try:
-    # Find the agentworld-extensions directory
-    current = Path(__file__).resolve()
-    for _ in range(10):  # Search up the directory tree
-        if current.name == 'agentworld-extensions':
-            sys.path.insert(0, str(current))
-            break
-        current = current.parent
-    
-    from agent_world_metrics import setup_worldsurveyor_metrics
+    from agentworld_core.metrics import setup_worldsurveyor_metrics
     METRICS_AVAILABLE = True
-except ImportError as e:
-    logging.getLogger(__name__).warning(f"Could not import unified metrics system: {e}")
-    METRICS_AVAILABLE = False
+except ImportError:
+    if _ensure_core_path():
+        try:
+            from agentworld_core.metrics import setup_worldsurveyor_metrics
+            METRICS_AVAILABLE = True
+        except ImportError as exc:  # pragma: no cover
+            logging.getLogger(__name__).warning(f"Could not import unified metrics system: {exc}")
+            METRICS_AVAILABLE = False
+    else:
+        logging.getLogger(__name__).warning("Could not locate agentworld-core/src for metrics system")
+        METRICS_AVAILABLE = False
 
 from .config import get_config
-from agent_world_logging import setup_logging
-from agent_world_requests import RequestTracker
+from agentworld_core.logging import setup_logging
+from agentworld_core.requests import RequestTracker
 from .http_handler import WorldSurveyorHTTPHandler
 from .waypoint_manager import WaypointManager
 from .security import WorldSurveyorAuth

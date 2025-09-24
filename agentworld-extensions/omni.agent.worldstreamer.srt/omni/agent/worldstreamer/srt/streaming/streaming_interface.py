@@ -604,7 +604,7 @@ class StreamingInterface:
             if url:
                 return self._ensure_streamid(url)
             host = get_config().get('srt_host', '127.0.0.1')
-            port = int(get_config().get('srt_port', 9000))
+            port = int(get_config().get('srt_port', 9999))
             return self._ensure_streamid(f"srt://{host}:{port}?mode=caller&latency=50&transtype=live")
         except Exception:
             # Fallback to OME's default SRT port to avoid confusion

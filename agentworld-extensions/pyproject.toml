@@ -19,14 +19,6 @@ classifiers = [
 
 [tool.setuptools]
 include-package-data = true
-py-modules = [
-    "agent_world_auth",
-    "agent_world_config",
-    "agent_world_http",
-    "agent_world_logging",
-    "agent_world_metrics",
-    "agent_world_versions"
-]
 
 [tool.setuptools.packages.find]
 include = ["omni.agent.*"]

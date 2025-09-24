@@ -1,7 +1,7 @@
 """
 Unified logging setup for MCP servers.
 
-This mirrors the extensions' agent_world_logging module to keep behavior consistent.
+This mirrors the extensions' agentworld_core.logging module to keep behavior consistent.
 Defaults to stderr-only output; env-driven options for JSON, journald, and files.
 """
 

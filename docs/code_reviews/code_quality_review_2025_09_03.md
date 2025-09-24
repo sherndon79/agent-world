@@ -123,11 +123,11 @@ The Agent World extensions demonstrate **high-quality, professional code** with 
 ### Unified Library Usage: **24/25 points**
 
 **Excellent Integration:**
-- ✅ All extensions properly use `agent_world_config.py` for configuration management
-- ✅ Consistent use of `agent_world_metrics.py` for metrics and monitoring
-- ✅ Proper integration with `agent_world_logging.py` for centralized logging
-- ✅ Correct usage of `agent_world_http.py` for HTTP handler patterns
-- ✅ Appropriate use of `agent_world_versions.py` for version management
+- ✅ All extensions properly use `agentworld_core.config` for configuration management
+- ✅ Consistent use of `agentworld_core.metrics` for metrics and monitoring
+- ✅ Proper integration with `agentworld_core.logging` for centralized logging
+- ✅ Correct usage of `agentworld_core.http` for HTTP handler patterns
+- ✅ Appropriate use of `agentworld_core.versions` for version management
 - ✅ Consistent import patterns and fallback handling across extensions
 - ✅ No duplicate functionality that should be centralized
 

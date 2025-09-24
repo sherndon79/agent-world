@@ -1,0 +1,16 @@
+[core]
+reloadable = true
+order = 0
+
+[package]
+version = "0.1.0"
+category = "AgentWorld"
+title = "AgentWorld Core"
+description = "Shared Python helpers used by all Agent World extensions"
+authors = ["Agent Adventures"]
+readme = "README.md"
+
+[dependencies]
+
+[[python.path]]
+path = "python"

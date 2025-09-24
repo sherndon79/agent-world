@@ -10,11 +10,11 @@ from collections import deque
 from .http_handler import WorldRecorderHTTPHandler
 from .security import WorldRecorderAuth
 from .config import WorldRecorderConfig
-from agent_world_metrics import setup_worldrecorder_metrics
+from agentworld_core.metrics import setup_worldrecorder_metrics
 
 # Import centralized logging
 try:
-    from agent_world_logging import setup_logging
+    from agentworld_core.logging import setup_logging
 except ImportError:
     setup_logging = None
 

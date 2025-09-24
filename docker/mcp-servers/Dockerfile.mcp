@@ -17,25 +17,29 @@ ENV PATH="/app/venv/bin:$PATH"
 
 # Install Python dependencies
 # Copy requirements from the actual mcp-servers
-COPY requirements.txt /app/requirements.txt
+COPY docker/mcp-servers/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Install shared agentworld-core package
+COPY agentworld-core /app/agentworld-core
+RUN pip install --no-cache-dir /app/agentworld-core
 
 # MCP SDK is already included in requirements.txt as 'mcp>=1.13.1'
 
 # Copy shared modules and MCP server source code
-COPY shared /app/shared
-COPY worldbuilder /app/worldbuilder
-COPY worldviewer /app/worldviewer
-COPY worldsurveyor /app/worldsurveyor
-COPY worldstreamer /app/worldstreamer
-COPY worldrecorder /app/worldrecorder
+COPY docker/mcp-servers/shared /app/shared
+COPY docker/mcp-servers/worldbuilder /app/worldbuilder
+COPY docker/mcp-servers/worldviewer /app/worldviewer
+COPY docker/mcp-servers/worldsurveyor /app/worldsurveyor
+COPY docker/mcp-servers/worldstreamer /app/worldstreamer
+COPY docker/mcp-servers/worldrecorder /app/worldrecorder
 
 # Set environment variables
 ENV PYTHONPATH="/app:/app/shared"
 ENV PYTHONUNBUFFERED=1
 
 # Create entrypoint script
-COPY entrypoint.sh /app/entrypoint.sh
+COPY docker/mcp-servers/entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 
 # Health check

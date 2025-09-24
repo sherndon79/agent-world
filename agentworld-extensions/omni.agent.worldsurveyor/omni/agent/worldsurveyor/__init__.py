@@ -6,25 +6,29 @@ for AI-powered scene planning in Isaac Sim.
 """
 
 import sys
-import json
 from pathlib import Path
+
+
+def _ensure_core_path() -> bool:
+    current = Path(__file__).resolve()
+    for candidate in (current, *current.parents):
+        core_path = candidate / 'agentworld-core' / 'src'
+        if core_path.exists():
+            core_str = str(core_path)
+            if core_str not in sys.path:
+                sys.path.insert(0, core_str)
+            return True
+    return False
+
+
+_ensure_core_path()
+
 
 # Get version from centralized version config
 try:
-    # Find the agentworld-extensions directory
-    current = Path(__file__).resolve()
-    for _ in range(10):  # Search up the directory tree
-        if current.name == 'agentworld-extensions':
-            version_file = current / 'agent-world-versions.json'
-            if version_file.exists():
-                with open(version_file) as f:
-                    version_data = json.load(f)
-                __version__ = version_data['extensions']['worldsurveyor']['version']
-                break
-            current = current.parent
-        current = current.parent
-    else:
-        __version__ = "0.1.0"  # Fallback
+    from agentworld_core.versions import get_version
+
+    __version__ = get_version('worldsurveyor')
 except Exception:
     __version__ = "0.1.0"  # Fallback
 

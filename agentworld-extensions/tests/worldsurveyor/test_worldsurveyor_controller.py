@@ -6,7 +6,7 @@ from typing import Any, Dict
 
 from omni.agent.worldsurveyor.http.controller import WorldSurveyorController
 from omni.agent.worldsurveyor.services.worldsurveyor_service import WorldSurveyorService
-from agent_world_requests import RequestTracker
+from agentworld_core.requests import RequestTracker
 
 
 class DummyWaypointManager:

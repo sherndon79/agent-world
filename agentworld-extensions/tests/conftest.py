@@ -8,6 +8,10 @@ from pathlib import Path
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
+_CORE_PATH = _PROJECT_ROOT.parent / "agentworld-core" / "src"
+if _CORE_PATH.exists() and str(_CORE_PATH) not in sys.path:
+    sys.path.insert(0, str(_CORE_PATH))
+
 _WORLD_BUILDER_ROOT = _PROJECT_ROOT / "omni.agent.worldbuilder" / "omni"
 _WORLD_VIEWER_ROOT = _PROJECT_ROOT / "omni.agent.worldviewer" / "omni"
 _WORLD_SURVEYOR_ROOT = _PROJECT_ROOT / "omni.agent.worldsurveyor" / "omni"

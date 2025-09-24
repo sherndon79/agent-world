@@ -6,10 +6,28 @@ eliminating code duplication while maintaining identical functionality and inter
 """
 
 import logging
+import sys
+from pathlib import Path
 
-# Import the unified config system from agentworld-extensions root
+
+def _ensure_core_path() -> bool:
+    current = Path(__file__).resolve()
+    for candidate in (current, *current.parents):
+        core_path = candidate / 'agentworld-core' / 'src'
+        if core_path.exists():
+            core_str = str(core_path)
+            if core_str not in sys.path:
+                sys.path.insert(0, core_str)
+            return True
+    return False
+
+
+_ensure_core_path()
+
+
+# Import the unified config system from agentworld-core
 try:
-    from agent_world_config import WorldExtensionConfig
+    from agentworld_core.config import WorldExtensionConfig
     CONFIG_AVAILABLE = True
 except ImportError as e:
     logging.getLogger(__name__).warning(f"Could not import unified config system: {e}")

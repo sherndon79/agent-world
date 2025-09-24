@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from omni.agent.worldviewer.http.controller import WorldViewerController
 from omni.agent.worldviewer.services.worldviewer_service import WorldViewerService
-from agent_world_requests import RequestTracker
+from agentworld_core.requests import RequestTracker
 
 
 class _FakeService:

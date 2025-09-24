@@ -5,7 +5,7 @@ Provides centralized, configurable asset path security to prevent path traversal
 while allowing flexible asset organization within approved directories.
 
 Usage:
-    from agent_world_asset_security import AssetPathValidator
+    from agentworld_core.asset_security import AssetPathValidator
 
     validator = AssetPathValidator(config)
     safe_path = validator.validate_asset_path("demo/Food/mac_and_cheese.usdz")
@@ -19,7 +19,7 @@ import logging
 from pathlib import Path
 from typing import List, Optional, Tuple, Any
 
-from agent_world_validation import InputValidator, ValidationError, create_asset_validator as create_input_validator
+from .validation import InputValidator, ValidationError, create_asset_validator as create_input_validator
 
 logger = logging.getLogger(__name__)
 
@@ -310,3 +310,6 @@ def create_asset_validator(config: Any) -> AssetPathValidator:
         Configured AssetPathValidator instance
     """
     return AssetPathValidator(config)
+
+
+__all__ = ["AssetPathValidator", "create_asset_validator"]

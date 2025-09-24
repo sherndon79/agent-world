@@ -24,7 +24,7 @@ if AGENTWORLD_EXTENSIONS_PATH not in sys.path:
 
 # Try to import centralized asset security validator
 try:
-    from agent_world_asset_security import AssetPathValidator
+    from agentworld_core.asset_security import AssetPathValidator
     CENTRALIZED_SECURITY_AVAILABLE = True
     logger.info("✅ Centralized asset security module loaded")
 except ImportError as e:

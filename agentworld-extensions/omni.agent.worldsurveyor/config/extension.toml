@@ -17,6 +17,7 @@ writeTarget.kit = true
 writeTarget.platform = true
 
 [dependencies]
+"agent.world.core" = {}
 "omni.usd" = {}
 "omni.ui" = {}
 "omni.kit.viewport.utility" = {}

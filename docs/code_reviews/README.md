@@ -24,7 +24,7 @@ Each code review evaluates:
    - Proper documentation
 
 3. **Unified Library Usage** (25 points)
-   - Proper use of shared `agent_world_*` libraries
+   - Proper use of shared `agentworld_core.*` libraries
    - Consistent patterns across components
    - No duplicate functionality
 

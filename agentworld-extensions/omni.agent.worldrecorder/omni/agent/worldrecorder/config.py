@@ -7,17 +7,25 @@ import tempfile
 import logging
 from pathlib import Path
 
-# Import the unified config system from agentworld-extensions root
-try:
-    # Find the agentworld-extensions directory
+
+def _ensure_core_path() -> bool:
     current = Path(__file__).resolve()
-    for _ in range(10):  # Search up the directory tree
-        if current.name == 'agentworld-extensions':
-            sys.path.insert(0, str(current))
-            break
-        current = current.parent
-    
-    from agent_world_config import WorldExtensionConfig
+    for candidate in (current, *current.parents):
+        core_path = candidate / 'agentworld-core' / 'src'
+        if core_path.exists():
+            core_str = str(core_path)
+            if core_str not in sys.path:
+                sys.path.insert(0, core_str)
+            return True
+    return False
+
+
+_ensure_core_path()
+
+
+# Import the unified config system from agentworld-core
+try:
+    from agentworld_core.config import WorldExtensionConfig
     CONFIG_AVAILABLE = True
 except ImportError as e:
     logging.getLogger(__name__).warning(f"Could not import unified config system: {e}")
@@ -137,4 +145,3 @@ def get_config() -> WorldRecorderConfig:
     if _config_instance is None:
         _config_instance = WorldRecorderConfig()
     return _config_instance
-

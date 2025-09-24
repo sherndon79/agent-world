@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict
 
-from agent_world_logging import module_logger
+from agentworld_core.logging import module_logger
 
 from ..errors import WorldSurveyorError, ValidationFailure, MethodNotAllowed, error_response
 from ..transport import normalize_transport_response

@@ -9,21 +9,37 @@ import sys
 import logging
 from pathlib import Path
 
-# Import the unified config system from agentworld-extensions root
-try:
-    # Find the agentworld-extensions directory
+
+def _ensure_core_path() -> bool:
     current = Path(__file__).resolve()
-    for _ in range(10):  # Search up the directory tree
-        if current.name == 'agentworld-extensions':
-            sys.path.insert(0, str(current))
-            break
-        current = current.parent
-    
-    from agent_world_config import WorldExtensionConfig
+    for candidate in (current, *current.parents):
+        core_path = candidate / 'agentworld-core' / 'src'
+        if core_path.exists():
+            core_str = str(core_path)
+            if core_str not in sys.path:
+                sys.path.insert(0, core_str)
+            return True
+    return False
+
+
+_ensure_core_path()
+
+
+# Import the unified config system from agentworld-core
+try:
+    from agentworld_core.config import WorldExtensionConfig
     CONFIG_AVAILABLE = True
-except ImportError as e:
-    logging.getLogger(__name__).warning(f"Could not import unified config system: {e}")
-    CONFIG_AVAILABLE = False
+except ImportError:
+    if _ensure_core_path():
+        try:
+            from agentworld_core.config import WorldExtensionConfig
+            CONFIG_AVAILABLE = True
+        except ImportError as exc:  # pragma: no cover
+            logging.getLogger(__name__).warning(f"Could not import unified config system: {exc}")
+            CONFIG_AVAILABLE = False
+    else:
+        logging.getLogger(__name__).warning("Could not locate agentworld-core/src for unified config system")
+        CONFIG_AVAILABLE = False
 
 
 class WorldStreamerConfig(WorldExtensionConfig if CONFIG_AVAILABLE else object):
@@ -39,6 +55,8 @@ class WorldStreamerConfig(WorldExtensionConfig if CONFIG_AVAILABLE else object):
         **getattr(WorldExtensionConfig, 'DEFAULTS', {}),  # Include base defaults
         'server_port': 8908,  # WorldStreamer SRT default port
         'rtmp_port': 1935,
+        'srt_host': '127.0.0.1',
+        'srt_port': 9999,
         'server_timeout': 1.0,
         'server_ready_timeout': 5.0,
         'health_check_interval': 10.0,
@@ -47,6 +65,8 @@ class WorldStreamerConfig(WorldExtensionConfig if CONFIG_AVAILABLE else object):
         # Fallback standalone defaults when unified config unavailable
         'server_port': 8908,
         'rtmp_port': 1935,
+        'srt_host': '127.0.0.1',
+        'srt_port': 9999,
         'server_timeout': 1.0,
         'server_ready_timeout': 5.0,
         'health_check_interval': 10.0,

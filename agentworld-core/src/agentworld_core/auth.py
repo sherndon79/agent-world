@@ -9,7 +9,7 @@ Provides consistent authentication and security across all world* extensions wit
 - Integration with .env file configuration
 
 Usage:
-    from agent_world_auth import SecurityManager, is_bearer_auth_enabled
+    from agentworld_core.auth import SecurityManager, is_bearer_auth_enabled
     
     # Create security manager for extension
     security = SecurityManager('myextension', config=extension_config)
@@ -31,6 +31,17 @@ from pathlib import Path
 from typing import Dict, Any, Optional, Tuple
 
 logger = logging.getLogger(__name__)
+
+__all__ = [
+    "RateLimiter",
+    "SecurityManager",
+    "is_auth_enabled",
+    "get_auth_token",
+    "get_hmac_secret",
+    "is_bearer_auth_enabled",
+    "validate_auth_token",
+    "validate_hmac_signature",
+]
 
 # Try to import carb.settings, gracefully handle if not available
 try:

@@ -8,7 +8,7 @@ command injection attacks in GStreamer pipelines.
 import pytest
 from unittest.mock import Mock, patch
 
-from agent_world_subprocess_security import (
+from agentworld_core.subprocess_security import (
     GStreamerSecurityValidator,
     GStreamerPipelineBuilder,
     CommandInjectionError,
@@ -242,7 +242,7 @@ class TestSafeSubprocessRun:
         # This would need mocking in real tests to avoid actual execution
         cmd = ['echo', 'hello']
 
-        with patch('agent_world_subprocess_security.subprocess.run') as mock_run:
+        with patch('agentworld_core.subprocess_security.subprocess.run') as mock_run:
             mock_run.return_value = Mock(returncode=0)
             result = safe_subprocess_run(cmd, timeout=5)
             mock_run.assert_called_once()
@@ -292,7 +292,7 @@ class TestFactoryFunctions:
         assert 'gst-launch-1.0' in pipeline
         assert 'rtmpsink' in pipeline
 
-    @patch('agent_world_subprocess_security.safe_subprocess_run')
+    @patch('agentworld_core.subprocess_security.safe_subprocess_run')
     def test_validate_gstreamer_element_availability(self, mock_subprocess):
         """Test GStreamer element availability validation."""
         # Mock successful validation

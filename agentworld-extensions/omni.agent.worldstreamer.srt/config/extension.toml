@@ -14,10 +14,8 @@ readme = "docs/README.md"
 writeTarget.kit = true
 writeTarget.platform = true
 
-# External encoding approach using GStreamer/NVENC
-# [dependencies]
-# "omni.kit.viewport.utility" = {} # Used for viewport capture
-# External: GStreamer, NVENC, RTMP server
+[dependencies]
+"agent.world.core" = {}
 
 [fswatcher.patterns]
 include = ["*.py", "*.toml"]

@@ -8,7 +8,7 @@ Eliminates code duplication across all World* extensions by providing:
 - Unified metrics collection integration
 
 Usage:
-    from agent_world_http import WorldHTTPHandler
+    from agentworld_core.http import WorldHTTPHandler
     
     class MyExtensionHTTPHandler(WorldHTTPHandler):
         def __init__(self, api_interface):
@@ -32,7 +32,7 @@ from urllib.parse import parse_qs, urlparse
 logger = logging.getLogger(__name__)
 
 try:
-    from agent_world_versions import get_version, get_service_name
+    from .versions import get_version, get_service_name
     VERSION_AVAILABLE = True
 except ImportError:
     get_version = None
@@ -43,7 +43,7 @@ except ImportError:
 def _load_http_config():
     """Load HTTP configuration from agent-world-http.json."""
     try:
-        config_path = Path(__file__).parent / "agent-world-http.json"
+        config_path = Path(__file__).with_name("agent-world-http.json")
         with open(config_path, 'r') as f:
             return json.load(f)
     except Exception as e:

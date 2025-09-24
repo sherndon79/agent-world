@@ -13,14 +13,14 @@ from typing import Optional
 
 # Import unified systems from agentworld-extensions root
 try:
-    from agent_world_metrics import setup_worldbuilder_metrics
+    from agentworld_core.metrics import setup_worldbuilder_metrics
     METRICS_AVAILABLE = True
 except ImportError as e:
     logging.getLogger(__name__).warning(f"Could not import unified metrics system: {e}")
     METRICS_AVAILABLE = False
 
 from .config import get_config
-from agent_world_logging import setup_logging
+from agentworld_core.logging import setup_logging
 from .http_handler import WorldBuilderHTTPHandler
 from .scene_builder import SceneBuilder
 from .security import WorldBuilderAuth

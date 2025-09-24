@@ -113,6 +113,7 @@
     "startup_delay": 0.1,
     "shutdown_timeout": 5.0,
     "srt_url": "srt://127.0.0.1:9999?mode=caller&latency=50&transtype=live",
+    "srt_port": 9999,
     "encoding_fps": 24,
     "encoding_bitrate": 2000,
     "encoder_type": "auto"
