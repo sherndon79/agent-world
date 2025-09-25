@@ -123,14 +123,14 @@ class WorldStreamerConfig(WorldExtensionConfig if CONFIG_AVAILABLE else object):
             return {
                 'hardware_encoding_preferred': self.get('hardware_encoding_preferred', True),
                 'encoder_type': self.get('encoder_type', 'auto'),  # auto, nvenc, vaapi, x264
-                'encoding_bitrate': self.get('encoding_bitrate', 2000),  # kbps
+                'encoding_bitrate': self.get('encoding_bitrate', 4000),  # kbps - YouTube recommended for 1080p
                 'encoding_fps': self.get('encoding_fps', 24),
             }
         else:
             return {
                 'hardware_encoding_preferred': True,
                 'encoder_type': 'auto',
-                'encoding_bitrate': 2000,
+                'encoding_bitrate': 4000,  # YouTube recommended for 1080p
                 'encoding_fps': 24,
             }
 
