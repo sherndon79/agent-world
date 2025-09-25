@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PushInfo>
+	<Push>
+		<Enable>true</Enable>
+		<StreamName>*</StreamName>
+		<Protocol>rtmp</Protocol>
+		<Url>rtmp://a.rtmp.youtube.com/live2</Url>
+		<StreamKey>kbj7-5vd6-tshf-j6hc-54zs</StreamKey>
+		<Segments>
+			<Audio>false</Audio>
+		</Segments>
+	</Push>
+</PushInfo>

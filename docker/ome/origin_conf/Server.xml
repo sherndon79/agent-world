@@ -121,6 +121,11 @@
 			<Names>
 				<Name>*</Name>
 			</Names>
+			<TLS>
+				<CertPath>./cert.crt</CertPath>
+				<KeyPath>./cert.key</KeyPath>
+				<ChainCertPath>./cert.ca-bundle</ChainCertPath>
+			</TLS>
 		</Host>
 		<API>
 			<AccessToken>${env:OME_API_TOKEN:agent-world-dev}</AccessToken>
@@ -268,10 +273,11 @@
 							</Playlist>
 
 							<Encodes>
-								<Video>
+								<!-- Removed bypass video to avoid multiple video streams for RTMP push -->
+								<!-- <Video>
 									<Name>bypass_video</Name>
 									<Bypass>true</Bypass>
-								</Video>
+								</Video> -->
 								<Audio>
 									<Name>aac_audio</Name>
 									<Codec>aac</Codec>
@@ -292,16 +298,26 @@
 										<Codec>eq</Codec>
 									</BypassIfMatch>									
 								</Audio>
-								<!-- 							
+								<!-- Enable encoding profiles for Push publisher -->
 								<Video>
-									<Name>video_1280</Name>
+									<Name>youtube_1080p</Name>
 									<Codec>h264</Codec>
-									<Bitrate>5024000</Bitrate>
+									<Bitrate>4000000</Bitrate>
 									<Framerate>30</Framerate>
 									<Width>1920</Width>
-									<Height>1280</Height>
-									<Preset>faster</Preset>
+									<Height>1080</Height>
+									<Preset>medium</Preset>
+									<Profile>high</Profile>
+									<KeyFrameInterval>2</KeyFrameInterval>
 								</Video>
+								<Audio>
+									<Name>youtube_audio</Name>
+									<Codec>aac</Codec>
+									<Bitrate>128000</Bitrate>
+									<Samplerate>48000</Samplerate>
+									<Channel>2</Channel>
+								</Audio>
+								<!--
 								<Video>
 									<Name>video_720</Name>
 									<Codec>h264</Codec>
@@ -352,14 +368,21 @@
 					<Publishers>
 						<AppWorkerCount>1</AppWorkerCount>
 						<StreamWorkerCount>8</StreamWorkerCount>
+						<Push>
+							<StreamMap>
+								<Enable>true</Enable>
+								<Path>./push_map.xml</Path>
+							</StreamMap>
+						</Push>
 						<OVT />
-						<WebRTC>
+						<!-- WebRTC disabled to optimize resources for YouTube push -->
+						<!-- <WebRTC>
 							<Timeout>30000</Timeout>
 							<Rtx>false</Rtx>
 							<Ulpfec>false</Ulpfec>
 							<JitterBuffer>false</JitterBuffer>
 							<CreateDefaultPlaylist>true</CreateDefaultPlaylist>
-						</WebRTC>
+						</WebRTC> -->
 						<LLHLS>
 							<OriginMode>true</OriginMode>
 							<!--
