@@ -375,14 +375,13 @@
 							</StreamMap>
 						</Push>
 						<OVT />
-						<!-- WebRTC disabled to optimize resources for YouTube push -->
-						<!-- <WebRTC>
+						<WebRTC>
 							<Timeout>30000</Timeout>
 							<Rtx>false</Rtx>
 							<Ulpfec>false</Ulpfec>
 							<JitterBuffer>false</JitterBuffer>
 							<CreateDefaultPlaylist>true</CreateDefaultPlaylist>
-						</WebRTC> -->
+						</WebRTC>
 						<LLHLS>
 							<OriginMode>true</OriginMode>
 							<!--
