@@ -275,13 +275,13 @@ class WorldStreamerExtension(omni.ext.IExt):
             return
             
         try:
-            self._window = ui.Window("Agent WorldStreamer", width=320, height=300)
+            self._window = ui.Window("Agent WorldStreamer (RTMP)", width=320, height=300)
             
             with self._window.frame:
                 with ui.VStack(spacing=2):
                     # Title section
                     with ui.HStack(height=0):
-                        ui.Label("Agent WorldStreamer Extension", style={"font_size": 14})
+                        ui.Label("Agent WorldStreamer (RTMP) Extension", style={"font_size": 14})
                     ui.Separator(height=2)
                     
                     # Status section

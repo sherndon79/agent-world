@@ -78,6 +78,7 @@ class WorldStreamerAPI:
         """
         self._config = config
         self._auth = auth
+        self.security_manager = auth  # Expose auth as security_manager for HTTP handler
         self._streaming = streaming
         self._port = port
         self._server = None

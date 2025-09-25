@@ -162,7 +162,7 @@ class WorldStreamerAuth:
             }
         
         # Check if Bearer auth is explicitly enabled
-        bearer_enabled = AUTH_AVAILABLE and is_bearer_auth_enabled('worldstreamer')
+        bearer_enabled = AUTH_AVAILABLE and is_bearer_auth_enabled('worldstreamer.srt')
         
         schemes = ['HMAC signature (recommended)']
         if bearer_enabled:
@@ -206,6 +206,6 @@ class WorldStreamerAuth:
             'auth_available': AUTH_AVAILABLE,
             'security_manager_initialized': self._security_manager is not None,
             'auth_functional': self.is_enabled(),
-            'bearer_auth_enabled': AUTH_AVAILABLE and is_bearer_auth_enabled('worldstreamer'),
-            'extension_name': 'worldstreamer'
+            'bearer_auth_enabled': AUTH_AVAILABLE and is_bearer_auth_enabled('worldstreamer.srt'),
+            'extension_name': 'worldstreamer.srt'
         }

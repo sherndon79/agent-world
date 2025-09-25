@@ -31,7 +31,7 @@
 
   "security_headers": {
     "_comment": "Security headers to prevent various web-based attacks",
-    "content_security_policy": "default-src 'self'; script-src 'none'; object-src 'none'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self'; media-src 'none'; frame-src 'none'; form-action 'self'",
+    "content_security_policy": "default-src 'self'; script-src 'self' 'unsafe-inline'; object-src 'none'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self'; media-src 'none'; frame-src 'none'; form-action 'self'",
     "x_content_type_options": "nosniff",
     "x_frame_options": "DENY",
     "x_xss_protection": "1; mode=block",

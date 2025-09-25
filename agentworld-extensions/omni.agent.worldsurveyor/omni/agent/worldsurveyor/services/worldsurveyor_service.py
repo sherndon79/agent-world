@@ -100,7 +100,13 @@ class WorldSurveyorService:
     def get_debug_status(self) -> Dict[str, Any]:
         if not self._manager:
             return error_response("MANAGER_UNAVAILABLE", "Waypoint manager unavailable")
-        return {"success": True, "status": self._manager.get_debug_status()}
+        debug_status = self._manager.get_debug_status()
+        waypoint_count = self._manager.get_waypoint_count()
+        return {
+            "success": True,
+            "status": debug_status,
+            "waypoint_count": waypoint_count
+        }
 
     # ------------------------------------------------------------------
     # Waypoint operations

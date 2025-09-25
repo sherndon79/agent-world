@@ -380,21 +380,31 @@ def setup_worldrecorder_metrics() -> WorldExtensionMetrics:
     return metrics
 
 
-def setup_worldstreamer_metrics() -> WorldExtensionMetrics:
-    """Setup metrics for WorldStreamer extension with its specific counters/gauges."""
-    metrics = WorldExtensionMetrics("worldstreamer")
-    
-    # Register WorldStreamer-specific counters
-    metrics.register_counter("streams_started", "Total streaming sessions started")
-    metrics.register_counter("streams_stopped", "Total streaming sessions stopped") 
-    metrics.register_counter("stream_errors", "Total streaming errors")
-    metrics.register_counter("api_requests", "Total API requests processed")
-    metrics.register_counter("webrtc_connections", "Total WebRTC connections established")
-    
-    # Note: Gauges would be registered when streaming interface is available
-    # metrics.register_gauge("active_streams", "Current number of active streams",
-    #                       lambda: streaming_interface.get_active_stream_count())
-    
+def setup_worldstreamer_rtmp_metrics() -> WorldExtensionMetrics:
+    """Setup metrics for WorldStreamer RTMP extension with its specific counters/gauges."""
+    metrics = WorldExtensionMetrics("worldstreamer.rtmp")
+
+    # Register WorldStreamer RTMP-specific counters
+    metrics.register_counter("streams_started", "Total RTMP streaming sessions started")
+    metrics.register_counter("streams_stopped", "Total RTMP streaming sessions stopped")
+    metrics.register_counter("stream_errors", "Total RTMP streaming errors")
+    metrics.register_counter("api_requests", "Total RTMP API requests processed")
+    metrics.register_counter("rtmp_connections", "Total RTMP connections established")
+
+    return metrics
+
+
+def setup_worldstreamer_srt_metrics() -> WorldExtensionMetrics:
+    """Setup metrics for WorldStreamer SRT extension with its specific counters/gauges."""
+    metrics = WorldExtensionMetrics("worldstreamer.srt")
+
+    # Register WorldStreamer SRT-specific counters
+    metrics.register_counter("streams_started", "Total SRT streaming sessions started")
+    metrics.register_counter("streams_stopped", "Total SRT streaming sessions stopped")
+    metrics.register_counter("stream_errors", "Total SRT streaming errors")
+    metrics.register_counter("api_requests", "Total SRT API requests processed")
+    metrics.register_counter("srt_connections", "Total SRT connections established")
+
     return metrics
 
 
@@ -435,10 +445,11 @@ if __name__ == "__main__":
     # Test each extension's metrics setup
     extensions = [
         ('worldbuilder', setup_worldbuilder_metrics),
-        ('worldviewer', setup_worldviewer_metrics), 
+        ('worldviewer', setup_worldviewer_metrics),
         ('worldsurveyor', setup_worldsurveyor_metrics),
         ('worldrecorder', setup_worldrecorder_metrics),
-        ('worldstreamer', setup_worldstreamer_metrics)
+        ('worldstreamer.rtmp', setup_worldstreamer_rtmp_metrics),
+        ('worldstreamer.srt', setup_worldstreamer_srt_metrics)
     ]
     
     for name, setup_func in extensions:
