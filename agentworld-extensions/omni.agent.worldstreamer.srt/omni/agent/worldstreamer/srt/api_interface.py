@@ -124,7 +124,7 @@ class WorldStreamerAPI:
             )
             
             # Create handler class using unified factory method
-            handler_class = WorldStreamerHTTPHandler.create_handler_class(self, 'worldstreamer')
+            handler_class = WorldStreamerHTTPHandler.create_handler_class(self, 'worldstreamer.srt')
             
             # Create server with socket reuse options (consistent with other extensions)
             self._server = ThreadingHTTPServer((self._config.get('server_host', 'localhost'), self._port), handler_class)

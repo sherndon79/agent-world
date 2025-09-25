@@ -44,26 +44,38 @@ def main() -> int:
         {
             'name': 'worldsurveyor',
             'service': 'worldsurveyor',
-            'mcp_file': mcp_root / 'worldsurveyor' / 'src' / 'mcp_worldsurveyor.py',
+            'mcp_file': mcp_root / 'worldsurveyor' / 'src' / 'main.py',
             'openapi_url': build_openapi_url('WORLDSURVEYOR_API_URL', 'http://localhost:8891'),
         },
         {
             'name': 'worldbuilder',
             'service': 'worldbuilder',
-            'mcp_file': mcp_root / 'worldbuilder' / 'src' / 'mcp_agent_worldbuilder.py',
+            'mcp_file': mcp_root / 'worldbuilder' / 'src' / 'main.py',
             'openapi_url': build_openapi_url('WORLDBUILDER_API_URL', 'http://localhost:8899'),
         },
         {
             'name': 'worldviewer',
             'service': 'worldviewer',
-            'mcp_file': mcp_root / 'worldviewer' / 'src' / 'mcp_agent_worldviewer.py',
+            'mcp_file': mcp_root / 'worldviewer' / 'src' / 'main.py',
             'openapi_url': build_openapi_url('WORLDVIEWER_API_URL', 'http://localhost:8900'),
         },
         {
             'name': 'worldrecorder',
             'service': 'worldrecorder',
-            'mcp_file': mcp_root / 'worldrecorder' / 'src' / 'mcp_agent_worldrecorder.py',
+            'mcp_file': mcp_root / 'worldrecorder' / 'src' / 'main.py',
             'openapi_url': build_openapi_url('WORLDRECORDER_API_URL', 'http://localhost:8892'),
+        },
+        {
+            'name': 'worldstreamer-srt',
+            'service': 'worldstreamer',
+            'mcp_file': mcp_root / 'worldstreamer' / 'src' / 'main.py',
+            'openapi_url': build_openapi_url('WORLDSTREAMER_SRT_API_URL', 'http://localhost:8908'),
+        },
+        {
+            'name': 'worldstreamer-rtmp',
+            'service': 'worldstreamer',
+            'mcp_file': mcp_root / 'worldstreamer' / 'src' / 'main.py',
+            'openapi_url': build_openapi_url('WORLDSTREAMER_RTMP_API_URL', 'http://localhost:8906'),
         },
     ]
 

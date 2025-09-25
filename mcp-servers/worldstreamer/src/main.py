@@ -33,8 +33,16 @@ logger = logging.getLogger("worldstreamer")
 
 async def main():
     """Main entry point for the WorldStreamer MCP server."""
-    # Setup logging
+    # Setup logging for stdio MCP - disable console to avoid stdout contamination
+    os.environ.setdefault('AGENT_LOG_FILE', '/tmp/worldstreamer_mcp.log')
+    os.environ.setdefault('AGENT_LOG_LEVEL', 'INFO')
     setup_logging('worldstreamer')
+
+    # Remove all handlers that write to stdout/stderr for stdio MCP
+    root_logger = logging.getLogger()
+    for handler in root_logger.handlers[:]:
+        if isinstance(handler, logging.StreamHandler) and handler.stream in (sys.stdout, sys.stderr):
+            root_logger.removeHandler(handler)
     logger.info("🚀 Starting Isaac Sim WorldStreamer MCP Server (Stdio - Modular)")
 
     # Initialize client

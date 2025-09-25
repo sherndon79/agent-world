@@ -135,7 +135,7 @@ def main() -> int:
     ap.add_argument('--mcp-file', required=True, help='Path to MCP server Python file to analyze')
     ap.add_argument('--openapi-url', help='URL to /openapi.json')
     ap.add_argument('--openapi-file', help='Path to a local openapi.json file')
-    ap.add_argument('--service', choices=['worldbuilder', 'worldviewer', 'worldsurveyor', 'worldrecorder'], help='Service name for auth headers')
+    ap.add_argument('--service', choices=['worldbuilder', 'worldviewer', 'worldsurveyor', 'worldrecorder', 'worldstreamer'], help='Service name for auth headers')
     ap.add_argument('--fail-on-extra-openapi', action='store_true', help='Fail if OpenAPI has endpoints unused by MCP')
     args = ap.parse_args()
 

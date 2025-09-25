@@ -8,6 +8,19 @@ Provides comprehensive API documentation with authentication and response schema
 from typing import Dict, Any
 
 
+def build_openapi_spec(port: int) -> Dict[str, Any]:
+    """
+    Build WorldStreamer OpenAPI specification (unified handler interface).
+
+    Args:
+        port: API server port
+
+    Returns:
+        OpenAPI specification dictionary
+    """
+    return get_worldstreamer_openapi_spec(port, auth_enabled=True)
+
+
 def get_worldstreamer_openapi_spec(port: int = 8905, auth_enabled: bool = True) -> Dict[str, Any]:
     """
     Get WorldStreamer OpenAPI specification.
