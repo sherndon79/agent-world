@@ -280,9 +280,16 @@ class GStreamerEncoder(BaseEncoder):
                     frame_data = self._frame_queue.get(timeout=1.0)
                     
                     # Send frame to GStreamer
-                    if self._process and self._process.stdin:
-                        self._process.stdin.write(frame_data)
-                        self._process.stdin.flush()
+                    if self._process and self._process.stdin and not self._process.stdin.closed:
+                        try:
+                            self._process.stdin.write(frame_data)
+                            self._process.stdin.flush()
+                        except ValueError as e:
+                            if "closed file" in str(e):
+                                logger.debug("Stream stdin closed during write, stopping encoder loop")
+                                break
+                            else:
+                                raise
                     
                 except queue.Empty:
                     continue  # Timeout, check stop event

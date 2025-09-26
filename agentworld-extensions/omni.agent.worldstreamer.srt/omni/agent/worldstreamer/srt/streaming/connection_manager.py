@@ -22,11 +22,18 @@ class ConnectionManager:
     def __init__(self, ip_detection_timeout: float = 5.0):
         """
         Initialize connection manager.
-        
+
         Args:
             ip_detection_timeout: Timeout for IP detection services
         """
         self._ip_detection_timeout = ip_detection_timeout
+
+        # Get SRT port from unified config
+        try:
+            from ..config import get_config
+            self._srt_port = int(get_config().get('srt_port', 9999))
+        except Exception:
+            self._srt_port = 9999  # fallback
         self._cached_public_ip = None
         self._cached_local_ip = None
         self._last_ip_check = None
@@ -231,7 +238,7 @@ class ConnectionManager:
             'ip_cache_valid': self._is_ip_cache_valid(),
             'ip_detection_timeout': self._ip_detection_timeout,
             'protocol': 'SRT',
-            'default_port': 9000
+            'default_port': self._srt_port
         }
     
     def _generate_client_urls(self, rtmp_port: int, local_ip: Optional[str], 
