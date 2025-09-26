@@ -34,7 +34,7 @@ def create_stdio_server():
                     "type": "object",
                     "properties": {
                         "position": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3, "description": "3D position [x, y, z]"},
-                        "waypoint_type": {"type": "string", "description": "Type of waypoint", "default": "point_of_interest"},
+                        "waypoint_type": {"type": "string", "description": "Type of waypoint"},
                         "name": {"type": "string", "description": "Optional custom name"},
                         "target": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3, "description": "Optional target coordinates"},
                         "metadata": {"type": "object", "description": "Optional additional metadata"}
@@ -248,7 +248,7 @@ def create_stdio_server():
                     "type": "object",
                     "properties": {
                         "file_path": {"type": "string", "description": "Path to export file"},
-                        "format": {"type": "string", "description": "Export format", "default": "json"}
+                        "format": {"type": "string", "description": "Export format"}
                     },
                     "required": ["file_path"]
                 }
@@ -260,7 +260,7 @@ def create_stdio_server():
                     "type": "object",
                     "properties": {
                         "file_path": {"type": "string", "description": "Path to import file"},
-                        "merge": {"type": "boolean", "description": "Whether to merge with existing waypoints", "default": true}
+                        "merge": {"type": "boolean", "description": "Whether to merge with existing waypoints"}
                     },
                     "required": ["file_path"]
                 }

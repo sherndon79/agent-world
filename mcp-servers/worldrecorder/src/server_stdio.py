@@ -35,13 +35,13 @@ def create_stdio_server():
                     "properties": {
                         "output_path": {"type": "string", "description": "File path for video output"},
                         "duration_sec": {"type": "number", "description": "Recording duration in seconds"},
-                        "fps": {"type": "number", "description": "Frames per second", "default": 30},
+                        "fps": {"type": "number", "description": "Frames per second"},
                         "width": {"type": "integer", "description": "Video width in pixels"},
                         "height": {"type": "integer", "description": "Video height in pixels"},
-                        "file_type": {"type": "string", "description": "Video file format", "default": ".mp4"},
-                        "session_id": {"type": "string", "description": "Recording session ID", "default": ""},
-                        "show_progress": {"type": "boolean", "description": "Show recording progress", "default": false},
-                        "cleanup_frames": {"type": "boolean", "description": "Clean up temporary frames", "default": true}
+                        "file_type": {"type": "string", "description": "Video file format"},
+                        "session_id": {"type": "string", "description": "Recording session ID"},
+                        "show_progress": {"type": "boolean", "description": "Show recording progress"},
+                        "cleanup_frames": {"type": "boolean", "description": "Clean up temporary frames"}
                     },
                     "required": ["output_path", "duration_sec"]
                 }
@@ -85,7 +85,7 @@ def create_stdio_server():
                         "frame_count": {"type": "integer", "description": "Number of frames to capture"},
                         "width": {"type": "integer", "description": "Image width in pixels"},
                         "height": {"type": "integer", "description": "Image height in pixels"},
-                        "file_type": {"type": "string", "description": "Image file format", "default": ".png"}
+                        "file_type": {"type": "string", "description": "Image file format"}
                     },
                     "required": ["output_path"]
                 }

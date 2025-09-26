@@ -118,6 +118,12 @@ class WorldStreamerClient:
                             self.active_protocol = protocol.lower()
                             logger.info(f"Auto-detected active service: {protocol} at {url}")
                             return url
+                    elif response.status_code == 401:
+                        # Service is running but needs authentication - this is expected
+                        self.base_url = url
+                        self.active_protocol = protocol.lower()
+                        logger.info(f"Auto-detected active service with auth: {protocol} at {url}")
+                        return url
             except Exception as e:
                 logger.debug(f"{protocol} service at {url} not available: {e}")
                 continue
