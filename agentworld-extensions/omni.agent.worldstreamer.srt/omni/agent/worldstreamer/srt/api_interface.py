@@ -258,7 +258,11 @@ class WorldStreamerAPI:
             '/openapi.json': 'OpenAPI specification',
             '/docs': 'API documentation'
         }
-    
+
+    def get_port(self) -> int:
+        """Get the HTTP server port."""
+        return self._port
+
     def get_health_status(self) -> Dict[str, Any]:
         """
         Get comprehensive API health status.

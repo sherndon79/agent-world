@@ -108,25 +108,32 @@ class WorldStreamerClient:
         ]
 
         for url, protocol in services:
+            temp_client = None
             try:
-                async with httpx.AsyncClient(timeout=5.0) as client:
-                    response = await client.get(f"{url}/health")
-                    if response.status_code == 200:
-                        result = response.json()
-                        if result.get('success'):
-                            self.base_url = url
-                            self.active_protocol = protocol.lower()
-                            logger.info(f"Auto-detected active service: {protocol} at {url}")
-                            return url
-                    elif response.status_code == 401:
-                        # Service is running but needs authentication - this is expected
-                        self.base_url = url
-                        self.active_protocol = protocol.lower()
-                        logger.info(f"Auto-detected active service with auth: {protocol} at {url}")
-                        return url
+                # Create temporary auth-aware client for health check
+                temp_client = MCPBaseClient('WORLDSTREAMER', url)
+                await temp_client.initialize()
+
+                # Perform authenticated health check
+                response = await temp_client.get("health")
+
+                if response.get('success'):
+                    self.base_url = url
+                    self.active_protocol = protocol.lower()
+                    logger.info(f"Auto-detected active service: {protocol} at {url}")
+                    return url
+                else:
+                    logger.debug(f"{protocol} service at {url} returned error: {response.get('error', 'Unknown error')}")
+
             except Exception as e:
                 logger.debug(f"{protocol} service at {url} not available: {e}")
-                continue
+            finally:
+                # Clean up temporary client
+                if temp_client:
+                    try:
+                        await temp_client.close()
+                    except Exception:
+                        pass  # Ignore cleanup errors
 
         # No service available
         raise Exception(f"No WorldStreamer service available at {self.rtmp_url} or {self.srt_url}")

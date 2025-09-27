@@ -34,12 +34,12 @@ _ensure_core_path()
 
 # Import unified metrics system
 try:
-    from agentworld_core.metrics import setup_worldstreamer_metrics
+    from agentworld_core.metrics import setup_worldstreamer_rtmp_metrics
     METRICS_AVAILABLE = True
 except ImportError:
     if _ensure_core_path():
         try:
-            from agentworld_core.metrics import setup_worldstreamer_metrics
+            from agentworld_core.metrics import setup_worldstreamer_rtmp_metrics
             METRICS_AVAILABLE = True
         except ImportError as exc:  # pragma: no cover
             logging.getLogger(__name__).warning(f"Could not import unified metrics system: {exc}")
@@ -94,7 +94,7 @@ class WorldStreamerAPI:
         
         # Initialize unified metrics system
         if METRICS_AVAILABLE:
-            self.metrics = setup_worldstreamer_metrics()
+            self.metrics = setup_worldstreamer_rtmp_metrics()
         
         logger.info(f"WorldStreamerAPI initialized for port {port}")
     
@@ -258,7 +258,11 @@ class WorldStreamerAPI:
             '/openapi.json': 'OpenAPI specification',
             '/docs': 'API documentation'
         }
-    
+
+    def get_port(self) -> int:
+        """Get the HTTP server port."""
+        return self._port
+
     def get_health_status(self) -> Dict[str, Any]:
         """
         Get comprehensive API health status.

@@ -16,6 +16,8 @@ services=(
   worldviewer:8900
   worldsurveyor:8891
   worldrecorder:8892
+  worldstreamer.rtmp:8906
+  worldstreamer.srt:8908
 )
 
 fail=0
