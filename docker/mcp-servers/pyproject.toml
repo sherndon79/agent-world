@@ -86,7 +86,6 @@ where = [
     "worldviewer/src", 
     "worldsurveyor/src",
     "worldrecorder/src",
-    "desktop-screenshot/src",
     "shared"
 ]
 

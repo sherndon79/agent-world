@@ -8,7 +8,6 @@ This directory contains configuration for selective authentication across MCP se
 - ✅ `worldbuilder` - Has HMAC auth, currently working
 - ✅ `worldrecorder-server` - Has HMAC auth, currently working  
 - ✅ `worldviewer` - Has HMAC auth, currently working
-- ✅ `desktop-screenshot` - Working (check if needs auth)
 
 ### Servers WITHOUT Authentication  
 - ❌ `videocapture` - Has auth code but Isaac Sim extension doesn't support it yet
