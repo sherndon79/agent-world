@@ -605,10 +605,25 @@ class StreamingInterface:
                 return self._ensure_streamid(url)
             host = get_config().get('srt_host', '127.0.0.1')
             port = int(get_config().get('srt_port', 9999))
-            return self._ensure_streamid(f"srt://{host}:{port}?mode=caller&latency=50&transtype=live")
+            # Optimized SRT parameters for better GStreamer compatibility
+            config = get_config()
+            latency = config.get('srt_latency', 200)
+            rcvbuf = config.get('srt_rcvbuf', 1048576)
+            sndbuf = config.get('srt_sndbuf', 1048576)
+            payloadsize = config.get('srt_payloadsize', 1316)
+            tlpktdrop = int(config.get('srt_tlpktdrop', True))
+
+            return self._ensure_streamid(
+                f"srt://{host}:{port}?mode=caller&latency={latency}&transtype=live"
+                f"&rcvbuf={rcvbuf}&sndbuf={sndbuf}&payloadsize={payloadsize}&tlpktdrop={tlpktdrop}"
+            )
         except Exception:
             # Fallback to OME's default SRT port to avoid confusion
-            return self._ensure_streamid("srt://127.0.0.1:9999?mode=caller&latency=50&transtype=live")
+            # Optimized fallback SRT parameters for better GStreamer compatibility
+            return self._ensure_streamid(
+                "srt://127.0.0.1:9999?mode=caller&latency=200&transtype=live"
+                "&rcvbuf=1048576&sndbuf=1048576&payloadsize=1316&tlpktdrop=1"
+            )
 
     def _ensure_streamid(self, url: str) -> str:
         """Append OME-compatible streamid if missing, mapping to default/app/isaac.

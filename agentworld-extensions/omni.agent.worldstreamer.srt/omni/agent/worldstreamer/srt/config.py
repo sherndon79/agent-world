@@ -57,6 +57,11 @@ class WorldStreamerConfig(WorldExtensionConfig if CONFIG_AVAILABLE else object):
         'rtmp_port': 1935,
         'srt_host': '127.0.0.1',
         'srt_port': 9999,
+        'srt_latency': 200,          # Optimized for GStreamer compatibility
+        'srt_rcvbuf': 1048576,       # 1MB receive buffer
+        'srt_sndbuf': 1048576,       # 1MB send buffer
+        'srt_payloadsize': 1316,     # Optimal payload size for MTU
+        'srt_tlpktdrop': True,       # Enable packet dropping for live streaming
         'server_timeout': 1.0,
         'server_ready_timeout': 5.0,
         'health_check_interval': 10.0,
@@ -67,6 +72,11 @@ class WorldStreamerConfig(WorldExtensionConfig if CONFIG_AVAILABLE else object):
         'rtmp_port': 1935,
         'srt_host': '127.0.0.1',
         'srt_port': 9999,
+        'srt_latency': 200,          # Optimized for GStreamer compatibility
+        'srt_rcvbuf': 1048576,       # 1MB receive buffer
+        'srt_sndbuf': 1048576,       # 1MB send buffer
+        'srt_payloadsize': 1316,     # Optimal payload size for MTU
+        'srt_tlpktdrop': True,       # Enable packet dropping for live streaming
         'server_timeout': 1.0,
         'server_ready_timeout': 5.0,
         'health_check_interval': 10.0,
