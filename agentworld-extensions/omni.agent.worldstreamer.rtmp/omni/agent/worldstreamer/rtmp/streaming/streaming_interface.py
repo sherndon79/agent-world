@@ -628,11 +628,24 @@ class StreamingInterface:
                 logger.info("Audio is disabled, initializing video-only encoder")
                 self._audio_manager = None
 
+            # Get YouTube RTMP URL from config, fallback to localhost for testing
+            try:
+                youtube_cfg = config.get_youtube_config()
+                if youtube_cfg.get('enabled') and youtube_cfg.get('primary_full_url'):
+                    rtmp_url = youtube_cfg['primary_full_url']
+                    logger.info("Using YouTube RTMP primary URL for streaming")
+                else:
+                    rtmp_url = f"rtmp://localhost:{self._rtmp_port}/{self._stream_key}"
+                    logger.info("YouTube not configured, using localhost RTMP for testing")
+            except Exception as e:
+                logger.warning(f"Could not load YouTube config: {e}, using localhost")
+                rtmp_url = f"rtmp://localhost:{self._rtmp_port}/{self._stream_key}"
+
             # Get best encoder with audio and monitoring support
             self._encoder = get_best_encoder(
                 resolution=self._resolution,
                 fps=self._fps,
-                rtmp_url=f"rtmp://localhost:{self._rtmp_port}/{self._stream_key}",
+                rtmp_url=rtmp_url,
                 bitrate_kbps=bitrate_kbps,
                 preferred_type=preferred,
                 audio_manager=self._audio_manager,
