@@ -104,7 +104,7 @@
     "encoding_bitrate": 2000,
     "encoder_type": "auto",
     "_comment_monitoring": "SRT monitoring configuration for local stream preview",
-    "monitoring_enabled": false,
+    "monitoring_enabled": true,
     "monitoring_srt_port": 9998,
     "monitoring_srt_latency": 200,
     "_comment_youtube": "YouTube streaming configuration - reads from environment variables",
