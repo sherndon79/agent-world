@@ -75,6 +75,11 @@ class StreamingInterface:
         # Audio manager (to be initialized if audio is enabled)
         self._audio_manager = None
 
+        # Monitoring state (to be initialized from config)
+        self._monitoring_enabled = False
+        self._monitoring_srt_port = 9998
+        self._monitoring_srt_latency = 200
+
         logger.info(f"StreamingInterface initialized - RTMP port: {rtmp_port}, Stream key: {stream_key}")
     
     def capture_frame_on_main_thread(self) -> bool:
@@ -384,10 +389,23 @@ class StreamingInterface:
                     'channels': []
                 }
 
+            # Add monitoring information
+            if self._monitoring_enabled:
+                status['monitoring'] = {
+                    'enabled': True,
+                    'srt_port': self._monitoring_srt_port,
+                    'srt_latency': self._monitoring_srt_latency,
+                    'srt_url': f"srt://localhost:{self._monitoring_srt_port}"
+                }
+            else:
+                status['monitoring'] = {
+                    'enabled': False
+                }
+
             # Add connection information
             connection_status = self._connection_manager.get_connection_status()
             status['connection_info'] = connection_status
-            
+
             return {
                 'success': True,
                 'status': status
@@ -576,6 +594,12 @@ class StreamingInterface:
                 audio_bitrate_kbps = audio_cfg.get('bitrate_kbps', 160)
                 audio_channels = audio_cfg.get('channels', [])
 
+                # Monitoring config
+                monitoring_cfg = config.get_monitoring_config()
+                self._monitoring_enabled = monitoring_cfg.get('enabled', False)
+                self._monitoring_srt_port = monitoring_cfg.get('srt_port', 9998)
+                self._monitoring_srt_latency = monitoring_cfg.get('srt_latency', 200)
+
             except Exception as e:
                 logger.warning(f"Could not load config, using defaults: {e}")
                 bitrate_kbps = 2000
@@ -583,6 +607,9 @@ class StreamingInterface:
                 audio_enabled = False
                 audio_bitrate_kbps = 160
                 audio_channels = []
+                self._monitoring_enabled = False
+                self._monitoring_srt_port = 9998
+                self._monitoring_srt_latency = 200
 
             # Initialize audio manager if enabled
             if audio_enabled and audio_channels:
@@ -601,7 +628,7 @@ class StreamingInterface:
                 logger.info("Audio is disabled, initializing video-only encoder")
                 self._audio_manager = None
 
-            # Get best encoder with audio support
+            # Get best encoder with audio and monitoring support
             self._encoder = get_best_encoder(
                 resolution=self._resolution,
                 fps=self._fps,
@@ -609,7 +636,10 @@ class StreamingInterface:
                 bitrate_kbps=bitrate_kbps,
                 preferred_type=preferred,
                 audio_manager=self._audio_manager,
-                audio_bitrate_kbps=audio_bitrate_kbps
+                audio_bitrate_kbps=audio_bitrate_kbps,
+                monitoring_enabled=self._monitoring_enabled,
+                monitoring_srt_port=self._monitoring_srt_port,
+                monitoring_srt_latency=self._monitoring_srt_latency
             )
 
             if not self._encoder:
@@ -629,7 +659,9 @@ class StreamingInterface:
                 'success': True,
                 'encoder': self._encoder.get_info(),
                 'audio_enabled': self._audio_manager is not None,
-                'audio_channels': self._audio_manager.get_enabled_channel_count() if self._audio_manager else 0
+                'audio_channels': self._audio_manager.get_enabled_channel_count() if self._audio_manager else 0,
+                'monitoring_enabled': self._monitoring_enabled,
+                'monitoring_srt_port': self._monitoring_srt_port if self._monitoring_enabled else None
             }
 
         except Exception as e:

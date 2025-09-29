@@ -60,6 +60,10 @@ class WorldStreamerConfig(WorldExtensionConfig if CONFIG_AVAILABLE else object):
         'server_ready_timeout': 5.0,
         'health_check_interval': 10.0,
         'metrics_collection_enabled': True,
+        # Monitoring configuration
+        'monitoring_enabled': False,
+        'monitoring_srt_port': 9998,
+        'monitoring_srt_latency': 200,
         # Audio configuration
         'audio_enabled': False,  # Disabled by default for backward compatibility
         'audio_bitrate_kbps': 160,
@@ -103,6 +107,10 @@ class WorldStreamerConfig(WorldExtensionConfig if CONFIG_AVAILABLE else object):
         'server_ready_timeout': 5.0,
         'health_check_interval': 10.0,
         'metrics_collection_enabled': True,
+        # Monitoring configuration
+        'monitoring_enabled': False,
+        'monitoring_srt_port': 9998,
+        'monitoring_srt_latency': 200,
         # Audio configuration
         'audio_enabled': False,
         'audio_bitrate_kbps': 160,
@@ -290,6 +298,26 @@ class WorldStreamerConfig(WorldExtensionConfig if CONFIG_AVAILABLE else object):
             'masked_primary_key': masked_primary_key if has_primary_key else None,
             'masked_backup_key': masked_backup_key if has_backup_key else None
         }
+
+    def get_monitoring_config(self) -> dict:
+        """
+        Get SRT monitoring configuration for local stream preview.
+
+        Returns:
+            Dict with monitoring configuration including enabled status, port, and latency
+        """
+        if CONFIG_AVAILABLE:
+            return {
+                'enabled': self.get('monitoring_enabled', False),
+                'srt_port': self.get('monitoring_srt_port', 9998),
+                'srt_latency': self.get('monitoring_srt_latency', 200),
+            }
+        else:
+            return {
+                'enabled': self._config.get('monitoring_enabled', False),
+                'srt_port': self._config.get('monitoring_srt_port', 9998),
+                'srt_latency': self._config.get('monitoring_srt_latency', 200),
+            }
 
 
 # Global configuration instance

@@ -70,11 +70,14 @@ class BaseEncoder(ABC):
 class GStreamerEncoder(BaseEncoder):
     """GStreamer-based encoder with hardware acceleration support."""
 
-    def __init__(self, resolution: Tuple[int, int], fps: int, rtmp_url: str, encoder_type: str = "auto", bitrate_kbps: int = 2000, audio_manager=None, audio_bitrate_kbps: int = 160):
+    def __init__(self, resolution: Tuple[int, int], fps: int, rtmp_url: str, encoder_type: str = "auto", bitrate_kbps: int = 2000, audio_manager=None, audio_bitrate_kbps: int = 160, monitoring_enabled: bool = False, monitoring_srt_port: int = 9998, monitoring_srt_latency: int = 200):
         super().__init__(resolution, fps, rtmp_url, bitrate_kbps)
         self.encoder_type = encoder_type  # "nvenc", "vaapi", "x264"
         self.audio_manager = audio_manager
         self.audio_bitrate_kbps = audio_bitrate_kbps
+        self.monitoring_enabled = monitoring_enabled
+        self.monitoring_srt_port = monitoring_srt_port
+        self.monitoring_srt_latency = monitoring_srt_latency
         self._process = None
         self._frame_queue = queue.Queue(maxsize=5)  # Smaller buffer to detect issues faster
         self._encoder_thread = None
@@ -252,9 +255,9 @@ class GStreamerEncoder(BaseEncoder):
         try:
             width, height = self.resolution
 
-            # Check if audio is enabled
+            # Build audio channel list if audio is enabled
+            audio_channels = None
             if self.audio_manager and self.audio_manager.is_enabled():
-                # Build audio channel list for pipeline
                 enabled_channels = self.audio_manager.get_enabled_channels()
                 audio_channels = [
                     {
@@ -263,10 +266,28 @@ class GStreamerEncoder(BaseEncoder):
                     }
                     for ch in enabled_channels
                 ]
+                logger.info(f"Building pipeline with {len(audio_channels)} audio channels")
 
-                logger.info(f"Building RTMP pipeline with {len(audio_channels)} audio channels")
+            # Check if monitoring is enabled
+            if self.monitoring_enabled:
+                logger.info(f"Building RTMP pipeline with SRT monitoring on port {self.monitoring_srt_port}")
+                from agentworld_core.subprocess_security import create_secure_rtmp_pipeline_with_monitoring
 
-                # Use secure pipeline builder with audio
+                pipeline = create_secure_rtmp_pipeline_with_monitoring(
+                    width=width,
+                    height=height,
+                    fps=self.fps,
+                    video_bitrate_kbps=self.bitrate_kbps,
+                    rtmp_url=self.rtmp_url,
+                    monitoring_srt_port=self.monitoring_srt_port,
+                    encoder_type=self.encoder_type,
+                    audio_channels=audio_channels,
+                    audio_bitrate_kbps=self.audio_bitrate_kbps,
+                    monitoring_srt_latency=self.monitoring_srt_latency
+                )
+            elif audio_channels:
+                # Audio enabled but monitoring disabled
+                logger.info("Building RTMP pipeline with audio (no monitoring)")
                 from agentworld_core.subprocess_security import create_secure_rtmp_pipeline_with_audio
 
                 pipeline = create_secure_rtmp_pipeline_with_audio(
@@ -280,8 +301,8 @@ class GStreamerEncoder(BaseEncoder):
                     audio_bitrate_kbps=self.audio_bitrate_kbps
                 )
             else:
-                # Use secure pipeline builder without audio (backward compatible)
-                logger.info("Building RTMP pipeline without audio (audio disabled or no manager)")
+                # No audio, no monitoring (backward compatible)
+                logger.info("Building RTMP pipeline without audio or monitoring")
                 pipeline = create_secure_rtmp_pipeline(
                     width=width,
                     height=height,
@@ -472,7 +493,7 @@ def get_available_encoders() -> Dict[str, bool]:
     return available
 
 
-def get_best_encoder(resolution: Tuple[int, int], fps: int, rtmp_url: str, bitrate_kbps: int = 2000, preferred_type: str = "auto", audio_manager=None, audio_bitrate_kbps: int = 160) -> Optional[BaseEncoder]:
+def get_best_encoder(resolution: Tuple[int, int], fps: int, rtmp_url: str, bitrate_kbps: int = 2000, preferred_type: str = "auto", audio_manager=None, audio_bitrate_kbps: int = 160, monitoring_enabled: bool = False, monitoring_srt_port: int = 9998, monitoring_srt_latency: int = 200) -> Optional[BaseEncoder]:
     """
     Get the best available encoder for the system.
 
@@ -489,6 +510,9 @@ def get_best_encoder(resolution: Tuple[int, int], fps: int, rtmp_url: str, bitra
         preferred_type: Preferred encoder type (auto, nvenc, vaapi, x264)
         audio_manager: Optional AudioManager for multi-channel audio
         audio_bitrate_kbps: Audio bitrate in kbps
+        monitoring_enabled: Enable SRT monitoring output
+        monitoring_srt_port: SRT port for monitoring clients
+        monitoring_srt_latency: SRT latency in milliseconds
 
     Returns:
         Best available encoder instance, or None if none available
@@ -502,19 +526,33 @@ def get_best_encoder(resolution: Tuple[int, int], fps: int, rtmp_url: str, bitra
         if available['gstreamer']:
             # Honor preferred encoder type when possible
             enc_type = "auto" if preferred_type not in ("nvenc", "vaapi", "x264") else preferred_type
-            encoder = GStreamerEncoder(resolution, fps, rtmp_url, enc_type, bitrate_kbps, audio_manager, audio_bitrate_kbps)
+            encoder = GStreamerEncoder(
+                resolution, fps, rtmp_url, enc_type, bitrate_kbps,
+                audio_manager, audio_bitrate_kbps,
+                monitoring_enabled, monitoring_srt_port, monitoring_srt_latency
+            )
+
+            # Log configuration
+            features = []
             if audio_manager and audio_manager.is_enabled():
-                logger.info(f"Selected GStreamer encoder with {audio_manager.get_enabled_channel_count()} audio channels")
+                features.append(f"{audio_manager.get_enabled_channel_count()} audio channels")
+            if monitoring_enabled:
+                features.append(f"SRT monitoring on port {monitoring_srt_port}")
+
+            if features:
+                logger.info(f"Selected GStreamer encoder with {', '.join(features)}")
             else:
                 logger.info("Selected GStreamer encoder (video only)")
             return encoder
 
-        # Fallback to OpenCV (no audio support)
+        # Fallback to OpenCV (no audio or monitoring support)
         if available['opencv']:
             if audio_manager and audio_manager.is_enabled():
                 logger.warning("OpenCV encoder does not support audio - audio will be disabled")
+            if monitoring_enabled:
+                logger.warning("OpenCV encoder does not support monitoring - monitoring will be disabled")
             encoder = OpenCVEncoder(resolution, fps, rtmp_url)
-            logger.info("Selected OpenCV encoder (fallback, no audio)")
+            logger.info("Selected OpenCV encoder (fallback, no audio/monitoring)")
             return encoder
 
         # No encoders available
