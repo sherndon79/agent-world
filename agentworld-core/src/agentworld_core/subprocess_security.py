@@ -172,7 +172,7 @@ class GStreamerPipelineBuilder:
         pipeline_args.extend([
             "!",
             "h264parse",
-            "config-interval=-1",
+            "config-interval=1",
             "!",
             "mpegtsmux",
             "!",
