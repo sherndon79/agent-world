@@ -102,7 +102,13 @@
     "environment_validation_enabled": true,
     "encoding_fps": 24,
     "encoding_bitrate": 2000,
-    "encoder_type": "auto"
+    "encoder_type": "auto",
+    "_comment_youtube": "YouTube streaming configuration - reads from environment variables",
+    "youtube_enabled": false,
+    "youtube_primary_url": "",
+    "youtube_backup_url": "",
+    "youtube_stream_key": "",
+    "youtube_backup_key": ""
   },
   "worldstreamer.srt": {
     "server_port": 8908,

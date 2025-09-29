@@ -32,6 +32,10 @@ class WorldStreamerController:
     def validate_environment(self) -> Dict[str, Any]:
         return self._safe_call('validate_environment', self._service.validate_environment, 'VALIDATE_ENVIRONMENT_FAILED')
 
+    def get_youtube_config(self) -> Dict[str, Any]:
+        """Get YouTube streaming configuration (URLs and masked keys)."""
+        return self._safe_call('get_youtube_config', self._service.get_youtube_config, 'YOUTUBE_CONFIG_FAILED')
+
     def _safe_call(self, operation: str, func: Callable[[], Dict[str, Any]], default_error_code: str) -> Dict[str, Any]:
         try:
             response = func()

@@ -6,6 +6,7 @@ Follows the established modular pattern from WorldViewer/WorldBuilder.
 """
 
 import sys
+import os
 import logging
 from pathlib import Path
 
@@ -227,6 +228,68 @@ class WorldStreamerConfig(WorldExtensionConfig if CONFIG_AVAILABLE else object):
                 'fallback_to_null_audio': self._config.get('fallback_to_null_audio', True),
                 'channels': self._config.get('audio_channels', [])
             }
+
+    def get_youtube_config(self) -> dict:
+        """
+        Get YouTube streaming configuration.
+
+        Reads from environment variables with fallback to config:
+        - YOUTUBE_RTMP_URL
+        - YOUTUBE_BACKUP_RTMP_URL
+        - YOUTUBE_STREAM_KEY
+        - YOUTUBE_BACKUP_KEY
+
+        Returns:
+            Dict with YouTube configuration including URLs and keys
+        """
+        # Read from environment variables (highest priority)
+        youtube_primary_url = os.getenv('YOUTUBE_RTMP_URL', '')
+        youtube_backup_url = os.getenv('YOUTUBE_BACKUP_RTMP_URL', '')
+        youtube_stream_key = os.getenv('YOUTUBE_STREAM_KEY', '')
+        youtube_backup_key = os.getenv('YOUTUBE_BACKUP_KEY', '')
+
+        # Fall back to config if environment not set
+        if CONFIG_AVAILABLE:
+            youtube_primary_url = youtube_primary_url or self.get('youtube_primary_url', '')
+            youtube_backup_url = youtube_backup_url or self.get('youtube_backup_url', '')
+            youtube_stream_key = youtube_stream_key or self.get('youtube_stream_key', '')
+            youtube_backup_key = youtube_backup_key or self.get('youtube_backup_key', '')
+        else:
+            youtube_primary_url = youtube_primary_url or self._config.get('youtube_primary_url', '')
+            youtube_backup_url = youtube_backup_url or self._config.get('youtube_backup_url', '')
+            youtube_stream_key = youtube_stream_key or self._config.get('youtube_stream_key', '')
+            youtube_backup_key = youtube_backup_key or self._config.get('youtube_backup_key', '')
+
+        # Build full RTMP URLs with keys
+        primary_full_url = ''
+        backup_full_url = ''
+        has_primary_key = bool(youtube_stream_key)
+        has_backup_key = bool(youtube_backup_key)
+
+        if youtube_primary_url and youtube_stream_key:
+            # Ensure URL doesn't end with /
+            base_url = youtube_primary_url.rstrip('/')
+            primary_full_url = f"{base_url}/{youtube_stream_key}"
+
+        if youtube_backup_url and youtube_backup_key:
+            base_url = youtube_backup_url.rstrip('/')
+            backup_full_url = f"{base_url}/{youtube_backup_key}"
+
+        # Mask keys for display (show only last 4 chars)
+        masked_primary_key = f"...{youtube_stream_key[-4:]}" if len(youtube_stream_key) > 4 else '****'
+        masked_backup_key = f"...{youtube_backup_key[-4:]}" if len(youtube_backup_key) > 4 else '****'
+
+        return {
+            'enabled': bool(primary_full_url),
+            'primary_url': youtube_primary_url,
+            'backup_url': youtube_backup_url,
+            'primary_full_url': primary_full_url,
+            'backup_full_url': backup_full_url,
+            'has_primary_key': has_primary_key,
+            'has_backup_key': has_backup_key,
+            'masked_primary_key': masked_primary_key if has_primary_key else None,
+            'masked_backup_key': masked_backup_key if has_backup_key else None
+        }
 
 
 # Global configuration instance

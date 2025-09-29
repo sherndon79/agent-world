@@ -89,6 +89,19 @@ class WorldStreamerService:
         validation.setdefault('success', bool(validation.get('valid', False)))
         return validation
 
+    def get_youtube_config(self) -> Dict[str, Any]:
+        """Get YouTube streaming configuration (URLs and masked keys)."""
+        try:
+            from ..config import get_config
+            config = get_config()
+            youtube_config = config.get_youtube_config()
+        except Exception as exc:  # pragma: no cover
+            raise WorldStreamerError('Failed to get YouTube configuration', details={'error': str(exc)}) from exc
+
+        youtube_config.setdefault('timestamp', self._timestamp())
+        youtube_config.setdefault('success', True)
+        return youtube_config
+
     # ------------------------------------------------------------------
     def _require_streaming(self):
         if not self._streaming:

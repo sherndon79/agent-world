@@ -40,6 +40,7 @@ class WorldStreamerHTTPHandler(WorldHTTPHandler):
             'streaming/status': self._route_status,
             'streaming/urls': self._route_urls,
             'streaming/environment/validate': self._route_validate_environment,
+            'youtube/config': self._route_youtube_config,
         }
 
     # ------------------------------------------------------------------
@@ -72,6 +73,11 @@ class WorldStreamerHTTPHandler(WorldHTTPHandler):
         if method != 'GET':
             raise MethodNotAllowed('streaming/environment/validate requires GET', details={'method': method})
         return self.controller.validate_environment()
+
+    def _route_youtube_config(self, method: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        if method != 'GET':
+            raise MethodNotAllowed('youtube/config requires GET', details={'method': method})
+        return self.controller.get_youtube_config()
 
     # ------------------------------------------------------------------
     @staticmethod
