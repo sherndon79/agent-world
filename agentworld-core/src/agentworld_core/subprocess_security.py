@@ -37,6 +37,16 @@ class GStreamerSecurityValidator:
         "rtmpsink",
         "video/x-raw",
         "capsfilter",
+        # Audio elements
+        "srtsrc",
+        "decodebin",
+        "audioconvert",
+        "audioresample",
+        "audiomixer",
+        "volume",
+        "voaacenc",
+        "aacparse",
+        "audio/x-raw",
     }
 
     ALLOWED_PROPERTIES = {
@@ -60,6 +70,11 @@ class GStreamerSecurityValidator:
         "streamable": r"^(true|false)$",
         "uri": r"^[a-zA-Z0-9:/.\-_?&=]+$",
         "location": r"^[a-zA-Z0-9:/.\-_?&=]+$",
+        # Audio properties
+        "volume": r"^[0-9]*\.?[0-9]+$",  # Float 0.0-1.0
+        "channels": r"^\d{1,2}$",
+        "rate": r"^\d{4,6}$",
+        "name": r"^[a-zA-Z0-9_-]+$",
     }
 
     @classmethod
@@ -274,6 +289,173 @@ class GStreamerPipelineBuilder:
 
         return pipeline_args
 
+    def create_rtmp_pipeline_with_audio(
+        self,
+        width: int,
+        height: int,
+        fps: int,
+        video_bitrate_kbps: int,
+        rtmp_url: str,
+        encoder_type: str = "x264",
+        audio_channels: Optional[List[Dict[str, Any]]] = None,
+        audio_bitrate_kbps: int = 160,
+    ) -> List[str]:
+        """
+        Create secure RTMP pipeline with multi-channel audio mixing.
+
+        Args:
+            width: Video width
+            height: Video height
+            fps: Frame rate
+            video_bitrate_kbps: Video bitrate in kbps
+            rtmp_url: RTMP destination URL
+            encoder_type: Video encoder type (nvenc, vaapi, x264)
+            audio_channels: List of audio channel configs with srt_port and volume
+            audio_bitrate_kbps: Audio bitrate in kbps
+
+        Returns:
+            List of pipeline command arguments
+
+        Raises:
+            CommandInjectionError: If validation fails
+        """
+        # Validate video parameters
+        try:
+            width = self.input_validator.validate_dimension("width", width, min_val=1, max_val=7680)
+            height = self.input_validator.validate_dimension("height", height, min_val=1, max_val=4320)
+            fps = self.input_validator.validate_fps("fps", fps)
+            video_bitrate_kbps = self.input_validator.validate_bitrate("video_bitrate_kbps", video_bitrate_kbps)
+            rtmp_url = self.input_validator.validate_url("rtmp_url", rtmp_url, allowed_schemes=["rtmp"])
+            encoder_type = self.input_validator.validate_enum(
+                "encoder_type", encoder_type, ["nvenc", "vaapi", "x264"]
+            )
+            audio_bitrate_kbps = self.input_validator.validate_bitrate("audio_bitrate_kbps", audio_bitrate_kbps)
+        except ValidationError as exc:
+            raise CommandInjectionError(str(exc))
+
+        GStreamerSecurityValidator.validate_url(rtmp_url, ["rtmp"])
+
+        # Start with video pipeline
+        pipeline_args = [
+            "gst-launch-1.0",
+            "fdsrc",
+            "do-timestamp=true",
+            "!",
+            "rawvideoparse",
+            f"width={width}",
+            f"height={height}",
+            "format=rgb",
+            f"framerate={fps}/1",
+            "!",
+            "videoconvert",
+            "!",
+            "queue",
+            "max-size-buffers=1",
+            "leaky=downstream",
+            "!",
+            "video/x-raw,format=NV12",
+            "!",
+        ]
+
+        # Video encoder
+        if encoder_type == "nvenc":
+            pipeline_args.extend([
+                "nvh264enc",
+                f"bitrate={video_bitrate_kbps}",
+                "preset=low-latency-hq",
+                "aud=true",
+                "strict-gop=true",
+                "gop-size=48",
+                "zerolatency=true",
+            ])
+        elif encoder_type == "vaapi":
+            pipeline_args.extend([
+                "vaapih264enc",
+                f"bitrate={video_bitrate_kbps}",
+                "quality-level=7",
+            ])
+        else:
+            pipeline_args.extend([
+                "x264enc",
+                f"bitrate={video_bitrate_kbps}",
+                "speed-preset=ultrafast",
+                "tune=zerolatency",
+                "key-int-max=24",
+                "bframes=0",
+            ])
+
+        pipeline_args.extend([
+            "!",
+            "h264parse",
+            "config-interval=1",
+            "!",
+            "mux.",
+        ])
+
+        # Add audio channels if provided
+        if audio_channels and len(audio_channels) > 0:
+            for channel in audio_channels:
+                # Validate channel parameters
+                srt_port = channel.get('srt_port')
+                volume = channel.get('volume', 1.0)
+
+                if not isinstance(srt_port, int) or not (1024 <= srt_port <= 65535):
+                    raise CommandInjectionError(f"Invalid SRT port: {srt_port}")
+
+                if not isinstance(volume, (int, float)) or not (0.0 <= volume <= 1.0):
+                    raise CommandInjectionError(f"Invalid volume: {volume}")
+
+                # SRT audio source pipeline
+                srt_uri = f"srt://0.0.0.0:{srt_port}?mode=listener"
+                GStreamerSecurityValidator.validate_url(srt_uri, ["srt"])
+
+                pipeline_args.extend([
+                    "srtsrc",
+                    f"uri={srt_uri}",
+                    "!",
+                    "decodebin",
+                    "!",
+                    "audioconvert",
+                    "!",
+                    "audioresample",
+                    "!",
+                    "volume",
+                    f"volume={volume}",
+                    "!",
+                    "audio/x-raw,channels=2,rate=48000",
+                    "!",
+                    "mix.",
+                ])
+
+            # Audio mixer and encoder
+            pipeline_args.extend([
+                "audiomixer",
+                "name=mix",
+                "!",
+                "audioconvert",
+                "!",
+                "voaacenc",
+                f"bitrate={audio_bitrate_kbps * 1000}",  # voaacenc expects bits, not kbps
+                "!",
+                "aacparse",
+                "!",
+                "mux.",
+            ])
+
+        # FLV muxer and RTMP sink
+        pipeline_args.extend([
+            "flvmux",
+            "name=mux",
+            "streamable=true",
+            "!",
+            "rtmpsink",
+            f"location={rtmp_url}",
+            "sync=false",
+            "async=false",
+        ])
+
+        return pipeline_args
+
 
 def safe_subprocess_run(cmd_args: List[str], timeout: int = 30, **kwargs) -> subprocess.CompletedProcess:
     dangerous_chars = ["&", "|", ";", "`", "$", "\n", "\r"]
@@ -324,6 +506,51 @@ def create_secure_rtmp_pipeline(
     return builder.create_rtmp_pipeline(width, height, fps, bitrate_kbps, rtmp_url, encoder_type)
 
 
+def create_secure_rtmp_pipeline_with_audio(
+    width: int,
+    height: int,
+    fps: int,
+    video_bitrate_kbps: int,
+    rtmp_url: str,
+    encoder_type: str = "x264",
+    audio_channels: Optional[List[Dict[str, Any]]] = None,
+    audio_bitrate_kbps: int = 160,
+) -> List[str]:
+    """
+    Create secure RTMP pipeline with multi-channel audio mixing.
+
+    Args:
+        width: Video width
+        height: Video height
+        fps: Frame rate
+        video_bitrate_kbps: Video bitrate in kbps
+        rtmp_url: RTMP destination URL
+        encoder_type: Video encoder type (nvenc, vaapi, x264)
+        audio_channels: List of audio channel configs with srt_port and volume
+        audio_bitrate_kbps: Audio bitrate in kbps
+
+    Returns:
+        List of secure pipeline command arguments
+
+    Example:
+        >>> audio_channels = [
+        ...     {'srt_port': 9001, 'volume': 0.8},  # Narration
+        ...     {'srt_port': 9002, 'volume': 0.3},  # Background
+        ... ]
+        >>> pipeline = create_secure_rtmp_pipeline_with_audio(
+        ...     1920, 1080, 24, 4500,
+        ...     "rtmp://a.rtmp.youtube.com/live2/KEY",
+        ...     encoder_type="nvenc",
+        ...     audio_channels=audio_channels
+        ... )
+    """
+    builder = GStreamerPipelineBuilder()
+    return builder.create_rtmp_pipeline_with_audio(
+        width, height, fps, video_bitrate_kbps, rtmp_url,
+        encoder_type, audio_channels, audio_bitrate_kbps
+    )
+
+
 __all__ = [
     "CommandInjectionError",
     "GStreamerSecurityValidator",
@@ -332,4 +559,5 @@ __all__ = [
     "validate_gstreamer_element_availability",
     "create_secure_srt_pipeline",
     "create_secure_rtmp_pipeline",
+    "create_secure_rtmp_pipeline_with_audio",
 ]
