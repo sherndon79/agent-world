@@ -288,16 +288,26 @@ class WorldStreamerExtension(omni.ext.IExt):
                     with ui.CollapsableFrame("Status", collapsed=False, height=0):
                         with ui.VStack(spacing=1):
                             self._status_label = ui.Label("Extension: Active")
-                            
+
                             ui.Spacer(height=2)
                             ui.Label("HTTP API:", style={"font_size": 12})
                             self._api_status_label = ui.Label("Server: Starting...")
                             self._api_url_label = ui.Label("URL: Starting...")
-                            
+
                             ui.Spacer(height=2)
                             ui.Label("RTMP Streaming:", style={"font_size": 12})
                             self._streaming_status_label = ui.Label("Status: Not active")
                             self._streaming_urls_label = ui.Label("URLs: Not available")
+                            self._encoder_status_label = ui.Label("Encoder: Inactive")
+                            self._frame_stats_label = ui.Label("Frames: 0 (0 fps)")
+
+                            ui.Spacer(height=2)
+                            ui.Label("Audio:", style={"font_size": 12})
+                            self._audio_status_label = ui.Label("Audio: Disabled")
+
+                            ui.Spacer(height=2)
+                            ui.Label("Monitoring:", style={"font_size": 12})
+                            self._monitoring_status_label = ui.Label("Monitoring: Disabled")
                     
                     # Controls section
                     with ui.CollapsableFrame("Streaming Controls", collapsed=False, height=0):
@@ -370,7 +380,8 @@ class WorldStreamerExtension(omni.ext.IExt):
                     if streaming_status.get('success'):
                         status = streaming_status['status']
                         is_active = status.get('is_active', False)
-                        
+
+                        # Update streaming status
                         if is_active:
                             self._streaming_status_label.text = "Status: Active"
                             self._start_button.enabled = False
@@ -379,14 +390,42 @@ class WorldStreamerExtension(omni.ext.IExt):
                             self._streaming_status_label.text = "Status: Not active"
                             self._start_button.enabled = True
                             self._stop_button.enabled = False
-                        
+
+                        # Update encoder status
+                        encoder_active = status.get('encoder_active', False)
+                        if encoder_active:
+                            self._encoder_status_label.text = "Encoder: Active"
+                        else:
+                            self._encoder_status_label.text = "Encoder: Inactive"
+
+                        # Update frame stats
+                        frame_count = status.get('frame_count', 0)
+                        avg_fps = status.get('average_fps', 0)
+                        self._frame_stats_label.text = f"Frames: {frame_count} ({avg_fps:.1f} fps)"
+
+                        # Update audio status
+                        audio = status.get('audio', {})
+                        if audio.get('enabled', False):
+                            channel_count = audio.get('enabled_channels', 0)
+                            self._audio_status_label.text = f"Audio: Enabled ({channel_count} channels)"
+                        else:
+                            self._audio_status_label.text = "Audio: Disabled"
+
+                        # Update monitoring status
+                        monitoring = status.get('monitoring', {})
+                        if monitoring.get('enabled', False):
+                            srt_url = monitoring.get('srt_url', 'N/A')
+                            self._monitoring_status_label.text = f"Monitoring: {srt_url[:35]}"
+                        else:
+                            self._monitoring_status_label.text = "Monitoring: Disabled"
+
                         # Update RTMP URLs
                         try:
                             urls_result = self._streaming.get_streaming_urls()
                             if urls_result.get('success'):
                                 urls = urls_result['urls']
                                 rtmp_url = urls.get('rtmp_stream_url', 'Not available')
-                                self._streaming_urls_label.text = f"RTMP: {rtmp_url[:30]}..."
+                                self._streaming_urls_label.text = f"RTMP: {rtmp_url[:40]}..."
                             else:
                                 self._streaming_urls_label.text = "URLs: Not available"
                         except Exception:
@@ -394,12 +433,20 @@ class WorldStreamerExtension(omni.ext.IExt):
                     else:
                         self._streaming_status_label.text = "Status: Error"
                         self._streaming_urls_label.text = "URLs: Not available"
+                        self._encoder_status_label.text = "Encoder: Error"
+                        self._frame_stats_label.text = "Frames: N/A"
+                        self._audio_status_label.text = "Audio: N/A"
+                        self._monitoring_status_label.text = "Monitoring: N/A"
                         self._start_button.enabled = True
                         self._stop_button.enabled = False
-                        
+
                 except Exception as e:
                     self._streaming_status_label.text = f"Status: Error - {str(e)[:20]}..."
                     self._streaming_urls_label.text = "URLs: Not available"
+                    self._encoder_status_label.text = "Encoder: Error"
+                    self._frame_stats_label.text = "Frames: N/A"
+                    self._audio_status_label.text = "Audio: N/A"
+                    self._monitoring_status_label.text = "Monitoring: N/A"
                     self._start_button.enabled = True
                     self._stop_button.enabled = False
             
