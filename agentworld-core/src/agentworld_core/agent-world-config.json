@@ -108,7 +108,7 @@
     "monitoring_srt_port": 9998,
     "monitoring_srt_latency": 200,
     "_comment_youtube": "YouTube streaming configuration - reads from environment variables",
-    "youtube_enabled": false,
+    "youtube_enabled": true,
     "youtube_primary_url": "",
     "youtube_backup_url": "",
     "youtube_stream_key": "",
