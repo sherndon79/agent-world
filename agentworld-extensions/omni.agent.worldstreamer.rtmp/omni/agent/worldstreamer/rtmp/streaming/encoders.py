@@ -69,10 +69,12 @@ class BaseEncoder(ABC):
 
 class GStreamerEncoder(BaseEncoder):
     """GStreamer-based encoder with hardware acceleration support."""
-    
-    def __init__(self, resolution: Tuple[int, int], fps: int, rtmp_url: str, encoder_type: str = "auto", bitrate_kbps: int = 2000):
+
+    def __init__(self, resolution: Tuple[int, int], fps: int, rtmp_url: str, encoder_type: str = "auto", bitrate_kbps: int = 2000, audio_manager=None, audio_bitrate_kbps: int = 160):
         super().__init__(resolution, fps, rtmp_url, bitrate_kbps)
         self.encoder_type = encoder_type  # "nvenc", "vaapi", "x264"
+        self.audio_manager = audio_manager
+        self.audio_bitrate_kbps = audio_bitrate_kbps
         self._process = None
         self._frame_queue = queue.Queue(maxsize=5)  # Smaller buffer to detect issues faster
         self._encoder_thread = None
@@ -250,15 +252,44 @@ class GStreamerEncoder(BaseEncoder):
         try:
             width, height = self.resolution
 
-            # Use secure pipeline builder to prevent command injection
-            pipeline = create_secure_rtmp_pipeline(
-                width=width,
-                height=height,
-                fps=self.fps,
-                bitrate_kbps=self.bitrate_kbps,
-                rtmp_url=self.rtmp_url,
-                encoder_type=self.encoder_type
-            )
+            # Check if audio is enabled
+            if self.audio_manager and self.audio_manager.is_enabled():
+                # Build audio channel list for pipeline
+                enabled_channels = self.audio_manager.get_enabled_channels()
+                audio_channels = [
+                    {
+                        'srt_port': ch.srt_port,
+                        'volume': ch.volume
+                    }
+                    for ch in enabled_channels
+                ]
+
+                logger.info(f"Building RTMP pipeline with {len(audio_channels)} audio channels")
+
+                # Use secure pipeline builder with audio
+                from agentworld_core.subprocess_security import create_secure_rtmp_pipeline_with_audio
+
+                pipeline = create_secure_rtmp_pipeline_with_audio(
+                    width=width,
+                    height=height,
+                    fps=self.fps,
+                    video_bitrate_kbps=self.bitrate_kbps,
+                    rtmp_url=self.rtmp_url,
+                    encoder_type=self.encoder_type,
+                    audio_channels=audio_channels,
+                    audio_bitrate_kbps=self.audio_bitrate_kbps
+                )
+            else:
+                # Use secure pipeline builder without audio (backward compatible)
+                logger.info("Building RTMP pipeline without audio (audio disabled or no manager)")
+                pipeline = create_secure_rtmp_pipeline(
+                    width=width,
+                    height=height,
+                    fps=self.fps,
+                    bitrate_kbps=self.bitrate_kbps,
+                    rtmp_url=self.rtmp_url,
+                    encoder_type=self.encoder_type
+                )
 
             logger.debug(f"Built secure RTMP pipeline with {len(pipeline)} arguments")
             return pipeline
@@ -441,46 +472,55 @@ def get_available_encoders() -> Dict[str, bool]:
     return available
 
 
-def get_best_encoder(resolution: Tuple[int, int], fps: int, rtmp_url: str, bitrate_kbps: int = 2000, preferred_type: str = "auto") -> Optional[BaseEncoder]:
+def get_best_encoder(resolution: Tuple[int, int], fps: int, rtmp_url: str, bitrate_kbps: int = 2000, preferred_type: str = "auto", audio_manager=None, audio_bitrate_kbps: int = 160) -> Optional[BaseEncoder]:
     """
     Get the best available encoder for the system.
-    
+
     Priority:
     1. GStreamer with hardware acceleration (NVENC/VA-API)
     2. GStreamer with software encoding (x264)
     3. OpenCV fallback
-    
+
     Args:
         resolution: Video resolution (width, height)
         fps: Frame rate
         rtmp_url: RTMP output URL
-        
+        bitrate_kbps: Video bitrate in kbps
+        preferred_type: Preferred encoder type (auto, nvenc, vaapi, x264)
+        audio_manager: Optional AudioManager for multi-channel audio
+        audio_bitrate_kbps: Audio bitrate in kbps
+
     Returns:
         Best available encoder instance, or None if none available
     """
     try:
         available = get_available_encoders()
-        
+
         logger.info(f"Available encoders: {available}")
-        
+
         # Try GStreamer first (best option)
         if available['gstreamer']:
             # Honor preferred encoder type when possible
             enc_type = "auto" if preferred_type not in ("nvenc", "vaapi", "x264") else preferred_type
-            encoder = GStreamerEncoder(resolution, fps, rtmp_url, enc_type, bitrate_kbps)
-            logger.info("Selected GStreamer encoder (with auto hardware detection)")
+            encoder = GStreamerEncoder(resolution, fps, rtmp_url, enc_type, bitrate_kbps, audio_manager, audio_bitrate_kbps)
+            if audio_manager and audio_manager.is_enabled():
+                logger.info(f"Selected GStreamer encoder with {audio_manager.get_enabled_channel_count()} audio channels")
+            else:
+                logger.info("Selected GStreamer encoder (video only)")
             return encoder
-        
-        # Fallback to OpenCV
+
+        # Fallback to OpenCV (no audio support)
         if available['opencv']:
+            if audio_manager and audio_manager.is_enabled():
+                logger.warning("OpenCV encoder does not support audio - audio will be disabled")
             encoder = OpenCVEncoder(resolution, fps, rtmp_url)
-            logger.info("Selected OpenCV encoder (fallback)")
+            logger.info("Selected OpenCV encoder (fallback, no audio)")
             return encoder
-        
+
         # No encoders available
         logger.error("No suitable encoders available")
         return None
-        
+
     except Exception as e:
         logger.error(f"Encoder selection failed: {e}")
         return None

@@ -68,10 +68,13 @@ class StreamingInterface:
         self._environment_detector = EnvironmentDetector()
         self._connection_manager = ConnectionManager()
         self._status_tracker = StatusTracker()
-        
+
         # Encoding pipeline (to be initialized on start)
         self._encoder = None
-        
+
+        # Audio manager (to be initialized if audio is enabled)
+        self._audio_manager = None
+
         logger.info(f"StreamingInterface initialized - RTMP port: {rtmp_port}, Stream key: {stream_key}")
     
     def capture_frame_on_main_thread(self) -> bool:
@@ -362,13 +365,25 @@ class StreamingInterface:
                 'viewport_available': VIEWPORT_AVAILABLE and self._viewport is not None,
                 'encoder_active': self._encoder is not None and self._encoder.is_active() if self._encoder else False
             })
-            
+
             # Add uptime if streaming
             if self._is_streaming and self._stream_start_time:
                 uptime = (datetime.utcnow() - self._stream_start_time).total_seconds()
                 status['uptime_seconds'] = uptime
                 status['average_fps'] = self._frame_count / uptime if uptime > 0 else 0
-            
+
+            # Add audio information
+            if self._audio_manager:
+                audio_status = self._audio_manager.get_all_channels_status()
+                status['audio'] = audio_status
+            else:
+                status['audio'] = {
+                    'enabled': False,
+                    'total_channels': 0,
+                    'enabled_channels': 0,
+                    'channels': []
+                }
+
             # Add connection information
             connection_status = self._connection_manager.get_connection_status()
             status['connection_info'] = connection_status
@@ -536,51 +551,87 @@ class StreamingInterface:
     
     def _initialize_encoder(self) -> Dict[str, Any]:
         """
-        Initialize external encoding pipeline.
-        
+        Initialize external encoding pipeline with optional audio support.
+
         Returns:
             Dict with encoder initialization result
         """
         try:
-            # TODO: Initialize actual encoder (GStreamer/NVENC/fallback)
-            # For now, create a placeholder encoder
             from .encoders import get_best_encoder
-            # Pull encoder preferences from unified config if available
+            from .audio_manager import AudioManager
+
+            # Pull encoder and audio preferences from unified config
             try:
                 from ..config import get_config
-                enc_cfg = get_config().get_encoder_config()
+                config = get_config()
+
+                # Video encoder config
+                enc_cfg = config.get_encoder_config()
                 bitrate_kbps = int(enc_cfg.get('encoding_bitrate', 2000))
                 preferred = enc_cfg.get('encoder_type', 'auto')
-            except Exception:
+
+                # Audio config
+                audio_cfg = config.get_audio_config()
+                audio_enabled = audio_cfg.get('enabled', False)
+                audio_bitrate_kbps = audio_cfg.get('bitrate_kbps', 160)
+                audio_channels = audio_cfg.get('channels', [])
+
+            except Exception as e:
+                logger.warning(f"Could not load config, using defaults: {e}")
                 bitrate_kbps = 2000
                 preferred = 'auto'
+                audio_enabled = False
+                audio_bitrate_kbps = 160
+                audio_channels = []
 
+            # Initialize audio manager if enabled
+            if audio_enabled and audio_channels:
+                logger.info("Initializing audio manager for multi-channel streaming")
+                self._audio_manager = AudioManager(audio_channels)
+
+                # Validate audio configuration
+                validation = self._audio_manager.validate_configuration()
+                if not validation['valid']:
+                    logger.warning(f"Audio configuration has errors: {validation['errors']}")
+                    logger.warning("Continuing without audio")
+                    self._audio_manager = None
+                else:
+                    logger.info(f"Audio manager initialized with {self._audio_manager.get_enabled_channel_count()} enabled channels")
+            else:
+                logger.info("Audio is disabled, initializing video-only encoder")
+                self._audio_manager = None
+
+            # Get best encoder with audio support
             self._encoder = get_best_encoder(
                 resolution=self._resolution,
                 fps=self._fps,
                 rtmp_url=f"rtmp://localhost:{self._rtmp_port}/{self._stream_key}",
                 bitrate_kbps=bitrate_kbps,
-                preferred_type=preferred
+                preferred_type=preferred,
+                audio_manager=self._audio_manager,
+                audio_bitrate_kbps=audio_bitrate_kbps
             )
-            
+
             if not self._encoder:
                 return {
                     'success': False,
                     'error': 'No suitable encoder found'
                 }
-            
+
             # Initialize encoder
             init_result = self._encoder.initialize()
             if not init_result['success']:
                 return init_result
-            
+
             logger.info(f"Encoder initialized: {self._encoder.get_info()}")
-            
+
             return {
                 'success': True,
-                'encoder': self._encoder.get_info()
+                'encoder': self._encoder.get_info(),
+                'audio_enabled': self._audio_manager is not None,
+                'audio_channels': self._audio_manager.get_enabled_channel_count() if self._audio_manager else 0
             }
-            
+
         except Exception as e:
             error_msg = f"Encoder initialization failed: {e}"
             logger.error(error_msg)
