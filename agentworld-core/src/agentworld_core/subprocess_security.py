@@ -152,10 +152,10 @@ class GStreamerPipelineBuilder:
                 "nvh264enc",
                 f"bitrate={bitrate_kbps}",
                 "preset=low-latency-hq",
-                "repeat-sequence-header=true",
-                "insert-sps-pps=true",
-                "idrinterval=24",
+                "aud=true",
+                "strict-gop=true",
                 "gop-size=48",
+                "zerolatency=true",
             ])
         elif encoder_type == "vaapi":
             pipeline_args.extend([
@@ -237,10 +237,10 @@ class GStreamerPipelineBuilder:
                 "nvh264enc",
                 f"bitrate={bitrate_kbps}",
                 "preset=low-latency-hq",
-                "repeat-sequence-header=true",
-                "insert-sps-pps=true",
-                "idrinterval=24",
+                "aud=true",
+                "strict-gop=true",
                 "gop-size=48",
+                "zerolatency=true",
             ])
         elif encoder_type == "vaapi":
             pipeline_args.extend([
