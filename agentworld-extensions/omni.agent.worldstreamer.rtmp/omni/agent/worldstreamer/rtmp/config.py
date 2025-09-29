@@ -59,6 +59,41 @@ class WorldStreamerConfig(WorldExtensionConfig if CONFIG_AVAILABLE else object):
         'server_ready_timeout': 5.0,
         'health_check_interval': 10.0,
         'metrics_collection_enabled': True,
+        # Audio configuration
+        'audio_enabled': False,  # Disabled by default for backward compatibility
+        'audio_bitrate_kbps': 160,
+        'audio_sample_rate': 48000,
+        'fallback_to_null_audio': True,
+        'audio_channels': [
+            {
+                'id': 1,
+                'name': 'narration',
+                'srt_port': 9001,
+                'default_volume': 0.8,
+                'enabled': True
+            },
+            {
+                'id': 2,
+                'name': 'background',
+                'srt_port': 9002,
+                'default_volume': 0.3,
+                'enabled': True
+            },
+            {
+                'id': 3,
+                'name': 'commentary',
+                'srt_port': 9003,
+                'default_volume': 1.0,
+                'enabled': True
+            },
+            {
+                'id': 4,
+                'name': 'music',
+                'srt_port': 9004,
+                'default_volume': 0.4,
+                'enabled': True
+            }
+        ]
     } if CONFIG_AVAILABLE else {
         # Fallback standalone defaults when unified config unavailable
         'server_port': 8906,
@@ -67,6 +102,41 @@ class WorldStreamerConfig(WorldExtensionConfig if CONFIG_AVAILABLE else object):
         'server_ready_timeout': 5.0,
         'health_check_interval': 10.0,
         'metrics_collection_enabled': True,
+        # Audio configuration
+        'audio_enabled': False,
+        'audio_bitrate_kbps': 160,
+        'audio_sample_rate': 48000,
+        'fallback_to_null_audio': True,
+        'audio_channels': [
+            {
+                'id': 1,
+                'name': 'narration',
+                'srt_port': 9001,
+                'default_volume': 0.8,
+                'enabled': True
+            },
+            {
+                'id': 2,
+                'name': 'background',
+                'srt_port': 9002,
+                'default_volume': 0.3,
+                'enabled': True
+            },
+            {
+                'id': 3,
+                'name': 'commentary',
+                'srt_port': 9003,
+                'default_volume': 1.0,
+                'enabled': True
+            },
+            {
+                'id': 4,
+                'name': 'music',
+                'srt_port': 9004,
+                'default_volume': 0.4,
+                'enabled': True
+            }
+        ]
     }
     
     def __init__(self, config_file: str = "worldstreamer_config.json"):
@@ -111,7 +181,7 @@ class WorldStreamerConfig(WorldExtensionConfig if CONFIG_AVAILABLE else object):
     def get_encoder_config(self) -> dict:
         """
         Get encoder-specific configuration for RTMP streaming.
-        
+
         Returns:
             Dict with encoder configuration settings
         """
@@ -128,6 +198,34 @@ class WorldStreamerConfig(WorldExtensionConfig if CONFIG_AVAILABLE else object):
                 'encoder_type': 'auto',
                 'encoding_bitrate': 2000,
                 'encoding_fps': 24,
+            }
+
+    def get_audio_config(self) -> dict:
+        """
+        Get audio configuration for multi-channel streaming.
+
+        Returns:
+            Dict with audio configuration settings including 4 channels:
+            - Channel 1: Narration (TTS voice-over)
+            - Channel 2: Background (ambient sounds)
+            - Channel 3: Commentary (live commentary)
+            - Channel 4: Music (background music)
+        """
+        if CONFIG_AVAILABLE:
+            return {
+                'enabled': self.get('audio_enabled', False),
+                'bitrate_kbps': self.get('audio_bitrate_kbps', 160),
+                'sample_rate': self.get('audio_sample_rate', 48000),
+                'fallback_to_null_audio': self.get('fallback_to_null_audio', True),
+                'channels': self.get('audio_channels', [])
+            }
+        else:
+            return {
+                'enabled': self._config.get('audio_enabled', False),
+                'bitrate_kbps': self._config.get('audio_bitrate_kbps', 160),
+                'sample_rate': self._config.get('audio_sample_rate', 48000),
+                'fallback_to_null_audio': self._config.get('fallback_to_null_audio', True),
+                'channels': self._config.get('audio_channels', [])
             }
 
 
