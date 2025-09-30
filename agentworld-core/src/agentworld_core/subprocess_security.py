@@ -178,7 +178,8 @@ class GStreamerPipelineBuilder:
             "h264parse",
             "config-interval=-1",  # Insert SPS/PPS on every frame for proper decoding
             "!",
-            "mpegtsmux",
+            "flvmux",
+            "streamable=true",
             "!",
             "srtsink",
             f"uri={srt_url}",
