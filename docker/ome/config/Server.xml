@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Server version="8">
+	<Name>OvenMediaEngine</Name>
+	<Type>origin</Type>
+	<IP>*</IP>
+	<PrivacyProtection>false</PrivacyProtection>
+
+	<Bind>
+		<Managers>
+			<API>
+				<Port>8088</Port>
+				<TLSPort>8089</TLSPort>
+				<WorkerCount>1</WorkerCount>
+			</API>
+		</Managers>
+		<Providers>
+			<RTMP>
+				<Port>1935</Port>
+			</RTMP>
+			<SRT>
+				<Port>9999</Port>
+			</SRT>
+		</Providers>
+
+		<Publishers>
+			<WebRTC>
+				<Signalling>
+					<Port>3333</Port>
+					<WorkerCount>1</WorkerCount>
+				</Signalling>
+				<IceCandidates>
+					<IceCandidate>*:10000-10009/udp</IceCandidate>
+					<TcpRelay>*:3478</TcpRelay>
+					<TcpForce>true</TcpForce>
+					<TcpRelayWorkerCount>1</TcpRelayWorkerCount>
+				</IceCandidates>
+			</WebRTC>
+		</Publishers>
+	</Bind>
+
+	<Managers>
+		<Host>
+			<Names>
+				<Name>*</Name>
+			</Names>
+			<TLS>
+				<CertPath>ome.crt</CertPath>
+				<ChainCertPath>ome.ca-bundle</ChainCertPath>
+				<KeyPath>ome.key</KeyPath>
+			</TLS>
+		</Host>
+		<API>
+			<AccessToken>${env:OME_API_TOKEN}</AccessToken>
+			<CrossDomains>
+				<Url>*</Url>
+			</CrossDomains>
+		</API>
+	</Managers>
+
+	<VirtualHosts>
+		<VirtualHost>
+			<Name>default</Name>
+
+			<Host>
+				<Names>
+					<Name>*</Name>
+				</Names>
+			</Host>
+
+			<Applications>
+				<Application>
+					<Name>app</Name>
+					<Type>live</Type>
+					<OutputProfiles>
+						<OutputProfile>
+							<Name>bypass</Name>
+							<OutputStreamName>${OriginStreamName}</OutputStreamName>
+							<Encodes>
+								<Video>
+									<Bypass>true</Bypass>
+								</Video>
+								<Audio>
+									<Bypass>true</Bypass>
+								</Audio>
+							</Encodes>
+						</OutputProfile>
+					</OutputProfiles>
+					<Providers>
+						<RTMP />
+						<SRT />
+					</Providers>
+					<Publishers>
+						<WebRTC>
+							<Timeout>30000</Timeout>
+						</WebRTC>
+					</Publishers>
+				</Application>
+
+				<!-- Application for YouTube forwarding -->
+				<Application>
+					<Name>stream</Name>
+					<Type>live</Type>
+					<OutputProfiles>
+						<OutputProfile>
+							<Name>bypass</Name>
+							<OutputStreamName>${OriginStreamName}</OutputStreamName>
+							<Encodes>
+								<Video>
+									<Bypass>true</Bypass>
+								</Video>
+								<Audio>
+									<Bypass>true</Bypass>
+								</Audio>
+							</Encodes>
+						</OutputProfile>
+					</OutputProfiles>
+					<Providers>
+						<RTMP />
+						<SRT />
+					</Providers>
+					<Publishers>
+						<WebRTC>
+							<Timeout>30000</Timeout>
+						</WebRTC>
+					</Publishers>
+				</Application>
+			</Applications>
+		</VirtualHost>
+	</VirtualHosts>
+</Server>

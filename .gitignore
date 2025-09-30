@@ -25,7 +25,15 @@ logs/
 # Env/config
 .env
 .env.*
+!.env.template
 docker/stream-bridge/config/.env
+docker/ome/.env
+
+# Security/certificates
+*.key
+*.pem
+*.p12
+*.pfx
 
 # Node (if present)
 node_modules/

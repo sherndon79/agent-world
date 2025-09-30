@@ -1,0 +1,40 @@
+services:
+  ovenmediaengine:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ovenmediaengine:local
+    container_name: ovenmediaengine
+    env_file:
+      - .env
+    ports:
+      # SRT Input (from WorldStreamer)
+      - "9999:9999/udp"
+      # RTMP Input
+      - "1935:1935"
+      # WebRTC Signaling
+      - "3333:3333"
+      # WebRTC TCP
+      - "3478:3478"
+      # WebRTC UDP
+      - "10000-10009:10000-10009/udp"
+      # API HTTP
+      - "8088:8088"
+      # API HTTPS
+      - "8089:8089"
+      # HLS
+      - "8080:8080"
+    volumes:
+      - ./config:/opt/ovenmediaengine/bin/origin_conf:rw
+      - ./logs:/var/log/ovenmediaengine:rw
+    restart: unless-stopped
+    networks:
+      - streaming
+
+networks:
+  streaming:
+    driver: bridge
+
+# Note: Config and logs are bind-mounted for easy access during development
+# - config/ - Edit Server.xml locally, changes apply on container restart
+# - logs/ - View OME logs directly from host
