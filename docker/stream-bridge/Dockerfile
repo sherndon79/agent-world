@@ -21,7 +21,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python packages
-RUN pip3 install --no-cache-dir flask requests
+RUN pip3 install --no-cache-dir flask requests python-dotenv
 
 # Create directories for volume mounts
 RUN mkdir -p /app /config

@@ -10,7 +10,17 @@ import logging
 import sys
 import os
 import threading
+from pathlib import Path
 from flask import Flask, jsonify, request
+from dotenv import load_dotenv
+
+# Load environment variables from config/.env
+config_env = Path(__file__).parent.parent / "config" / ".env"
+if config_env.exists():
+    load_dotenv(config_env)
+    logging.info(f"Loaded environment from {config_env}")
+else:
+    logging.warning(f"Config file not found: {config_env}")
 
 # Setup logging
 logging.basicConfig(
@@ -48,27 +58,83 @@ def health():
     })
 
 
+@app.route('/metrics', methods=['GET'])
+def metrics():
+    """Get pipeline metrics and statistics."""
+    if not pipeline:
+        return jsonify({
+            'pipeline_exists': False,
+            'state': 'NOT_CREATED'
+        })
+
+    stats = pipeline.get_stats()
+    return jsonify({
+        'pipeline_exists': True,
+        'pipeline_state': stats['state'],
+        'started': stats['started'],
+        'audio_channels_count': stats['audio_channels_count'],
+        'audio_channels': stats.get('audio_channels', {}),
+        'bus_messages': {
+            'errors': len(stats['bus_messages']['error']),
+            'warnings': len(stats['bus_messages']['warning']),
+            'info': len(stats['bus_messages']['info'])
+        },
+        'recent_errors': stats['bus_messages']['error'][-5:],
+        'recent_warnings': stats['bus_messages']['warning'][-5:]
+    })
+
+
+@app.route('/status', methods=['GET'])
+def status():
+    """Get detailed pipeline status."""
+    if not pipeline:
+        return jsonify({
+            'pipeline_exists': False,
+            'message': 'No pipeline created yet'
+        })
+
+    stats = pipeline.get_stats()
+    return jsonify({
+        'pipeline_exists': True,
+        'state': stats['state'],
+        'started': stats['started'],
+        'audio_channels': stats.get('audio_channels', {}),
+        'bus_messages': stats['bus_messages']
+    })
+
+
 @app.route('/start', methods=['POST'])
 def start_streaming():
     """Start the streaming pipeline."""
     global pipeline
 
     data = request.json or {}
-    rtmp_url = data.get('rtmp_url')
-    srt_monitor_port = data.get('srt_monitor_port', 9998)
 
+    # Get RTMP URL from request, or build from env vars
+    rtmp_url = data.get('rtmp_url')
     if not rtmp_url:
-        return jsonify({
-            'success': False,
-            'error': 'rtmp_url required'
-        }), 400
+        # Try to build from environment variables
+        rtmp_primary = os.getenv('RTMP_PRIMARY_URL')
+        rtmp_key = os.getenv('RTMP_STREAM_KEY')
+
+        if rtmp_primary and rtmp_key:
+            rtmp_url = f"{rtmp_primary}/{rtmp_key}"
+            logger.info(f"Using RTMP URL from environment: {rtmp_primary}/***")
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'rtmp_url required (not provided and not found in environment)'
+            }), 400
+
+    srt_monitor_port = data.get('srt_monitor_port', int(os.getenv('SRT_MONITOR_PORT', 9998)))
+    source_type = data.get('source_type', 'srt')  # "srt" or "test"
 
     try:
         if pipeline:
             logger.warning("Pipeline already running, stopping first")
             pipeline.stop()
 
-        pipeline = StreamBridgePipeline(rtmp_url, srt_monitor_port)
+        pipeline = StreamBridgePipeline(rtmp_url, srt_monitor_port, source_type)
 
         # Start pipeline in background thread
         thread = threading.Thread(target=pipeline.run, daemon=True)
@@ -78,7 +144,8 @@ def start_streaming():
             'success': True,
             'message': 'Streaming started',
             'rtmp_url': rtmp_url,
-            'srt_monitor_port': srt_monitor_port
+            'srt_monitor_port': srt_monitor_port,
+            'source_type': source_type
         })
 
     except Exception as e:
@@ -112,9 +179,9 @@ def stop_streaming():
         }), 500
 
 
-@app.route('/audio/add', methods=['POST'])
-def add_audio_channel():
-    """Add a dynamic audio input channel."""
+@app.route('/audio/channels', methods=['GET'])
+def list_audio_channels():
+    """List all audio channels and their status."""
     global pipeline
 
     if not pipeline:
@@ -123,30 +190,53 @@ def add_audio_channel():
             'error': 'Pipeline not running'
         }), 400
 
-    data = request.json or {}
-    channel_id = data.get('channel_id')
-    srt_port = data.get('srt_port')
-    volume = data.get('volume', 1.0)
-
-    if channel_id is None or srt_port is None:
-        return jsonify({
-            'success': False,
-            'error': 'channel_id and srt_port required'
-        }), 400
-
     try:
-        pipeline.add_audio_channel(channel_id, srt_port, volume)
+        channels = []
+        for channel_id in pipeline.audio_channels.keys():
+            info = pipeline.get_audio_channel_info(channel_id)
+            if info:
+                channels.append(info)
 
         return jsonify({
             'success': True,
-            'message': f'Audio channel {channel_id} added',
-            'channel_id': channel_id,
-            'srt_port': srt_port,
-            'volume': volume
+            'channels': channels
         })
 
     except Exception as e:
-        logger.error(f"Failed to add audio channel: {e}")
+        logger.error(f"Failed to list audio channels: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/audio/<int:channel_id>', methods=['GET'])
+def get_audio_channel(channel_id):
+    """Get information about a specific audio channel."""
+    global pipeline
+
+    if not pipeline:
+        return jsonify({
+            'success': False,
+            'error': 'Pipeline not running'
+        }), 400
+
+    try:
+        info = pipeline.get_audio_channel_info(channel_id)
+
+        if not info:
+            return jsonify({
+                'success': False,
+                'error': f'Channel {channel_id} not found'
+            }), 404
+
+        return jsonify({
+            'success': True,
+            **info
+        })
+
+    except Exception as e:
+        logger.error(f"Failed to get audio channel info: {e}")
         return jsonify({
             'success': False,
             'error': str(e)
@@ -197,6 +287,50 @@ def set_audio_volume(channel_id):
         }), 500
 
 
+@app.route('/audio/test-tone', methods=['POST'])
+def toggle_test_tone():
+    """Toggle the internal test tone on/off or set its volume."""
+    global pipeline
+
+    if not pipeline:
+        return jsonify({
+            'success': False,
+            'error': 'Pipeline not running'
+        }), 400
+
+    data = request.json or {}
+    volume = data.get('volume')  # If provided, set volume; if 0, turn off
+
+    if volume is None:
+        return jsonify({
+            'success': False,
+            'error': 'volume required (0.0 to turn off, 0.0-1.0 to set level)'
+        }), 400
+
+    try:
+        success = pipeline.set_test_tone_volume(volume)
+
+        if not success:
+            return jsonify({
+                'success': False,
+                'error': 'Test tone not available'
+            }), 404
+
+        state = "off" if volume == 0 else "on"
+        return jsonify({
+            'success': True,
+            'message': f'Test tone {state}',
+            'volume': volume
+        })
+
+    except Exception as e:
+        logger.error(f"Failed to set test tone: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
 def main():
     """Main entry point for stream-bridge."""
     logger.info("=" * 70)
@@ -205,7 +339,7 @@ def main():
 
     logger.info("Stream Bridge ready")
     logger.info("HTTP API: http://0.0.0.0:8080")
-    logger.info("SRT Video Input: srt://0.0.0.0:9000?mode=listener")
+    logger.info("SRT Video Input: srt://0.0.0.0:9999?mode=listener")
     logger.info("SRT Audio Inputs: srt://0.0.0.0:9001-9010?mode=listener")
     logger.info("SRT Monitoring Output: srt://0.0.0.0:9998?mode=listener")
     logger.info("=" * 70)

@@ -25,6 +25,7 @@ logs/
 # Env/config
 .env
 .env.*
+docker/stream-bridge/config/.env
 
 # Node (if present)
 node_modules/
