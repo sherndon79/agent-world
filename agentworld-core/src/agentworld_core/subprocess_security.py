@@ -176,7 +176,7 @@ class GStreamerPipelineBuilder:
         pipeline_args.extend([
             "!",
             "h264parse",
-            "config-interval=1",
+            "config-interval=-1",  # Insert SPS/PPS on every frame for proper decoding
             "!",
             "mpegtsmux",
             "!",
