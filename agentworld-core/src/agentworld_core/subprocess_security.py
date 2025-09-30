@@ -36,7 +36,13 @@ class GStreamerSecurityValidator:
         "srtsink",
         "rtmpsink",
         "video/x-raw",
+        "audio/x-raw",
         "capsfilter",
+        "audiotestsrc",
+        "audioconvert",
+        "audioresample",
+        "voaacenc",
+        "aacparse",
     }
 
     ALLOWED_PROPERTIES = {
@@ -60,6 +66,10 @@ class GStreamerSecurityValidator:
         "streamable": r"^(true|false)$",
         "uri": r"^[a-zA-Z0-9:/.\-_?&=]+$",
         "location": r"^[a-zA-Z0-9:/.\-_?&=]+$",
+        "wave": r"^[a-z-]+$",
+        "is-live": r"^(true|false)$",
+        "rate": r"^\d{1,6}$",
+        "channels": r"^\d{1,2}$",
     }
 
     @classmethod
@@ -179,11 +189,25 @@ class GStreamerPipelineBuilder:
             "config-interval=1",
             "!",
             "mpegtsmux",
+            "name=mux",
             "!",
             "srtsink",
             f"uri={srt_url}",
             "sync=false",
             "async=false",
+            "audiotestsrc",
+            "wave=silence",
+            "is-live=true",
+            "!",
+            "audio/x-raw,rate=48000,channels=2",
+            "!",
+            "audioconvert",
+            "!",
+            "voaacenc",
+            "!",
+            "aacparse",
+            "!",
+            "mux.",
         ])
 
         return pipeline_args
