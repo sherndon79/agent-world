@@ -70,6 +70,11 @@ class GStreamerSecurityValidator:
         "is-live": r"^(true|false)$",
         "rate": r"^\d{1,6}$",
         "channels": r"^\d{1,2}$",
+        "max-size-time": r"^\d{1,10}$",
+        "max-size-bytes": r"^\d{1,10}$",
+        "alignment": r"^\d{1,2}$",
+        "pat-interval": r"^\d{1,10}$",
+        "pmt-interval": r"^\d{1,10}$",
     }
 
     @classmethod
@@ -190,6 +195,9 @@ class GStreamerPipelineBuilder:
             "!",
             "mpegtsmux",
             "name=mux",
+            "alignment=7",
+            "pat-interval=4500",
+            "pmt-interval=4500",
             "!",
             "srtsink",
             f"uri={srt_url}",
@@ -198,6 +206,7 @@ class GStreamerPipelineBuilder:
             "audiotestsrc",
             "wave=silence",
             "is-live=true",
+            "do-timestamp=true",
             "!",
             "audio/x-raw,rate=48000,channels=2",
             "!",
