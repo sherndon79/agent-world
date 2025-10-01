@@ -1,0 +1,30 @@
+[core]
+reloadable = true
+order = 0
+
+[package]
+version = "0.1.0"
+category = "Agent World Extensions"
+title = "Agent WorldStreamer (NDI)"
+description = "NDI streaming extension: captures Isaac Sim viewport and streams via NDI for OBS and broadcast tools. Minimal control API (start/stop/status)."
+authors = ["agenTW∞rld Team"]
+keywords = ["isaac", "streaming", "ndi", "low-latency", "broadcast", "obs", "api", "worldstreamer", "control"]
+changelog = "docs/CHANGELOG.md"
+readme = "docs/README.md"
+writeTarget.kit = true
+writeTarget.platform = true
+
+[dependencies]
+"agent.world.core" = {}
+
+[fswatcher.patterns]
+include = ["*.py", "*.toml"]
+exclude = ["__pycache__"]
+
+[[python.module]]
+name = "omni.agent.worldstreamer.ndi"
+
+[settings]
+# Note: Configuration values come from agentworld-extensions/agent-world-config.json
+# These settings provide Isaac Sim carb integration only
+"/exts/omni.agent.worldstreamer.ndi/config_source" = { type="string", default="unified", description="Configuration source: unified agentworld-extensions JSON (NDI)" }

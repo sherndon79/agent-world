@@ -3,7 +3,7 @@
 WorldStreamer HTTP Client
 
 Handles HTTP communication with the Isaac Sim WorldStreamer Extension.
-Supports auto-detection between RTMP and SRT services.
+Supports auto-detection between RTMP, SRT, and NDI services.
 """
 
 import asyncio
@@ -50,6 +50,7 @@ logger = logging.getLogger("worldstreamer.client")
 # Default service URLs
 DEFAULT_RTMP_URL = "http://localhost:8906"  # worldstreamer.rtmp.server_port
 DEFAULT_SRT_URL = "http://localhost:8908"   # worldstreamer.srt.server_port
+DEFAULT_NDI_URL = "http://localhost:8909"   # worldstreamer.ndi.server_port
 
 
 class WorldStreamerClient:
@@ -60,8 +61,9 @@ class WorldStreamerClient:
 
         self.rtmp_url = config.rtmp_base_url.rstrip('/')
         self.srt_url = config.srt_base_url.rstrip('/')
+        self.ndi_url = config.ndi_base_url.rstrip('/')
         self.base_url = None  # Will be set by auto-detection
-        self.active_protocol = None  # 'rtmp' or 'srt' or 'manual'
+        self.active_protocol = None  # 'rtmp', 'srt', 'ndi', or 'manual'
         self.client: MCPBaseClient = None
         self._initialized = False
 
@@ -72,7 +74,7 @@ class WorldStreamerClient:
             self.active_protocol = "manual"
             logger.info(f"Manual mode: Using provided base URL: {self.base_url}")
 
-        logger.info(f"WorldStreamer client initialized - RTMP: {self.rtmp_url}, SRT: {self.srt_url}")
+        logger.info(f"WorldStreamer client initialized - RTMP: {self.rtmp_url}, SRT: {self.srt_url}, NDI: {self.ndi_url}")
 
     async def initialize(self):
         """Initialize the HTTP client."""
@@ -101,10 +103,11 @@ class WorldStreamerClient:
         if self.base_url and self.active_protocol == "manual":
             return self.base_url
 
-        # Test both services using auth-aware clients
+        # Test all services using auth-aware clients
         services = [
-            (self.rtmp_url, "RTMP"),
-            (self.srt_url, "SRT")
+            (self.ndi_url, "NDI"),
+            (self.srt_url, "SRT"),
+            (self.rtmp_url, "RTMP")
         ]
 
         for url, protocol in services:
@@ -136,7 +139,7 @@ class WorldStreamerClient:
                         pass  # Ignore cleanup errors
 
         # No service available
-        raise Exception(f"No WorldStreamer service available at {self.rtmp_url} or {self.srt_url}")
+        raise Exception(f"No WorldStreamer service available at {self.rtmp_url}, {self.srt_url}, or {self.ndi_url}")
 
     async def request(self, endpoint: str, method: str = "POST", payload: Dict[str, Any] = None, params: Dict[str, Any] = None, timeout: float = 30.0) -> Dict[str, Any]:
         """Make HTTP request to WorldStreamer extension."""

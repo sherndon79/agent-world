@@ -69,6 +69,16 @@ class WorldStreamerConfig:
         )
 
     @property
+    def ndi_base_url(self) -> str:
+        """Get the WorldStreamer NDI extension base URL."""
+        return (
+            os.getenv("AGENT_WORLDSTREAMER_NDI_BASE_URL")
+            or os.getenv("WORLDSTREAMER_NDI_API_URL")
+            or (self.unified_config.get_ndi_server_url() if self.unified_config else None)
+            or "http://localhost:8909"
+        )
+
+    @property
     def worldstreamer_base_url(self) -> Optional[str]:
         """Get manual override base URL for WorldStreamer extension."""
         return (
