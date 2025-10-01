@@ -122,5 +122,17 @@
     "encoding_fps": 30,
     "encoding_bitrate": 4000,
     "encoder_type": "auto"
+  },
+  "worldstreamer.ndi": {
+    "server_port": 8909,
+    "server_host": "localhost",
+    "debug_mode": false,
+    "verbose_logging": false,
+    "auth_enabled": true,
+    "startup_delay": 0.1,
+    "shutdown_timeout": 5.0,
+    "ndi_name": "Isaac Sim - Agent World",
+    "encoding_fps": 30,
+    "enable_audio": false
   }
 }

@@ -34,6 +34,11 @@
       "version": "0.1.0",
       "api_version": "0.1.0",
       "service_name": "Agent WorldStreamer SRT API"
+    },
+    "worldstreamer.ndi": {
+      "version": "0.1.0",
+      "api_version": "0.1.0",
+      "service_name": "Agent WorldStreamer NDI API"
     }
   },
   "version_history": {

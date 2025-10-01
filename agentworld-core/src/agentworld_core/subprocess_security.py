@@ -35,6 +35,7 @@ class GStreamerSecurityValidator:
         "mpegtsmux",
         "srtsink",
         "rtmpsink",
+        "ndisink",
         "video/x-raw",
         "audio/x-raw",
         "capsfilter",
@@ -70,6 +71,8 @@ class GStreamerSecurityValidator:
         "is-live": r"^(true|false)$",
         "rate": r"^\d{1,6}$",
         "channels": r"^\d{1,2}$",
+        "ndi-name": r"^[a-zA-Z0-9 \-_.:()]+$",
+        # Note: ndi-groups, clock-video, clock-audio removed - not supported by ndisink
     }
 
     @classmethod
@@ -298,6 +301,53 @@ class GStreamerPipelineBuilder:
 
         return pipeline_args
 
+    def create_ndi_pipeline(
+        self,
+        width: int,
+        height: int,
+        fps: int,
+        ndi_name: str,
+    ) -> List[str]:
+        """Create secure NDI streaming pipeline.
+
+        NDI pipeline is simpler than SRT/RTMP - no encoding needed as NDI handles it internally.
+        Only ndi-name is supported by the ndisink GStreamer element.
+        """
+        try:
+            width = self.input_validator.validate_dimension("width", width, min_val=1, max_val=7680)
+            height = self.input_validator.validate_dimension("height", height, min_val=1, max_val=4320)
+            fps = self.input_validator.validate_fps("fps", fps)
+
+            # Validate NDI-specific properties (only ndi-name is supported by ndisink)
+            GStreamerSecurityValidator.validate_property("ndi-name", ndi_name)
+
+        except ValidationError as exc:
+            raise CommandInjectionError(str(exc))
+
+        pipeline_args = [
+            "gst-launch-1.0",
+            "fdsrc",
+            "do-timestamp=true",
+            "!",
+            "rawvideoparse",
+            f"width={width}",
+            f"height={height}",
+            "format=rgb",
+            f"framerate={fps}/1",
+            "!",
+            "videoconvert",
+            "!",
+            "video/x-raw,format=UYVY",
+            "!",
+            "ndisink",
+            f'ndi-name="{ndi_name}"',
+        ]
+
+        # Note: ndisink only supports ndi-name property
+        # ndi-groups, clock-video, and clock-audio are not supported by the GStreamer NDI plugin
+
+        return pipeline_args
+
 
 def safe_subprocess_run(cmd_args: List[str], timeout: int = 30, **kwargs) -> subprocess.CompletedProcess:
     dangerous_chars = ["&", "|", ";", "`", "$", "\n", "\r"]
@@ -348,6 +398,27 @@ def create_secure_rtmp_pipeline(
     return builder.create_rtmp_pipeline(width, height, fps, bitrate_kbps, rtmp_url, encoder_type)
 
 
+def create_secure_ndi_pipeline(
+    width: int,
+    height: int,
+    fps: int,
+    ndi_name: str,
+) -> List[str]:
+    """Create secure NDI streaming pipeline.
+
+    Args:
+        width: Video width in pixels
+        height: Video height in pixels
+        fps: Frames per second
+        ndi_name: NDI source name
+
+    Returns:
+        List of validated pipeline arguments
+    """
+    builder = GStreamerPipelineBuilder()
+    return builder.create_ndi_pipeline(width, height, fps, ndi_name)
+
+
 __all__ = [
     "CommandInjectionError",
     "GStreamerSecurityValidator",
@@ -356,4 +427,5 @@ __all__ = [
     "validate_gstreamer_element_availability",
     "create_secure_srt_pipeline",
     "create_secure_rtmp_pipeline",
+    "create_secure_ndi_pipeline",
 ]
