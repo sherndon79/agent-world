@@ -1,0 +1,32 @@
+# Environment variables
+.env
+
+# Model cache and downloads
+models/*
+cache/*
+!models/.gitkeep
+!cache/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Logs
+*.log
+logs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

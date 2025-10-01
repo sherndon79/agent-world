@@ -1,0 +1,51 @@
+services:
+  audio-generator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: audio-generator:latest
+    container_name: agent-adventures-audio
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility,video
+      - PYTHONUNBUFFERED=1
+      - GST_DEBUG=2
+      # Redis Story State connection
+      - REDIS_HOST=localhost
+      - REDIS_PORT=6379
+      - REDIS_CHANNEL=story_state
+      # AI Model API keys (loaded from .env)
+      - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY}
+      - MUBERT_API_KEY=${MUBERT_API_KEY}
+      - STABILITY_API_KEY=${STABILITY_API_KEY}
+      # Audio configuration
+      - NARRATION_MODEL=chatterbox  # or elevenlabs
+      - AMBIENT_MODEL=elevenlabs    # or stable-audio
+      - MUSIC_MODEL=mubert          # or stable-audio
+      - COMMENTARY_MODEL=elevenlabs
+    volumes:
+      # Volume map source code for live editing
+      - ./src:/app
+      # Configuration files
+      - ./config:/config
+      # Model cache (persistent)
+      - ./models:/models
+      - ./cache:/cache
+    ports:
+      # HTTP API for control/monitoring
+      - "8080:8080"
+      # SRT audio output channels (to OBS)
+      - "9001:9001/udp"  # Narration
+      - "9002:9002/udp"  # Ambient
+      - "9003:9003/udp"  # Music
+      - "9004:9004/udp"  # Commentary
+    network_mode: host
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
