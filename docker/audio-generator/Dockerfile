@@ -37,29 +37,24 @@ RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1
 # Upgrade pip
 RUN python3 -m pip install --upgrade pip
 
-# Install Python packages for AI models
-RUN pip3 install --no-cache-dir \
-    # Core dependencies
-    torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121 \
-    # Web framework
-    flask fastapi uvicorn \
-    # Redis client for Story State
-    redis \
-    # HTTP clients
-    requests httpx \
-    # Audio processing
-    soundfile librosa pydub \
-    # Utilities
-    python-dotenv pyyaml
-
-# Install AI model dependencies (will add specific models later)
-# Placeholder for: chatterbox-tts, elevenlabs, mubert-api, etc.
-
 # Create directories
 RUN mkdir -p /app /config /models /cache
 
 # Set working directory
 WORKDIR /app
+
+# Copy requirements file
+COPY src/requirements.txt /app/requirements.txt
+
+# Install Python dependencies from requirements.txt
+RUN pip3 install --no-cache-dir -r /app/requirements.txt
+
+# Install PyTorch with CUDA support (larger package, separate layer)
+RUN pip3 install --no-cache-dir \
+    torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+
+# Install AI model dependencies (will add specific models later)
+# Placeholder for: chatterbox-tts, elevenlabs, mubert-api, etc.
 
 # Environment variables
 ENV PYTHONUNBUFFERED=1

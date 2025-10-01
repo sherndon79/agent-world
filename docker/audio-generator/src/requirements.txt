@@ -1,0 +1,19 @@
+# Core web framework
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+
+# WebSocket client
+websockets==12.0
+
+# Environment variables
+python-dotenv==1.0.0
+
+# Async utilities
+aiofiles==23.2.1
+
+# Audio processing (placeholder - will add specific models later)
+numpy==1.24.3
+soundfile==0.12.1
+
+# Logging and utilities
+pydantic==2.5.0
