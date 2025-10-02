@@ -8,10 +8,10 @@ This container generates 4 channels of AI-powered audio synchronized with the Ag
 
 | Channel | Port | Purpose | AI Model |
 |---------|------|---------|----------|
-| 1 | 9001 | Narration | Chatterbox TTS / ElevenLabs |
+| 1 | 9001 | Narration | Kokoro TTS (native) / ElevenLabs |
 | 2 | 9002 | Ambient/Environmental | ElevenLabs SFX / Stable Audio |
 | 3 | 9003 | Dynamic Music | Mubert / Stable Audio |
-| 4 | 9004 | Commentary | ElevenLabs TTS |
+| 4 | 9004 | Commentary | Kokoro TTS (native) / ElevenLabs |
 
 ## Architecture
 
@@ -67,7 +67,7 @@ Agent Adventures Story State (Redis) → Audio Generator Container
 Edit `.env` to choose models for each channel:
 
 **Narration (Channel 1):**
-- `chatterbox` - Self-hosted, MIT license, ~200ms latency
+- `kokoro` - Self-hosted, native PyTorch pipeline, supports voice blending
 - `elevenlabs` - Cloud API, best quality, <100ms latency
 
 **Ambient (Channel 2):**
@@ -166,7 +166,7 @@ Structured JSON logs:
   "channel": "narration",
   "event": "audio_generated",
   "duration_ms": 187,
-  "model": "chatterbox"
+  "model": "kokoro"
 }
 ```
 
@@ -189,7 +189,7 @@ Structured JSON logs:
 
 ## Cost Analysis
 
-### Self-Hosted (Chatterbox)
+### Self-Hosted (Kokoro)
 - **Hardware:** GPU instance (~$200/month)
 - **API Costs:** $0
 - **Total:** ~$200/month
@@ -202,7 +202,7 @@ Structured JSON logs:
 ## References
 
 - [Agent Adventures Architecture](../../agentworld_docs_archive_092925/dev_docs/agent_adventures_multichannel_audio_integration.md)
-- [Chatterbox TTS](https://github.com/resemble-ai/chatterbox)
+- Kokoro TTS (`kokoro` PyPI package)
 - [ElevenLabs API](https://elevenlabs.io/docs)
 - [Mubert API](https://mubert.com/api)
 - [SRT Protocol](https://github.com/Haivision/srt)

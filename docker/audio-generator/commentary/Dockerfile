@@ -30,8 +30,8 @@ RUN pip3 install --no-cache-dir -r /app/requirements.txt
 # Install PyTorch with CUDA 12.1 support
 RUN pip3 install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 
-# Install Kokoro TTS (PyTorch version for voice blending)
-RUN pip3 install --no-cache-dir kokoro-tts
+# Install Kokoro native pipeline
+RUN pip3 install --no-cache-dir kokoro==0.9.4
 
 # Models will be mounted from host via docker-compose volume
 # No model downloads needed - using volume mount from ./models/kokoro

@@ -55,8 +55,8 @@ services:
       - ./narration/src:/app
       # Model cache
       - ./cache/narration:/root/.cache
-      # Shared Kokoro models (read-only)
-      - ./models/kokoro:/root/.local/share/kokoro:ro
+      # Shared Kokoro models (writable for PyTorch model downloads)
+      - ./models/kokoro:/root/.local/share/kokoro
     ports:
       - "8081:8081"
     restart: unless-stopped
@@ -85,8 +85,8 @@ services:
       - ./commentary/src:/app
       # Model cache
       - ./cache/commentary:/root/.cache
-      # Shared Kokoro models (read-only)
-      - ./models/kokoro:/root/.local/share/kokoro:ro
+      # Shared Kokoro models (writable for PyTorch model downloads)
+      - ./models/kokoro:/root/.local/share/kokoro
     ports:
       - "8082:8082"
     restart: unless-stopped

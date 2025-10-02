@@ -20,6 +20,9 @@ soundfile==0.12.1
 scipy==1.11.4
 pyttsx3==2.90
 
+# Native Kokoro pipeline
+kokoro==0.9.4
+
 # Coqui TTS (neural text-to-speech)
 TTS==0.22.0
 

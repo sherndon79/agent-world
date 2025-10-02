@@ -3,7 +3,7 @@ fastapi==0.104.1
 uvicorn[standard]==0.24.0
 
 # Audio processing
-# numpy version managed by kokoro-onnx (requires >=2.0.2)
+# numpy required by kokoro (>=1.24); using system torch for GPU accel
 soundfile==0.12.1
 librosa==0.10.1
 

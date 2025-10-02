@@ -5,8 +5,8 @@ Coordinates 4 audio channels (narration, ambient, music, commentary)
 and routes story updates to appropriate microservices for generation.
 
 Microservice Architecture:
-- Narration: Chatterbox TTS on port 8081
-- Commentary: Chatterbox TTS on port 8082
+- Narration: Kokoro TTS (native PyTorch) on port 8081
+- Commentary: Kokoro TTS (native PyTorch) on port 8082
 - Ambient: Procedural audio on port 8083
 - Music: Procedural music on port 8084
 """
@@ -160,10 +160,10 @@ class ChannelManager:
 
         # Create 4 audio channels with microservice backends
         self.channels = {
-            "narration": AudioChannel("narration", 9001, "chatterbox", narration_url, narration_streamer),
+            "narration": AudioChannel("narration", 9001, "kokoro", narration_url, narration_streamer),
             "ambient": AudioChannel("ambient", 9002, "procedural", ambient_url, ambient_streamer),
             "music": AudioChannel("music", 9003, "procedural", music_url, music_streamer),
-            "commentary": AudioChannel("commentary", 9004, "chatterbox", commentary_url, commentary_streamer)
+            "commentary": AudioChannel("commentary", 9004, "kokoro", commentary_url, commentary_streamer)
         }
 
         # Start processing loops for each channel

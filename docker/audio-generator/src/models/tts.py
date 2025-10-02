@@ -4,6 +4,7 @@ Text-to-Speech (TTS) model interface.
 Focuses on free/open-source TTS backends:
 - pyttsx3: Offline, system TTS (fast, basic quality)
 - Coqui TTS: Open-source, neural TTS (good quality, free)
+- Kokoro TTS: Native PyTorch pipeline with expressive voice blending
 - Silero TTS: Fast, lightweight neural TTS (free)
 """
 
@@ -18,6 +19,12 @@ from .base import BaseAudioModel
 
 logger = logging.getLogger(__name__)
 
+VOICE_ALIASES = {
+    "default": "af_sarah",
+    "narrator_default": "af_sarah",
+    "host_enthusiastic": "am_adam"
+}
+
 
 class TTSModel(BaseAudioModel):
     """Text-to-Speech model implementation"""
@@ -27,7 +34,7 @@ class TTSModel(BaseAudioModel):
         Initialize TTS model.
 
         Args:
-            backend: TTS backend (pyttsx3, coqui, chatterbox, silero)
+            backend: TTS backend (pyttsx3, coqui, kokoro, silero)
             config: Model configuration
         """
         super().__init__(f"tts-{backend}", config)
@@ -51,10 +58,10 @@ class TTSModel(BaseAudioModel):
             logger.info("Coqui TTS backend selected (model will load on first use)")
             pass
 
-        elif self.backend == "chatterbox":
-            # Best quality, emotion control, MIT licensed
-            # Lazy load - model will be initialized on first use
-            logger.info("Chatterbox TTS backend selected (model will load on first use)")
+        elif self.backend == "kokoro":
+            # Native PyTorch pipeline with CUDA acceleration
+            # Lazy load - pipeline will be initialized on first use
+            logger.info("Kokoro TTS backend selected (pipeline loads on first use)")
             pass
 
         elif self.backend == "silero":
@@ -98,8 +105,8 @@ class TTSModel(BaseAudioModel):
             return await self._generate_pyttsx3(text, voice, emotion)
         elif self.backend == "coqui":
             return await self._generate_coqui(text, voice, emotion)
-        elif self.backend == "chatterbox":
-            return await self._generate_chatterbox(text, voice, emotion, **kwargs)
+        elif self.backend == "kokoro":
+            return await self._generate_kokoro(text, voice, emotion, **kwargs)
         elif self.backend == "silero":
             return await self._generate_silero(text, voice, emotion)
         else:
@@ -197,27 +204,20 @@ class TTSModel(BaseAudioModel):
             if os.path.exists(tmp_path):
                 os.unlink(tmp_path)
 
-    async def _generate_chatterbox(self, text: str, voice: str, emotion: str, **kwargs) -> np.ndarray:
-        """Generate audio using Chatterbox TTS with emotion control"""
+    async def _generate_kokoro(self, text: str, voice: str, emotion: str, **kwargs) -> np.ndarray:
+        """Generate audio using Kokoro's native PyTorch pipeline"""
         import asyncio
-        import torch
 
-        # Initialize Chatterbox TTS if not already done
-        if not hasattr(self, 'chatterbox'):
-            from chatterbox import ChatterboxTTS
-            self.chatterbox = ChatterboxTTS()
-            logger.info("Chatterbox model loaded")
+        # Initialize Kokoro pipeline if not already done
+        if not hasattr(self, 'kokoro'):
+            from kokoro import KPipeline
+            lang_code = self.config.get('lang_code', 'a') if self.config else 'a'
+            self.kokoro = KPipeline(lang_code=lang_code)
+            logger.info("Kokoro pipeline loaded")
 
-        # Create temporary file for audio output
-        with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp:
-            tmp_path = tmp.name
-
-        try:
-            # Chatterbox parameters
-            # emotion_exaggeration: 0.0 (flat) to 2.0 (very expressive), default 1.0
-            emotion_exaggeration = kwargs.get('emotion_exaggeration', 1.0)
-
-            # Map emotion names to exaggeration levels
+        # Determine emotion exaggeration (allows override)
+        emotion_exaggeration = kwargs.get('emotion_exaggeration')
+        if emotion_exaggeration is None:
             emotion_map = {
                 'neutral': 0.5,
                 'excited': 1.5,
@@ -226,41 +226,101 @@ class TTSModel(BaseAudioModel):
                 'calm': 0.3,
                 'triumphant': 1.7
             }
+            emotion_exaggeration = emotion_map.get(emotion, 1.0)
 
-            if emotion in emotion_map:
-                emotion_exaggeration = emotion_map[emotion]
+        loop = asyncio.get_event_loop()
+        voices, weights = self._parse_voice_spec(voice)
+        speed = kwargs.get('speed', self.config.get('speed', 1.0) if self.config else 1.0)
 
-            # Run TTS in thread pool (blocking call)
-            loop = asyncio.get_event_loop()
-            await loop.run_in_executor(
-                None,
-                lambda: self.chatterbox.tts(
-                    text=text,
-                    output_path=tmp_path,
-                    emotion_exaggeration=emotion_exaggeration
-                )
-            )
+        def _synthesize():
+            import torch
 
-            # Read the generated audio file
-            audio, sr = sf.read(tmp_path, dtype='float32')
+            pipeline = self.kokoro
+            cache = getattr(self, '_kokoro_voice_cache', {})
+            self._kokoro_voice_cache = cache
 
-            # Resample if needed
-            if sr != self.sample_rate:
-                from scipy import signal
-                num_samples = int(len(audio) * self.sample_rate / sr)
-                audio = signal.resample(audio, num_samples)
+            if len(voices) == 1 and weights[0] == 1.0:
+                voice_arg = voices[0]
+            else:
+                blend_key = '|'.join(f"{v}:{weight:.4f}" for v, weight in zip(voices, weights))
+                if blend_key not in cache:
+                    packs = []
+                    for v in voices:
+                        if v not in cache:
+                            cache[v] = pipeline.load_single_voice(v)
+                        packs.append(cache[v])
 
-            # Ensure mono
-            if len(audio.shape) > 1:
-                audio = audio.mean(axis=1)
+                    blended_pack = torch.zeros_like(packs[0])
+                    for pack, weight in zip(packs, weights):
+                        blended_pack += pack * weight
 
-            logger.info(f"Generated {len(audio) / self.sample_rate:.1f}s of Chatterbox TTS audio (emotion: {emotion}, exaggeration: {emotion_exaggeration})")
+                    cache[blend_key] = blended_pack.detach().cpu().float().contiguous()
+
+                voice_arg = cache[blend_key]
+
+            audio_chunks = []
+            for result in pipeline(text, voice=voice_arg, speed=speed):
+                if result.audio is not None:
+                    audio_chunks.append(result.audio.detach().cpu())
+
+            if not audio_chunks:
+                return np.zeros(0, dtype=np.float32), 24000
+
+            audio_tensor = torch.cat(audio_chunks, dim=-1)
+            return audio_tensor.numpy(), 24000
+
+        audio, sr = await loop.run_in_executor(None, _synthesize)
+
+        if audio.size == 0:
             return audio.astype(np.float32)
 
-        finally:
-            # Clean up temp file
-            if os.path.exists(tmp_path):
-                os.unlink(tmp_path)
+        if not isinstance(audio, np.ndarray):
+            audio = np.array(audio, dtype=np.float32)
+
+        if sr == 24000:
+            audio = np.repeat(audio, 2)
+            sr = 48000
+        elif sr != self.sample_rate and sr > 0:
+            from scipy import signal
+            num_samples = int(len(audio) * self.sample_rate / sr)
+            audio = signal.resample(audio, num_samples)
+            sr = self.sample_rate
+
+        if len(audio.shape) > 1:
+            audio = audio.mean(axis=1)
+
+        logger.info(
+            f"Generated {len(audio) / self.sample_rate:.1f}s of Kokoro audio (emotion: {emotion}, exaggeration: {emotion_exaggeration})"
+        )
+        return audio.astype(np.float32)
+
+    @staticmethod
+    def _normalize_voice_name(name: str) -> str:
+        if not name:
+            return "af_sarah"
+        key = name.strip()
+        return VOICE_ALIASES.get(key, key)
+
+    @staticmethod
+    def _parse_voice_spec(voice_spec: str) -> tuple[list[str], list[float]]:
+        """Parse a voice or blend spec (voice:weight) into components and weights"""
+        if not voice_spec or ',' not in voice_spec:
+            return [TTSModel._normalize_voice_name(voice_spec)], [1.0]
+
+        voices = []
+        weights = []
+        for component in voice_spec.split(','):
+            if ':' in component:
+                voice_id, weight = component.split(':')
+                voices.append(TTSModel._normalize_voice_name(voice_id))
+                weights.append(float(weight.strip()) / 100.0)
+            else:
+                voices.append(TTSModel._normalize_voice_name(component))
+                weights.append(1.0)
+
+        total = sum(weights) or 1.0
+        normalized = [w / total for w in weights]
+        return voices, normalized
 
     async def _generate_silero(self, text: str, voice: str, emotion: str) -> np.ndarray:
         """Generate audio using Silero TTS (placeholder)"""
