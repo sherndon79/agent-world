@@ -114,18 +114,30 @@ services:
       - "8083:8083"
     restart: unless-stopped
 
-  # Music Generation Service (Procedural)
+  # Music Generation Service (MusicGen)
   music:
     build:
       context: ./music
       dockerfile: Dockerfile
     image: audio-music:latest
     container_name: agent-adventures-audio-music
+    runtime: nvidia
     environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
       - PYTHONUNBUFFERED=1
     volumes:
       # Live code editing
       - ./music/src:/app
+      # Model cache for MusicGen
+      - ./cache/music:/root/.cache
     ports:
       - "8084:8084"
     restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

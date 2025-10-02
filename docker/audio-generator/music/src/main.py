@@ -1,8 +1,8 @@
 """
 Music Generation Service
 
-Standalone microservice for procedural music generation.
-Generates dynamic music based on tension, intensity, and genre.
+Standalone microservice for AI music generation using MusicGen small.
+Generates dynamic music based on text prompts with tension, intensity, and genre control.
 """
 
 import asyncio
@@ -10,6 +10,7 @@ import logging
 import tempfile
 import os
 from typing import Optional
+import torch
 
 import numpy as np
 import soundfile as sf
@@ -27,6 +28,9 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Music Generation Service")
 
+# Global MusicGen model instance (lazy loaded)
+musicgen_model = None
+
 
 class MusicRequest(BaseModel):
     """Music generation request"""
@@ -34,146 +38,192 @@ class MusicRequest(BaseModel):
     intensity: float = 0.5
     genre: str = "orchestral"
     tempo: str = "moderate"
+    duration: float = 10.0  # Duration in seconds
+
+
+async def initialize_model():
+    """Initialize MusicGen model (lazy load)"""
+    global musicgen_model
+
+    if musicgen_model is not None:
+        return
+
+    logger.info("Loading MusicGen small model...")
+
+    try:
+        from transformers import AutoProcessor, MusicgenForConditionalGeneration
+
+        # Load MusicGen small model with CUDA
+        loop = asyncio.get_event_loop()
+
+        def _load():
+            processor = AutoProcessor.from_pretrained("facebook/musicgen-small")
+            model = MusicgenForConditionalGeneration.from_pretrained("facebook/musicgen-small")
+
+            # Move to GPU if available
+            if torch.cuda.is_available():
+                model = model.to("cuda")
+
+            return {"processor": processor, "model": model}
+
+        musicgen_model = await loop.run_in_executor(None, _load)
+
+        logger.info("✅ MusicGen small loaded successfully (CUDA)")
+
+    except Exception as e:
+        logger.error(f"Failed to load MusicGen model: {e}", exc_info=True)
+        raise
+
+
+def build_music_prompt(
+    tension_level: str,
+    intensity: float,
+    genre: str,
+    tempo: str
+) -> str:
+    """
+    Build text prompt for MusicGen based on parameters.
+
+    Args:
+        tension_level: Tension level (low, neutral, high, climax)
+        intensity: Overall intensity (0.0 to 1.0)
+        genre: Music genre
+        tempo: Tempo (slow, moderate, fast)
+
+    Returns:
+        str: Text prompt for MusicGen
+    """
+    # Map parameters to descriptive terms
+    tension_map = {
+        "low": "calm, peaceful, relaxed",
+        "neutral": "steady, balanced",
+        "high": "tense, dramatic, building",
+        "climax": "epic, intense, climactic, powerful"
+    }
+
+    intensity_map = {
+        0.0: "very subtle, quiet",
+        0.3: "gentle, soft",
+        0.5: "moderate",
+        0.7: "energetic, strong",
+        1.0: "very powerful, loud"
+    }
+
+    tempo_map = {
+        "slow": "slow tempo, 60 bpm",
+        "moderate": "moderate tempo, 100 bpm",
+        "fast": "fast tempo, 140 bpm"
+    }
+
+    # Find closest intensity descriptor
+    intensity_desc = min(intensity_map.items(), key=lambda x: abs(x[0] - intensity))[1]
+
+    # Build comprehensive prompt
+    tension_desc = tension_map.get(tension_level, "balanced")
+    tempo_desc = tempo_map.get(tempo, "moderate tempo")
+
+    prompt = f"{genre} music, {tension_desc}, {intensity_desc}, {tempo_desc}, instrumental, seamless loop"
+
+    return prompt
 
 
 async def generate_music(
     tension_level: str,
     intensity: float,
     genre: str,
-    tempo: str
+    tempo: str,
+    duration: float = 10.0
 ) -> np.ndarray:
     """
-    Generate procedural music.
+    Generate AI music using MusicGen.
 
     Args:
         tension_level: Tension level (low, neutral, high, climax)
         intensity: Overall intensity (0.0 to 1.0)
         genre: Music genre (orchestral, electronic, ambient, rock)
         tempo: Tempo (slow, moderate, fast)
+        duration: Duration in seconds
 
     Returns:
         np.ndarray: Audio samples (float32, stereo, 48kHz)
     """
-    logger.info(f"Generating music: {genre}, tension={tension_level}, intensity={intensity}, tempo={tempo}")
+    # Ensure model is loaded
+    await initialize_model()
 
-    # Generate 5 seconds of procedural music
-    sample_rate = 48000
-    duration = 5.0
-    num_samples = int(duration * sample_rate)
+    # Build text prompt
+    prompt = build_music_prompt(tension_level, intensity, genre, tempo)
+    logger.info(f"Generating music with prompt: '{prompt}' ({duration}s)")
 
-    t = np.linspace(0, duration, num_samples, dtype=np.float32)
+    try:
+        processor = musicgen_model["processor"]
+        model = musicgen_model["model"]
 
-    # Tempo to BPM mapping
-    tempo_bpm = {
-        "slow": 60,
-        "moderate": 100,
-        "fast": 140
-    }
-    bpm = tempo_bpm.get(tempo, 100)
-    beat_freq = bpm / 60.0  # Beats per second
+        # Generate music (blocking call)
+        loop = asyncio.get_event_loop()
 
-    # Tension to harmonic complexity
-    tension_harmonics = {
-        "low": [1, 2, 3],           # Simple consonant
-        "neutral": [1, 2, 3, 4, 5], # Moderate
-        "high": [1, 2, 3, 4, 5, 6, 7],  # Complex
-        "climax": [1, 2, 3, 4, 5, 6, 7, 8]  # Very complex
-    }
-    harmonics = tension_harmonics.get(tension_level, [1, 2, 3, 4, 5])
+        def _generate():
+            with torch.no_grad():
+                # Process text prompt
+                inputs = processor(
+                    text=[prompt],
+                    padding=True,
+                    return_tensors="pt"
+                )
 
-    # Genre base frequency
-    genre_freq = {
-        "orchestral": 110.0,    # A2 (low strings)
-        "electronic": 220.0,    # A3
-        "ambient": 55.0,        # A1 (very low)
-        "rock": 165.0           # E3 (guitar)
-    }
-    base_freq = genre_freq.get(genre, 110.0)
+                # Move inputs to GPU if available
+                if torch.cuda.is_available():
+                    inputs = {k: v.to("cuda") for k, v in inputs.items()}
 
-    # Initialize stereo output
-    left = np.zeros(num_samples, dtype=np.float32)
-    right = np.zeros(num_samples, dtype=np.float32)
+                # Calculate max_new_tokens based on duration
+                # MusicGen generates 50 tokens per second of audio at 32kHz
+                max_new_tokens = int(duration * 50)
 
-    # Layer 1: Bassline (fundamental + low harmonics)
-    for harmonic in harmonics[:3]:
-        freq = base_freq * harmonic
-        amplitude = 0.2 / harmonic * intensity
-        phase_offset = np.random.uniform(0, 2 * np.pi)
-        left += amplitude * np.sin(2 * np.pi * freq * t + phase_offset)
-        right += amplitude * np.sin(2 * np.pi * freq * t + phase_offset + 0.1)
+                # Generate audio
+                audio_values = model.generate(**inputs, max_new_tokens=max_new_tokens)
 
-    # Layer 2: Melody (higher harmonics with rhythm)
-    beat_envelope = np.abs(np.sin(2 * np.pi * beat_freq * t))
-    for harmonic in harmonics[2:]:
-        freq = base_freq * harmonic
-        amplitude = 0.15 / harmonic * intensity
-        phase_offset = np.random.uniform(0, 2 * np.pi)
-        melody = amplitude * np.sin(2 * np.pi * freq * t + phase_offset) * beat_envelope
-        left += melody
-        # Slight stereo spread
-        right += amplitude * np.sin(2 * np.pi * freq * t + phase_offset + 0.2) * beat_envelope
+                # Move to CPU and convert to numpy
+                return audio_values.cpu().numpy()
 
-    # Layer 3: Rhythm/percussion (noise bursts on beats)
-    if genre in ["rock", "electronic"]:
-        beat_times = np.arange(0, duration, 1.0 / beat_freq)
-        for beat_time in beat_times:
-            beat_sample = int(beat_time * sample_rate)
-            if beat_sample < num_samples - 1000:
-                # Kick drum (low frequency burst)
-                kick_dur = int(sample_rate * 0.05)
-                kick_t = np.linspace(0, 0.05, kick_dur, dtype=np.float32)
-                kick = 0.3 * intensity * np.sin(2 * np.pi * 60 * kick_t) * np.exp(-kick_t * 20)
-                left[beat_sample:beat_sample + kick_dur] += kick
-                right[beat_sample:beat_sample + kick_dur] += kick
+        audio = await loop.run_in_executor(None, _generate)
 
-                # Hi-hat (noise burst)
-                if np.random.random() < 0.7:
-                    hat_dur = int(sample_rate * 0.02)
-                    hat = 0.05 * intensity * np.random.randn(hat_dur).astype(np.float32)
-                    left[beat_sample:beat_sample + hat_dur] += hat
-                    right[beat_sample:beat_sample + hat_dur] += hat
+        # Extract audio: [batch, channels, samples] -> [channels, samples]
+        audio = audio[0]  # Remove batch dimension
 
-    # Layer 4: Genre-specific characteristics
-    if genre == "orchestral":
-        # Add string-like vibrato
-        vibrato_freq = 5.0
-        vibrato = 1.0 + 0.02 * np.sin(2 * np.pi * vibrato_freq * t)
-        left *= vibrato
-        right *= vibrato
+        # Convert to [samples, channels] or [samples] depending on channel count
+        if audio.shape[0] == 1:
+            # Mono: [1, samples] -> [samples]
+            audio = audio[0]
+        else:
+            # Multi-channel: [channels, samples] -> [samples, channels]
+            audio = audio.T
 
-    elif genre == "electronic":
-        # Add LFO modulation
-        lfo_freq = 0.5
-        lfo = 1.0 + 0.3 * intensity * np.sin(2 * np.pi * lfo_freq * t)
-        left *= lfo
-        right *= lfo
+        # MusicGen outputs 32kHz, resample to 48kHz
+        # Simple 1.5x upsampling (32kHz -> 48kHz)
+        ratio = 48000 / 32000
+        indices = np.arange(0, len(audio), 1/ratio)
 
-    elif genre == "ambient":
-        # Reduce rhythmic elements, add reverb-like effect
-        from scipy import signal
-        b, a = signal.butter(1, 0.1, btype='low')
-        left = signal.filtfilt(b, a, left)
-        right = signal.filtfilt(b, a, right)
+        if audio.ndim == 1:
+            # Mono audio
+            audio_resampled = np.interp(indices, np.arange(len(audio)), audio)
+            # Convert to stereo by duplicating
+            audio = np.stack([audio_resampled, audio_resampled], axis=-1)
+        else:
+            # Stereo audio
+            audio = np.array([
+                np.interp(indices, np.arange(len(audio)), audio[:, 0]),
+                np.interp(indices, np.arange(len(audio)), audio[:, 1])
+            ]).T
 
-    # Layer 5: Dynamic envelope (fade in/out)
-    fade_duration = int(sample_rate * 0.5)
-    fade_in = np.linspace(0, 1, fade_duration, dtype=np.float32)
-    fade_out = np.linspace(1, 0, fade_duration, dtype=np.float32)
+        # Ensure float32
+        audio = audio.astype(np.float32)
 
-    left[:fade_duration] *= fade_in
-    right[:fade_duration] *= fade_in
-    left[-fade_duration:] *= fade_out
-    right[-fade_duration:] *= fade_out
+        logger.info(f"Generated {len(audio) / 48000:.1f}s of {genre} music")
 
-    # Normalize to prevent clipping
-    stereo = np.stack([left, right], axis=-1)
-    max_val = np.abs(stereo).max()
-    if max_val > 0:
-        stereo = stereo / max_val * 0.7
+        return audio
 
-    logger.info(f"Generated {duration}s of {genre} music")
-
-    return stereo
+    except Exception as e:
+        logger.error(f"Music generation failed: {e}", exc_info=True)
+        raise
 
 
 @app.get("/health")
@@ -182,7 +232,8 @@ async def health_check():
     return {
         "status": "healthy",
         "service": "music-generation",
-        "model": "procedural"
+        "model": "musicgen-small",
+        "model_loaded": musicgen_model is not None
     }
 
 
@@ -199,7 +250,8 @@ async def generate(request: MusicRequest):
             tension_level=request.tension_level,
             intensity=request.intensity,
             genre=request.genre,
-            tempo=request.tempo
+            tempo=request.tempo,
+            duration=request.duration
         )
 
         # Convert to WAV bytes

@@ -82,7 +82,7 @@ class SRTStreamer:
 
     async def write(self, audio: np.ndarray):
         """
-        Write audio data to SRT stream.
+        Write audio data to SRT stream at real-time speed.
 
         Args:
             audio: Audio samples (float32, shape: (samples,) or (samples, channels))
@@ -104,12 +104,33 @@ class SRTStreamer:
                 # Convert stereo to mono by averaging
                 audio = audio.mean(axis=-1)
 
-            # Write to FFmpeg stdin
-            audio_bytes = audio.tobytes()
-            self.process.stdin.write(audio_bytes)
-            self.process.stdin.flush()
+            # Stream audio in chunks at real-time speed to prevent overwhelming the buffer
+            # Chunk size: 0.1 seconds of audio (prevents buffering issues)
+            chunk_samples = int(self.sample_rate * 0.1)  # 4800 samples @ 48kHz
+            total_samples = len(audio) if audio.ndim == 1 else len(audio)
 
-            logger.debug(f"Wrote {len(audio_bytes)} bytes to SRT port {self.port}")
+            for i in range(0, total_samples, chunk_samples):
+                if not self.running:
+                    break
+
+                # Get chunk
+                end_idx = min(i + chunk_samples, total_samples)
+                if audio.ndim == 1:
+                    chunk = audio[i:end_idx]
+                else:
+                    chunk = audio[i:end_idx, :]
+
+                # Write chunk to FFmpeg stdin
+                chunk_bytes = chunk.tobytes()
+                self.process.stdin.write(chunk_bytes)
+                self.process.stdin.flush()
+
+                # Sleep for the duration of this chunk to maintain real-time pacing
+                # This prevents FFmpeg from encoding faster than playback speed
+                chunk_duration = len(chunk) / self.sample_rate if audio.ndim == 1 else len(chunk) / self.sample_rate
+                await asyncio.sleep(chunk_duration)
+
+            logger.debug(f"Wrote {total_samples} samples to SRT port {self.port} at real-time speed")
 
         except BrokenPipeError:
             logger.error(f"SRT stream on port {self.port} broken pipe")
