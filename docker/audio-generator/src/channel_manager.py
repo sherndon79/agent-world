@@ -132,6 +132,22 @@ class ChannelManager:
         self.processing_tasks: Dict[str, asyncio.Task] = {}
         self._initialized = False
 
+        # Sync group coordination
+        self.sync_groups: Dict[str, Dict[str, Any]] = {}  # sync_id -> {channels: set, ready_audio: dict, event: asyncio.Event}
+
+        # Auto-ducking configuration
+        self.ducking_config = {
+            "enabled": True,
+            "duck_ratio": 0.3,  # Reduce background to 30% when foreground plays
+            "fade_duration": 0.05,  # 50ms fade in/out
+            "foreground_channels": {"narration", "commentary"},  # These trigger ducking
+            "background_channels": {"music", "ambient"}  # These get ducked
+        }
+
+        # Track active foreground audio
+        self.active_foreground: set = set()  # Set of currently playing foreground channels
+        self.ducking_lock = asyncio.Lock()
+
     async def initialize(self):
         """Initialize all audio channels with microservice backends"""
         if self._initialized:
@@ -210,6 +226,8 @@ class ChannelManager:
         start_time = datetime.now()
         request_id = request["id"]
         data = request["data"]
+        metadata = request.get("metadata", {})
+        sync_id = metadata.get("sync_id")
 
         logger.info(f"[{channel.id}] Generating audio for request {request_id} via {channel.service_url}")
 
@@ -241,7 +259,8 @@ class ChannelManager:
                     "tension_level": data.get("tension_level", "neutral"),
                     "intensity": data.get("intensity", 0.5),
                     "genre": data.get("genre", "orchestral"),
-                    "tempo": data.get("tempo", "moderate")
+                    "tempo": data.get("tempo", "moderate"),
+                    "duration": data.get("duration", 10.0)  # Default 10 seconds
                 }
 
             # Call microservice
@@ -287,10 +306,14 @@ class ChannelManager:
 
             generation_time = (datetime.now() - start_time).total_seconds() * 1000
 
-            # Stream to SRT
-            if channel.streamer:
-                await channel.streamer.send_audio(audio_data)
-                logger.info(f"[{channel.id}] Streamed {len(audio_data)} samples to SRT port {channel.port}")
+            # Handle sync group coordination
+            if sync_id:
+                await self._wait_for_sync_group(sync_id, channel.id, audio_data)
+            else:
+                # Stream immediately if not part of a sync group
+                if channel.streamer:
+                    await channel.streamer.send_audio(audio_data)
+                    logger.info(f"[{channel.id}] Streamed {len(audio_data)} samples to SRT port {channel.port}")
 
             result = {
                 "success": True,
@@ -314,6 +337,155 @@ class ChannelManager:
             logger.error(f"[{channel.id}] Generation failed: {e}", exc_info=True)
             channel.status = "error"
             raise
+
+    async def _apply_sync_ducking(self, ready_audio: Dict[str, np.ndarray]):
+        """
+        Apply ducking to background channels when foreground channels are present.
+
+        Args:
+            ready_audio: Dictionary of channel_id -> audio_data
+        """
+        foreground_present = any(
+            ch_id in self.ducking_config["foreground_channels"]
+            for ch_id in ready_audio.keys()
+        )
+
+        if not foreground_present:
+            logger.debug("No foreground audio - skipping ducking")
+            return
+
+        # Calculate max duration of foreground audio
+        max_foreground_duration = 0
+        for ch_id in ready_audio.keys():
+            if ch_id in self.ducking_config["foreground_channels"]:
+                duration = len(ready_audio[ch_id]) / 48000  # Assuming 48kHz
+                max_foreground_duration = max(max_foreground_duration, duration)
+
+        # Apply ducking to background channels
+        for ch_id in ready_audio.keys():
+            if ch_id in self.ducking_config["background_channels"]:
+                original_audio = ready_audio[ch_id]
+                audio_duration = len(original_audio) / 48000
+
+                # Duck the portion that overlaps with foreground
+                if audio_duration > 0:
+                    # Calculate how much of the background to duck
+                    duck_samples = int(min(max_foreground_duration, audio_duration) * 48000)
+
+                    if duck_samples > 0:
+                        ducked = self._apply_ducking(
+                            original_audio[:duck_samples],
+                            self.ducking_config["duck_ratio"],
+                            self.ducking_config["fade_duration"]
+                        )
+
+                        # Replace ducked portion
+                        ready_audio[ch_id] = np.concatenate([
+                            ducked,
+                            original_audio[duck_samples:]
+                        ])
+
+                        logger.info(
+                            f"🔉 Ducked [{ch_id}] to {self.ducking_config['duck_ratio']*100:.0f}% "
+                            f"for {max_foreground_duration:.1f}s (foreground audio present)"
+                        )
+
+    def _apply_ducking(self, audio_data: np.ndarray, duck_ratio: float, fade_duration: float) -> np.ndarray:
+        """
+        Apply volume ducking with fade in/out.
+
+        Args:
+            audio_data: Audio samples to duck
+            duck_ratio: Target volume ratio (0.0 - 1.0)
+            fade_duration: Fade duration in seconds
+
+        Returns:
+            np.ndarray: Ducked audio with fades
+        """
+        ducked = audio_data.copy()
+        fade_samples = int(self.channels["music"].streamer.sample_rate * fade_duration)
+
+        # Create fade curve (smooth transition)
+        fade_in = np.linspace(duck_ratio, 1.0, fade_samples)
+        fade_out = np.linspace(1.0, duck_ratio, fade_samples)
+
+        # Apply fade out at start
+        if len(ducked) >= fade_samples:
+            ducked[:fade_samples] *= fade_out
+
+        # Apply fade in at end
+        if len(ducked) >= fade_samples:
+            ducked[-fade_samples:] *= fade_in
+
+        # Apply constant ducking to middle section
+        if len(ducked) > 2 * fade_samples:
+            ducked[fade_samples:-fade_samples] *= duck_ratio
+
+        return ducked.astype(np.float32)
+
+    async def _wait_for_sync_group(self, sync_id: str, channel_id: str, audio_data: np.ndarray):
+        """
+        Wait for all channels in a sync group to be ready, then stream all together.
+
+        Args:
+            sync_id: Sync group identifier
+            channel_id: This channel's ID
+            audio_data: Generated audio data
+        """
+        # Initialize sync group if needed
+        if sync_id not in self.sync_groups:
+            self.sync_groups[sync_id] = {
+                "channels": set(),
+                "ready_audio": {},
+                "event": asyncio.Event()
+            }
+
+        sync_group = self.sync_groups[sync_id]
+
+        # Mark this channel as ready
+        sync_group["ready_audio"][channel_id] = audio_data
+        logger.info(f"[{channel_id}] Ready for sync group '{sync_id}' ({len(sync_group['ready_audio'])}/{len(sync_group['channels'])} ready)")
+
+        # Check if all expected channels are ready
+        if sync_group["channels"] and sync_group["ready_audio"].keys() == sync_group["channels"]:
+            # All channels ready - trigger simultaneous streaming
+            logger.info(f"🎬 Sync group '{sync_id}' complete - streaming all channels simultaneously")
+
+            # Apply auto-ducking if enabled
+            if self.ducking_config["enabled"]:
+                await self._apply_sync_ducking(sync_group["ready_audio"])
+
+            # Stream all channels at the same time
+            stream_tasks = []
+            for ch_id, audio in sync_group["ready_audio"].items():
+                if ch_id in self.channels and self.channels[ch_id].streamer:
+                    stream_tasks.append(self.channels[ch_id].streamer.send_audio(audio))
+
+            await asyncio.gather(*stream_tasks)
+            logger.info(f"✅ Sync group '{sync_id}' streaming complete")
+
+            # Signal waiting channels and clean up
+            sync_group["event"].set()
+            del self.sync_groups[sync_id]
+        else:
+            # Wait for other channels
+            logger.info(f"[{channel_id}] Waiting for other channels in sync group '{sync_id}'...")
+            await sync_group["event"].wait()
+
+    def register_sync_group(self, sync_id: str, channel_ids: list):
+        """
+        Register a new sync group with expected channels.
+
+        Args:
+            sync_id: Unique sync group identifier
+            channel_ids: List of channel IDs that should sync together
+        """
+        self.sync_groups[sync_id] = {
+            "channels": set(channel_ids),
+            "ready_audio": {},
+            "event": asyncio.Event()
+        }
+        logger.info(f"Registered sync group '{sync_id}' with channels: {channel_ids}")
 
     async def generate_narration(
         self,

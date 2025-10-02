@@ -217,6 +217,25 @@ async def generate_music(
         # Ensure float32
         audio = audio.astype(np.float32)
 
+        # Apply fade-out at the end (last 2 seconds)
+        fade_duration = 2.0  # seconds
+        fade_samples = int(48000 * fade_duration)
+
+        if len(audio) > fade_samples:
+            # Create fade curve (exponential for more natural sound)
+            fade_curve = np.linspace(1.0, 0.0, fade_samples) ** 2
+
+            # Apply fade to last portion
+            if audio.ndim == 2:
+                # Stereo
+                audio[-fade_samples:, 0] *= fade_curve
+                audio[-fade_samples:, 1] *= fade_curve
+            else:
+                # Mono
+                audio[-fade_samples:] *= fade_curve
+
+            logger.info(f"Applied {fade_duration}s fade-out to music")
+
         logger.info(f"Generated {len(audio) / 48000:.1f}s of {genre} music")
 
         return audio

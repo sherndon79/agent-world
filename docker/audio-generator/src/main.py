@@ -403,6 +403,88 @@ async def trigger_commentary(request: dict):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/api/sync")
+async def trigger_synchronized(request: dict):
+    """
+    Trigger multiple channels synchronously.
+
+    Example request:
+    {
+        "sync_id": "scene_123",
+        "channels": {
+            "narration": {
+                "text": "The battle begins!",
+                "voice": "af_heart:60,af_bella:40",
+                "emotion": "intense"
+            },
+            "music": {
+                "tension_level": "high",
+                "intensity": 0.8,
+                "genre": "orchestral"
+            }
+        }
+    }
+
+    Args:
+        request: Synchronized request data
+
+    Returns:
+        dict: Request status
+    """
+    if not channel_manager:
+        raise HTTPException(status_code=503, detail="Channel manager not initialized")
+
+    try:
+        sync_id = request.get("sync_id")
+        channels = request.get("channels", {})
+
+        if not sync_id:
+            raise HTTPException(status_code=400, detail="sync_id is required")
+
+        if not channels:
+            raise HTTPException(status_code=400, detail="At least one channel is required")
+
+        # Register sync group
+        channel_manager.register_sync_group(sync_id, list(channels.keys()))
+
+        # Queue all channels with sync_id in metadata
+        request_ids = {}
+        for channel_id, channel_data in channels.items():
+            metadata = {"sync_id": sync_id}
+
+            if channel_id == "narration":
+                request_ids[channel_id] = await channel_manager.generate_narration(
+                    data=channel_data,
+                    metadata=metadata
+                )
+            elif channel_id == "ambient":
+                request_ids[channel_id] = await channel_manager.update_ambient(
+                    data=channel_data,
+                    metadata=metadata
+                )
+            elif channel_id == "music":
+                request_ids[channel_id] = await channel_manager.update_music(
+                    data=channel_data,
+                    metadata=metadata
+                )
+            elif channel_id == "commentary":
+                request_ids[channel_id] = await channel_manager.generate_commentary(
+                    data=channel_data,
+                    metadata=metadata
+                )
+
+        return {
+            "success": True,
+            "sync_id": sync_id,
+            "request_ids": request_ids,
+            "message": f"Synchronized request queued for {len(channels)} channels"
+        }
+
+    except Exception as e:
+        logger.error(f"Error triggering synchronized request: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
     """Global exception handler"""
