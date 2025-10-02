@@ -25,6 +25,10 @@ RUN apt-get update && apt-get install -y \
     # Audio libraries
     libsndfile1 \
     portaudio19-dev \
+    # TTS dependencies
+    espeak \
+    libespeak1 \
+    libespeak-dev \
     # Utilities
     curl \
     git \
@@ -53,8 +57,8 @@ RUN pip3 install --no-cache-dir -r /app/requirements.txt
 RUN pip3 install --no-cache-dir \
     torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 
-# Install AI model dependencies (will add specific models later)
-# Placeholder for: chatterbox-tts, elevenlabs, mubert-api, etc.
+# Coqui TTS already installed - includes XTTS-v2 model
+# XTTS-v2: High quality, voice cloning, emotional speech
 
 # Environment variables
 ENV PYTHONUNBUFFERED=1
@@ -62,6 +66,7 @@ ENV GST_DEBUG=2
 ENV CUDA_VISIBLE_DEVICES=0
 ENV TRANSFORMERS_CACHE=/cache/transformers
 ENV HF_HOME=/cache/huggingface
+ENV COQUI_TOS_AGREED=1
 
 # Expose ports
 # HTTP API

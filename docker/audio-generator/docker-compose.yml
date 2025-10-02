@@ -1,37 +1,27 @@
 services:
-  audio-generator:
+  # Main orchestrator service
+  orchestrator:
     build:
       context: .
       dockerfile: Dockerfile
-    image: audio-generator:latest
-    container_name: agent-adventures-audio
-    runtime: nvidia
+    image: audio-orchestrator:latest
+    container_name: agent-adventures-audio-orchestrator
     environment:
-      - NVIDIA_VISIBLE_DEVICES=all
-      - NVIDIA_DRIVER_CAPABILITIES=compute,utility,video
       - PYTHONUNBUFFERED=1
-      - GST_DEBUG=2
       # Redis Story State connection
       - REDIS_HOST=localhost
       - REDIS_PORT=6379
       - REDIS_CHANNEL=story_state
-      # AI Model API keys (loaded from .env)
-      - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY}
-      - MUBERT_API_KEY=${MUBERT_API_KEY}
-      - STABILITY_API_KEY=${STABILITY_API_KEY}
-      # Audio configuration
-      - NARRATION_MODEL=chatterbox  # or elevenlabs
-      - AMBIENT_MODEL=elevenlabs    # or stable-audio
-      - MUSIC_MODEL=mubert          # or stable-audio
-      - COMMENTARY_MODEL=elevenlabs
+      # Channel service URLs (use localhost since orchestrator uses host network)
+      - NARRATION_SERVICE_URL=http://localhost:8081
+      - COMMENTARY_SERVICE_URL=http://localhost:8082
+      - AMBIENT_SERVICE_URL=http://localhost:8083
+      - MUSIC_SERVICE_URL=http://localhost:8084
     volumes:
       # Volume map source code for live editing
       - ./src:/app
       # Configuration files
       - ./config:/config
-      # Model cache (persistent)
-      - ./models:/models
-      - ./cache:/cache
     ports:
       # HTTP API for control/monitoring
       - "8080:8080"
@@ -42,6 +32,34 @@ services:
       - "9004:9004/udp"  # Commentary
     network_mode: host
     restart: unless-stopped
+    depends_on:
+      - narration
+      - commentary
+      - ambient
+      - music
+
+  # Narration TTS Service (Chatterbox)
+  narration:
+    build:
+      context: ./narration
+      dockerfile: Dockerfile
+    image: audio-narration:latest
+    container_name: agent-adventures-audio-narration
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      - PYTHONUNBUFFERED=1
+    volumes:
+      # Live code editing
+      - ./narration/src:/app
+      # Model cache
+      - ./cache/narration:/root/.cache
+      # Shared Kokoro models (read-only)
+      - ./models/kokoro:/root/.local/share/kokoro:ro
+    ports:
+      - "8081:8081"
+    restart: unless-stopped
     deploy:
       resources:
         reservations:
@@ -49,3 +67,65 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
+
+  # Commentary TTS Service (Chatterbox)
+  commentary:
+    build:
+      context: ./commentary
+      dockerfile: Dockerfile
+    image: audio-commentary:latest
+    container_name: agent-adventures-audio-commentary
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      - PYTHONUNBUFFERED=1
+    volumes:
+      # Live code editing
+      - ./commentary/src:/app
+      # Model cache
+      - ./cache/commentary:/root/.cache
+      # Shared Kokoro models (read-only)
+      - ./models/kokoro:/root/.local/share/kokoro:ro
+    ports:
+      - "8082:8082"
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  # Ambient Audio Service (Procedural)
+  ambient:
+    build:
+      context: ./ambient
+      dockerfile: Dockerfile
+    image: audio-ambient:latest
+    container_name: agent-adventures-audio-ambient
+    environment:
+      - PYTHONUNBUFFERED=1
+    volumes:
+      # Live code editing
+      - ./ambient/src:/app
+    ports:
+      - "8083:8083"
+    restart: unless-stopped
+
+  # Music Generation Service (Procedural)
+  music:
+    build:
+      context: ./music
+      dockerfile: Dockerfile
+    image: audio-music:latest
+    container_name: agent-adventures-audio-music
+    environment:
+      - PYTHONUNBUFFERED=1
+    volumes:
+      # Live code editing
+      - ./music/src:/app
+    ports:
+      - "8084:8084"
+    restart: unless-stopped

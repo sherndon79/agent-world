@@ -50,3 +50,5 @@ mcp-servers/tools/mcpctl
 *.backup
 *.swp
 *.swo
+docker/ome/config/*.key
+docker/ome/config/*.pem

@@ -16,7 +16,7 @@ from .base import BaseAudioModel
 logger = logging.getLogger(__name__)
 
 
-class MusicModel(BaseAudioModel):
+class MusicGenerationModel(BaseAudioModel):
     """Music generation model"""
 
     def __init__(self, backend: str = "procedural", config: Dict[str, Any] = None):
@@ -83,13 +83,67 @@ class MusicModel(BaseAudioModel):
             f"Generating music: {genre}, intensity={intensity}, tempo={tempo}"
         )
 
-        # TODO: Implement actual music generation
-        # For now, return 30 seconds of silence as placeholder
+        # Simple procedural music generation
         duration_seconds = 30
         num_samples = int(duration_seconds * self.sample_rate)
-        audio = np.zeros((num_samples, 2), dtype=np.float32)  # Stereo
+
+        # Generate chord progression based on tension
+        audio = self._generate_chord_progression(num_samples, intensity, tension_level)
+
+        # Add melody
+        melody = self._generate_melody(num_samples, intensity)
+        audio += melody * 0.4
+
+        # Convert to stereo with slight panning
+        audio = np.clip(audio, -1.0, 1.0)
+        left = audio * 1.0
+        right = audio * 0.9  # Slight stereo width
+        audio_stereo = np.column_stack([left, right])
 
         logger.info(f"Generated {duration_seconds}s music loop")
+
+        return audio_stereo.astype(np.float32)
+
+    def _generate_chord_progression(self, num_samples: int, intensity: float, tension: str) -> np.ndarray:
+        """Generate simple chord progression"""
+        t = np.linspace(0, num_samples / self.sample_rate, num_samples)
+
+        # Base frequencies for chord progression (C major scale)
+        base_freqs = {
+            "exposition": [261.63, 329.63, 392.00],  # C-E-G (calm)
+            "rising_action": [293.66, 369.99, 440.00],  # D-F#-A (building)
+            "climax": [329.63, 415.30, 493.88],  # E-G#-B (intense)
+            "resolution": [261.63, 329.63, 392.00],  # C-E-G (calm)
+            "neutral": [261.63, 329.63, 392.00]
+        }
+
+        freqs = base_freqs.get(tension, base_freqs["neutral"])
+
+        # Generate chord tones
+        audio = np.zeros(num_samples)
+        for freq in freqs:
+            audio += np.sin(2 * np.pi * freq * t) * (intensity * 0.15)
+
+        # Add envelope
+        envelope = np.exp(-2 * (t % 2))  # Decay every 2 seconds
+        audio *= envelope
+
+        return audio
+
+    def _generate_melody(self, num_samples: int, intensity: float) -> np.ndarray:
+        """Generate simple melody"""
+        # Pentatonic scale frequencies
+        scale = [261.63, 293.66, 329.63, 392.00, 440.00]
+
+        audio = np.zeros(num_samples)
+        note_duration = int(0.5 * self.sample_rate)  # 0.5 second notes
+
+        for i in range(0, num_samples, note_duration):
+            freq = np.random.choice(scale)
+            t = np.linspace(0, 0.5, note_duration)
+            note = np.sin(2 * np.pi * freq * t) * np.exp(-3 * t)
+            end = min(i + note_duration, num_samples)
+            audio[i:end] += note[:end-i] * intensity * 0.2
 
         return audio
 

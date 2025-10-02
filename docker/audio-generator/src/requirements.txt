@@ -5,15 +5,23 @@ uvicorn[standard]==0.24.0
 # WebSocket client
 websockets==12.0
 
+# HTTP client (for testing)
+aiohttp==3.9.1
+
 # Environment variables
 python-dotenv==1.0.0
 
 # Async utilities
 aiofiles==23.2.1
 
-# Audio processing (placeholder - will add specific models later)
+# Audio processing
 numpy==1.24.3
 soundfile==0.12.1
+scipy==1.11.4
+pyttsx3==2.90
+
+# Coqui TTS (neural text-to-speech)
+TTS==0.22.0
 
 # Logging and utilities
 pydantic==2.5.0

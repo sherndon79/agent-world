@@ -76,6 +76,10 @@ class SRTStreamer:
             logger.error(f"Failed to start SRT stream on port {self.port}: {e}")
             raise
 
+    async def send_audio(self, audio: np.ndarray):
+        """Send audio data to SRT stream (alias for write)"""
+        await self.write(audio)
+
     async def write(self, audio: np.ndarray):
         """
         Write audio data to SRT stream.

@@ -2,27 +2,43 @@
 Channel Manager for multi-channel audio generation.
 
 Coordinates 4 audio channels (narration, ambient, music, commentary)
-and routes story updates to appropriate AI models for generation.
+and routes story updates to appropriate microservices for generation.
+
+Microservice Architecture:
+- Narration: Chatterbox TTS on port 8081
+- Commentary: Chatterbox TTS on port 8082
+- Ambient: Procedural audio on port 8083
+- Music: Procedural music on port 8084
 """
 
 import asyncio
 import logging
+import os
 from typing import Dict, Any, Optional
 from datetime import datetime
 from collections import deque
 import uuid
 
+import aiohttp
+import soundfile as sf
+import numpy as np
+import tempfile
+
+from srt_streamer import SRTStreamer
+
 logger = logging.getLogger(__name__)
 
 
 class AudioChannel:
-    """Represents a single audio channel"""
+    """Represents a single audio channel with microservice backend"""
 
     def __init__(
         self,
         channel_id: str,
         port: int,
-        model_name: str = "placeholder"
+        model_name: str = "placeholder",
+        service_url: Optional[str] = None,
+        streamer: Optional[SRTStreamer] = None
     ):
         """
         Initialize audio channel.
@@ -31,10 +47,14 @@ class AudioChannel:
             channel_id: Channel identifier (narration, ambient, music, commentary)
             port: SRT output port
             model_name: AI model name for this channel
+            service_url: Microservice URL (e.g., http://narration:8081)
+            streamer: SRT streamer instance
         """
         self.id = channel_id
         self.port = port
         self.model_name = model_name
+        self.service_url = service_url
+        self.streamer = streamer
         self.status = "idle"
         self.queue = deque(maxlen=100)  # Request queue
         self.current_task: Optional[Dict[str, Any]] = None
@@ -113,18 +133,37 @@ class ChannelManager:
         self._initialized = False
 
     async def initialize(self):
-        """Initialize all audio channels"""
+        """Initialize all audio channels with microservice backends"""
         if self._initialized:
             return
 
-        logger.info("Initializing audio channels...")
+        logger.info("Initializing audio channels with microservices...")
 
-        # Create 4 audio channels
+        # Get service URLs from environment variables
+        narration_url = os.getenv("NARRATION_SERVICE_URL", "http://localhost:8081")
+        commentary_url = os.getenv("COMMENTARY_SERVICE_URL", "http://localhost:8082")
+        ambient_url = os.getenv("AMBIENT_SERVICE_URL", "http://localhost:8083")
+        music_url = os.getenv("MUSIC_SERVICE_URL", "http://localhost:8084")
+
+        # Create SRT streamers for each channel
+        narration_streamer = SRTStreamer(port=9001, sample_rate=48000)
+        await narration_streamer.start()
+
+        ambient_streamer = SRTStreamer(port=9002, sample_rate=48000)
+        await ambient_streamer.start()
+
+        music_streamer = SRTStreamer(port=9003, sample_rate=48000)
+        await music_streamer.start()
+
+        commentary_streamer = SRTStreamer(port=9004, sample_rate=48000)
+        await commentary_streamer.start()
+
+        # Create 4 audio channels with microservice backends
         self.channels = {
-            "narration": AudioChannel("narration", 9001, "chatterbox"),
-            "ambient": AudioChannel("ambient", 9002, "elevenlabs"),
-            "music": AudioChannel("music", 9003, "mubert"),
-            "commentary": AudioChannel("commentary", 9004, "elevenlabs")
+            "narration": AudioChannel("narration", 9001, "chatterbox", narration_url, narration_streamer),
+            "ambient": AudioChannel("ambient", 9002, "procedural", ambient_url, ambient_streamer),
+            "music": AudioChannel("music", 9003, "procedural", music_url, music_streamer),
+            "commentary": AudioChannel("commentary", 9004, "chatterbox", commentary_url, commentary_streamer)
         }
 
         # Start processing loops for each channel
@@ -162,7 +201,7 @@ class ChannelManager:
 
     async def _generate_audio(self, channel: AudioChannel, request: Dict[str, Any]):
         """
-        Generate audio for a request.
+        Generate audio for a request by calling microservice.
 
         Args:
             channel: AudioChannel processing the request
@@ -172,36 +211,103 @@ class ChannelManager:
         request_id = request["id"]
         data = request["data"]
 
-        logger.info(f"[{channel.id}] Generating audio for request {request_id}")
+        logger.info(f"[{channel.id}] Generating audio for request {request_id} via {channel.service_url}")
 
         try:
-            # TODO: Call actual AI model here
-            # For now, simulate generation
-            await asyncio.sleep(0.5)  # Simulate processing time
+            # Prepare request payload based on channel type
+            payload = {}
 
-            # Simulate successful generation
+            if channel.id in ("narration", "commentary"):
+                # TTS request
+                payload = {
+                    "text": data.get("text", ""),
+                    "voice": data.get("voice", "default"),
+                    "emotion": data.get("emotion", "neutral"),
+                    "emotion_exaggeration": data.get("emotion_exaggeration")
+                }
+
+            elif channel.id == "ambient":
+                # Ambient audio request
+                payload = {
+                    "environment": data.get("environment", "forest"),
+                    "time_of_day": data.get("time_of_day", "day"),
+                    "weather": data.get("weather", "clear"),
+                    "special_effects": data.get("special_effects", [])
+                }
+
+            elif channel.id == "music":
+                # Music generation request
+                payload = {
+                    "tension_level": data.get("tension_level", "neutral"),
+                    "intensity": data.get("intensity", 0.5),
+                    "genre": data.get("genre", "orchestral"),
+                    "tempo": data.get("tempo", "moderate")
+                }
+
+            # Call microservice
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{channel.service_url}/generate",
+                    json=payload,
+                    timeout=aiohttp.ClientTimeout(total=30)
+                ) as response:
+                    if response.status != 200:
+                        error_text = await response.text()
+                        raise Exception(f"Microservice returned {response.status}: {error_text}")
+
+                    # Read WAV audio from response
+                    wav_bytes = await response.read()
+
+            # Load WAV from bytes
+            with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp:
+                tmp_path = tmp.name
+                tmp.write(wav_bytes)
+
+            try:
+                audio_data, sr = sf.read(tmp_path, dtype='float32')
+
+                # Ensure mono for TTS, keep stereo for music
+                if channel.id == "music" and len(audio_data.shape) == 2:
+                    # Keep stereo, but we'll need to stream it properly
+                    # For now, convert to mono for SRT compatibility
+                    audio_data = audio_data.mean(axis=1)
+                elif len(audio_data.shape) > 1:
+                    audio_data = audio_data.mean(axis=1)
+
+            finally:
+                if os.path.exists(tmp_path):
+                    os.unlink(tmp_path)
+
+            # Apply volume adjustment
+            volume = data.get("volume", 1.0)
+            if volume != 1.0:
+                audio_data = audio_data * volume
+                audio_data = np.clip(audio_data, -1.0, 1.0).astype(np.float32)
+                logger.info(f"[{channel.id}] Applied volume: {volume:.2f}")
+
             generation_time = (datetime.now() - start_time).total_seconds() * 1000
+
+            # Stream to SRT
+            if channel.streamer:
+                await channel.streamer.send_audio(audio_data)
+                logger.info(f"[{channel.id}] Streamed {len(audio_data)} samples to SRT port {channel.port}")
 
             result = {
                 "success": True,
-                "duration_ms": 4500,  # Simulated audio duration
+                "duration_ms": len(audio_data) / 48,
                 "generation_time_ms": generation_time,
                 "model": channel.model_name,
-                "output_size_bytes": 360000  # Simulated size
+                "output_size_bytes": len(audio_data) * 4
             }
 
             logger.info(
                 f"[{channel.id}] Audio generated successfully in {generation_time:.0f}ms"
             )
 
-            # TODO: Stream to SRT port
-            # await self._stream_to_srt(channel, audio_data)
-
             # Mark as complete
             channel.status = "idle"
             channel.current_task = None
 
-            # Return result for status reporting
             return result
 
         except Exception as e:

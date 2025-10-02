@@ -7,12 +7,12 @@ for TTS, ambient audio, and music generation models.
 
 from .base import BaseAudioModel
 from .tts import TTSModel
-from .ambient import AmbientModel
-from .music import MusicModel
+from .ambient import AmbientAudioModel
+from .music import MusicGenerationModel
 
 __all__ = [
     'BaseAudioModel',
     'TTSModel',
-    'AmbientModel',
-    'MusicModel'
+    'AmbientAudioModel',
+    'MusicGenerationModel'
 ]
