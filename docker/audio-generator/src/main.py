@@ -214,6 +214,31 @@ async def handle_control(data: dict):
         elif command == "clear_queue":
             await channel_manager.clear_queue(channel)
 
+        elif command == "register_sync":
+            sync_id = params.get("syncId") or params.get("sync_id") or data.get("syncId") or data.get("sync_id")
+            channels = params.get("channels") or params.get("channelIds") or params.get("channel_ids") or data.get("channels")
+            metadata = params.get("metadata") or data.get("metadata") or {}
+
+            if not sync_id:
+                logger.warning("register_sync command missing syncId")
+                return
+
+            if not channels:
+                logger.warning("register_sync command missing channels")
+                return
+
+            channel_list = [str(ch).lower() for ch in channels if ch]
+            if not channel_list:
+                logger.warning("register_sync provided channels but none were valid")
+                return
+
+            channel_manager.register_sync_group(sync_id, channel_list, metadata)
+            logger.info(
+                "Registered sync group %s with channels %s",
+                sync_id,
+                ", ".join(channel_list)
+            )
+
         else:
             logger.warning(f"Unknown control command: {command}")
 
@@ -445,7 +470,11 @@ async def trigger_synchronized(request: dict):
             raise HTTPException(status_code=400, detail="At least one channel is required")
 
         # Register sync group
-        channel_manager.register_sync_group(sync_id, list(channels.keys()))
+        sync_metadata = request.get("metadata") or request.get("syncMetadata") or {}
+        if not isinstance(sync_metadata, dict):
+            sync_metadata = {}
+
+        channel_manager.register_sync_group(sync_id, list(channels.keys()), sync_metadata)
 
         # Queue all channels with sync_id in metadata
         request_ids = {}
@@ -482,6 +511,47 @@ async def trigger_synchronized(request: dict):
 
     except Exception as e:
         logger.error(f"Error triggering synchronized request: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/clear")
+async def clear_queues(request: dict):
+    """
+    Clear queues for specified channels or all channels.
+
+    Example request:
+    {
+        "channels": ["narration", "music"]  // optional, clears all if omitted
+    }
+
+    Args:
+        request: Clear request data
+
+    Returns:
+        dict: Clear operation status
+    """
+    if not channel_manager:
+        raise HTTPException(status_code=503, detail="Channel manager not available")
+
+    try:
+        channels_to_clear = request.get("channels", ["narration", "ambient", "music", "commentary"])
+
+        if not isinstance(channels_to_clear, list):
+            raise HTTPException(status_code=400, detail="channels must be a list")
+
+        cleared = {}
+        for channel_id in channels_to_clear:
+            result = await channel_manager.clear_queue(channel_id)
+            cleared[channel_id] = result
+
+        return {
+            "success": True,
+            "cleared": cleared,
+            "message": f"Cleared {len(cleared)} channel(s)"
+        }
+
+    except Exception as e:
+        logger.error(f"Error clearing queues: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 

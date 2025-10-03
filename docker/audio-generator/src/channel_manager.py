@@ -472,18 +472,20 @@ class ChannelManager:
             logger.info(f"[{channel_id}] Waiting for other channels in sync group '{sync_id}'...")
             await sync_group["event"].wait()
 
-    def register_sync_group(self, sync_id: str, channel_ids: list):
+    def register_sync_group(self, sync_id: str, channel_ids: list, metadata: Optional[Dict[str, Any]] = None):
         """
         Register a new sync group with expected channels.
 
         Args:
             sync_id: Unique sync group identifier
             channel_ids: List of channel IDs that should sync together
+            metadata: Additional sync metadata
         """
         self.sync_groups[sync_id] = {
             "channels": set(channel_ids),
             "ready_audio": {},
-            "event": asyncio.Event()
+            "event": asyncio.Event(),
+            "metadata": metadata or {}
         }
         logger.info(f"Registered sync group '{sync_id}' with channels: {channel_ids}")
 
