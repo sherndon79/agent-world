@@ -34,6 +34,8 @@ isaac-sim-host*/
 *.zip
 scripts/launch_agent_world.sh
 scripts/launch_agent_world.ps1
+docker/audio-generator/assets/ambient/raw/
+docker/audio-generator/assets/ambient/library/
 
 # Screenshots
 screenshots/

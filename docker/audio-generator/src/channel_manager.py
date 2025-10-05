@@ -138,7 +138,7 @@ class ChannelManager:
         # Auto-ducking configuration
         self.ducking_config = {
             "enabled": True,
-            "duck_ratio": 0.3,  # Reduce background to 30% when foreground plays
+            "duck_ratio": 0.20,  # Reduce background to 20% when foreground plays
             "fade_duration": 0.05,  # 50ms fade in/out
             "foreground_channels": {"narration", "commentary"},  # These trigger ducking
             "background_channels": {"music", "ambient"}  # These get ducked
@@ -245,13 +245,25 @@ class ChannelManager:
                 }
 
             elif channel.id == "ambient":
-                # Ambient audio request
-                payload = {
-                    "environment": data.get("environment", "forest"),
-                    "time_of_day": data.get("time_of_day", "day"),
-                    "weather": data.get("weather", "clear"),
-                    "special_effects": data.get("special_effects", [])
-                }
+                # Ambient audio request - check if using library sample or procedural
+                if "sample_id" in data:
+                    # Use play_sample endpoint for library samples
+                    endpoint = "/play_sample"
+                    payload = {
+                        "sample_id": data["sample_id"],
+                        "fade_out_after": data.get("fade_out_after", 30),
+                        "fade_duration": data.get("fade_duration", 3.0),
+                        "loop_if_short": data.get("loop_if_short", False)
+                    }
+                else:
+                    # Use procedural generation endpoint
+                    endpoint = "/generate"
+                    payload = {
+                        "environment": data.get("environment", "forest"),
+                        "time_of_day": data.get("time_of_day", "day"),
+                        "weather": data.get("weather", "clear"),
+                        "special_effects": data.get("special_effects", [])
+                    }
 
             elif channel.id == "music":
                 # Music generation request
@@ -264,9 +276,14 @@ class ChannelManager:
                 }
 
             # Call microservice
+            # Determine endpoint (ambient might use /play_sample)
+            service_endpoint = "/generate"
+            if channel.id == "ambient" and "sample_id" in data:
+                service_endpoint = "/play_sample"
+
             async with aiohttp.ClientSession() as session:
                 async with session.post(
-                    f"{channel.service_url}/generate",
+                    f"{channel.service_url}{service_endpoint}",
                     json=payload,
                     timeout=aiohttp.ClientTimeout(total=30)
                 ) as response:

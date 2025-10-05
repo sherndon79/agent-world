@@ -110,6 +110,8 @@ services:
     volumes:
       # Live code editing
       - ./ambient/src:/app
+      # Ambient sample libraries
+      - ./assets/ambient:/app/assets/ambient:ro
     ports:
       - "8083:8083"
     restart: unless-stopped
