@@ -372,18 +372,58 @@ async def play_sample(request: AmbientSampleRequest):
 
         logger.info(f"Original: {original_duration:.2f}s, Target: {target_duration:.2f}s (fade at {fade_out_after:.2f}s)")
 
-        # Handle samples that are too short
-        if original_duration < fade_out_after and request.loop_if_short:
-            # Loop the sample to reach the fade point
-            times_to_loop = int(np.ceil(fade_out_after / original_duration)) + 1
-            audio_data = np.tile(audio_data, (times_to_loop, 1) if audio_data.ndim > 1 else times_to_loop)
-            logger.info(f"Looped sample {times_to_loop}x to reach fade point")
+        # Handle samples that are too short - loop with crossfading for seamless transitions
+        if original_duration < target_duration:
+            # Loop the sample to reach the target duration (fade_out_after + fade_duration)
+            times_to_loop = int(np.ceil(target_duration / original_duration)) + 1
 
-        # Trim to target duration
+            # Use crossfade looping for seamless transitions
+            crossfade_duration = 0.1  # 100ms crossfade at loop points
+            crossfade_samples = int(crossfade_duration * sample_rate)
+
+            # Build looped audio with crossfades
+            looped_parts = []
+            for i in range(times_to_loop):
+                if i == 0:
+                    # First iteration - full sample
+                    looped_parts.append(audio_data)
+                else:
+                    # Subsequent iterations - crossfade with previous end
+                    if crossfade_samples > 0 and len(looped_parts[-1]) >= crossfade_samples:
+                        # Extract crossfade regions
+                        prev_end = looped_parts[-1][-crossfade_samples:]
+                        curr_start = audio_data[:crossfade_samples] if len(audio_data) > crossfade_samples else audio_data
+
+                        # Create crossfade
+                        fade_out = np.linspace(1.0, 0.0, len(prev_end))
+                        fade_in = np.linspace(0.0, 1.0, len(curr_start))
+
+                        if audio_data.ndim == 1:  # Mono
+                            crossfaded = prev_end * fade_out + curr_start * fade_in
+                        else:  # Stereo
+                            crossfaded = prev_end * fade_out[:, np.newaxis] + curr_start * fade_in[:, np.newaxis]
+
+                        # Replace end of previous part with crossfade, append rest of current
+                        looped_parts[-1] = looped_parts[-1][:-crossfade_samples]
+                        looped_parts.append(crossfaded)
+                        if len(audio_data) > crossfade_samples:
+                            looped_parts.append(audio_data[crossfade_samples:])
+                    else:
+                        looped_parts.append(audio_data)
+
+            # Concatenate all parts
+            if audio_data.ndim == 1:
+                audio_data = np.concatenate(looped_parts)
+            else:
+                audio_data = np.vstack(looped_parts)
+
+            logger.info(f"Looped sample {times_to_loop}x with crossfading to reach target duration ({original_duration:.2f}s -> {len(audio_data)/sample_rate:.2f}s)")
+
+        # Trim to exact target duration
         target_samples = int(target_duration * sample_rate)
         if len(audio_data) > target_samples:
             audio_data = audio_data[:target_samples]
-            logger.info(f"Trimmed from {original_duration:.2f}s to {target_duration:.2f}s")
+            logger.info(f"Trimmed to exact target duration: {target_duration:.2f}s")
 
         # Apply fade-out at the specified time
         fade_start_sample = int(fade_out_after * sample_rate)
