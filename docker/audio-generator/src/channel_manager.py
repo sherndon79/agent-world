@@ -126,11 +126,12 @@ class AudioChannel:
 class ChannelManager:
     """Manages all audio channels and routes requests"""
 
-    def __init__(self):
+    def __init__(self, ws_client=None):
         """Initialize channel manager"""
         self.channels: Dict[str, AudioChannel] = {}
         self.processing_tasks: Dict[str, asyncio.Task] = {}
         self._initialized = False
+        self.ws_client = ws_client  # WebSocket client for sending audio ready notifications
 
         # Sync group coordination
         self.sync_groups: Dict[str, Dict[str, Any]] = {}  # sync_id -> {channels: set, ready_audio: dict, event: asyncio.Event}
@@ -332,6 +333,15 @@ class ChannelManager:
                     await channel.streamer.send_audio(audio_data)
                     logger.info(f"[{channel.id}] Streamed {len(audio_data)} samples to SRT port {channel.port}")
 
+                    # Notify Agent Adventures that audio is ready and streaming
+                    if self.ws_client:
+                        await self.ws_client.send({
+                            "type": "audio_ready",
+                            "channel": channel.id,
+                            "sync_id": None,
+                            "metadata": metadata
+                        })
+
             result = {
                 "success": True,
                 "duration_ms": len(audio_data) / 48,
@@ -480,6 +490,15 @@ class ChannelManager:
 
             await asyncio.gather(*stream_tasks)
             logger.info(f"✅ Sync group '{sync_id}' streaming complete")
+
+            # Notify Agent Adventures that synced audio is ready and streaming
+            if self.ws_client:
+                await self.ws_client.send({
+                    "type": "audio_ready",
+                    "sync_id": sync_id,
+                    "channels": list(sync_group["channels"]),
+                    "metadata": sync_group.get("metadata", {})
+                })
 
             # Signal waiting channels and clean up
             sync_group["event"].set()

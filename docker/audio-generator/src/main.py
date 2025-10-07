@@ -72,7 +72,7 @@ async def startup():
 
         # Initialize channel manager
         logger.info("Initializing channel manager...")
-        channel_manager = ChannelManager()
+        channel_manager = ChannelManager(ws_client=None)  # Will be set after ws_client is created
         await channel_manager.initialize()
 
         # Initialize WebSocket client
@@ -90,6 +90,9 @@ async def startup():
 
         # Connect to Agent Adventures
         await ws_client.connect()
+
+        # Set ws_client in channel_manager for audio ready notifications
+        channel_manager.ws_client = ws_client
 
         # Start status reporting loop
         status_task = asyncio.create_task(status_reporter(status_interval))

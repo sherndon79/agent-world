@@ -8,10 +8,8 @@ services:
     container_name: agent-adventures-audio-orchestrator
     environment:
       - PYTHONUNBUFFERED=1
-      # Redis Story State connection
-      - REDIS_HOST=localhost
-      - REDIS_PORT=6379
-      - REDIS_CHANNEL=story_state
+      # Agent Adventures WebSocket connection
+      - AGENT_ADVENTURES_WS_URL=ws://localhost:3001/ws/audio
       # Channel service URLs (use localhost since orchestrator uses host network)
       - NARRATION_SERVICE_URL=http://localhost:8081
       - COMMENTARY_SERVICE_URL=http://localhost:8082
