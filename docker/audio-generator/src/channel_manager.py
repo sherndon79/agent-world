@@ -149,6 +149,50 @@ class ChannelManager:
         self.active_foreground: set = set()  # Set of currently playing foreground channels
         self.ducking_lock = asyncio.Lock()
 
+        # Audio mode configuration
+        self.current_mode = 'story'  # Default mode
+        self.mode_configs = {
+            'story': {
+                'name': 'Story Mode',
+                'channels': {
+                    'narration': {'enabled': True, 'volume': 1.0},
+                    'commentary': {'enabled': False, 'volume': 0.0},
+                    'ambient': {'enabled': True, 'volume': 0.3},
+                    'music': {'enabled': True, 'volume': 0.4}
+                },
+                'ducking': {
+                    'foreground': {'narration'},
+                    'background': {'ambient', 'music'}
+                }
+            },
+            'commentary': {
+                'name': 'Commentary Mode',
+                'channels': {
+                    'narration': {'enabled': False, 'volume': 0.0},
+                    'commentary': {'enabled': True, 'volume': 1.0},
+                    'ambient': {'enabled': True, 'volume': 0.3},
+                    'music': {'enabled': True, 'volume': 0.4}
+                },
+                'ducking': {
+                    'foreground': {'commentary'},
+                    'background': {'ambient', 'music'}
+                }
+            },
+            'mixed': {
+                'name': 'Mixed Mode',
+                'channels': {
+                    'narration': {'enabled': True, 'volume': 1.0},
+                    'commentary': {'enabled': True, 'volume': 0.6},
+                    'ambient': {'enabled': True, 'volume': 0.25},
+                    'music': {'enabled': True, 'volume': 0.35}
+                },
+                'ducking': {
+                    'foreground': {'narration', 'commentary'},
+                    'background': {'ambient', 'music'}
+                }
+            }
+        }
+
     async def initialize(self):
         """Initialize all audio channels with microservice backends"""
         if self._initialized:
@@ -229,6 +273,17 @@ class ChannelManager:
         data = request["data"]
         metadata = request.get("metadata", {})
         sync_id = metadata.get("sync_id")
+
+        # Check if channel is enabled in current mode
+        mode_config = self.mode_configs[self.current_mode]
+        channel_config = mode_config['channels'].get(channel.id, {'enabled': True, 'volume': 1.0})
+
+        if not channel_config['enabled']:
+            # Channel disabled in current mode - skip generation
+            logger.debug(f"[{channel.id}] Skipped (disabled in {self.current_mode} mode)")
+            channel.status = "idle"
+            channel.current_task = None
+            return
 
         logger.info(f"[{channel.id}] Generating audio for request {request_id} via {channel.service_url}")
 
@@ -315,12 +370,15 @@ class ChannelManager:
                 if os.path.exists(tmp_path):
                     os.unlink(tmp_path)
 
-            # Apply volume adjustment
-            volume = data.get("volume", 1.0)
-            if volume != 1.0:
-                audio_data = audio_data * volume
+            # Apply volume adjustment (data volume + mode volume multiplier)
+            data_volume = data.get("volume", 1.0)
+            mode_volume = channel_config.get('volume', 1.0)
+            combined_volume = data_volume * mode_volume
+
+            if combined_volume != 1.0:
+                audio_data = audio_data * combined_volume
                 audio_data = np.clip(audio_data, -1.0, 1.0).astype(np.float32)
-                logger.info(f"[{channel.id}] Applied volume: {volume:.2f}")
+                logger.info(f"[{channel.id}] Applied volume: {combined_volume:.2f} (data: {data_volume:.2f} × mode: {mode_volume:.2f})")
 
             generation_time = (datetime.now() - start_time).total_seconds() * 1000
 
@@ -524,6 +582,34 @@ class ChannelManager:
             "metadata": metadata or {}
         }
         logger.info(f"Registered sync group '{sync_id}' with channels: {channel_ids}")
+
+    def set_mode(self, mode: str):
+        """
+        Switch audio mode (story, commentary, mixed).
+
+        Args:
+            mode: The mode to switch to ('story', 'commentary', or 'mixed')
+        """
+        if mode not in self.mode_configs:
+            raise ValueError(f"Invalid mode: {mode}. Must be one of: {list(self.mode_configs.keys())}")
+
+        self.current_mode = mode
+        config = self.mode_configs[mode]
+
+        # Update ducking config based on mode
+        self.ducking_config['foreground_channels'] = config['ducking']['foreground']
+        self.ducking_config['background_channels'] = config['ducking']['background']
+
+        logger.info(f"🎵 Switched to {config['name']}")
+        logger.info(f"   Foreground: {', '.join(config['ducking']['foreground'])}")
+        logger.info(f"   Background: {', '.join(config['ducking']['background'])}")
+
+        # Log channel status
+        for channel_id, channel_config in config['channels'].items():
+            if channel_config['enabled']:
+                logger.info(f"   [{channel_id}] Enabled (volume: {channel_config['volume']*100:.0f}%)")
+            else:
+                logger.info(f"   [{channel_id}] Disabled")
 
     async def generate_narration(
         self,

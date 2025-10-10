@@ -242,6 +242,19 @@ async def handle_control(data: dict):
                 ", ".join(channel_list)
             )
 
+        elif command == "set_mode":
+            mode = params.get("mode") or data.get("mode")
+
+            if not mode:
+                logger.warning("set_mode command missing mode parameter")
+                return
+
+            try:
+                channel_manager.set_mode(mode)
+                logger.info(f"Audio mode set to: {mode}")
+            except ValueError as e:
+                logger.error(f"Invalid audio mode: {e}")
+
         else:
             logger.warning(f"Unknown control command: {command}")
 
