@@ -57,15 +57,16 @@ Capture screenshots and record videos from Isaac Sim viewports. Generate visual 
 - Automatic output management
 
 ### 📡 WorldStreamer
-Stream Isaac Sim viewport content in real-time via SRT and RTMP protocols. Enable live streaming of 3D scenes and simulations for remote viewing, broadcasting, and collaborative workflows.
+Stream Isaac Sim viewport content in real-time via SRT, RTMP, and NDI protocols. Enable live streaming of 3D scenes and simulations for remote viewing, broadcasting, and production workflows with OBS integration.
 
 **Key Features:**
 - **SRT Streaming**: Low-latency streaming with automatic error recovery
-- **RTMP Streaming**: Compatible with streaming platforms and RTMP servers
+- **RTMP Streaming**: Direct streaming to platforms and RTMP servers
+- **NDI Streaming**: Professional production workflow integration
 - **Hardware Acceleration**: GPU-accelerated encoding for optimal performance
 - **Adaptive Bitrate**: Dynamic quality adjustment based on network conditions
-- **Multi-Protocol Support**: Both SRT and RTMP protocols in parallel
-- **OME Integration**: Powered by OvenMediaEngine for production-grade streaming
+- **OBS Integration**: Designed for manual stream composition with OBS Studio
+- **Single Active Protocol**: One streaming protocol active at a time (MCP shared endpoint)
 
 ## Support Infrastructure
 
