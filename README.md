@@ -175,10 +175,10 @@ Located in `~/agent-world/mcp-servers/`
 - **Simple Setup**: Lightweight Python scripts with minimal dependencies
 - **Available Servers**: WorldBuilder, WorldViewer, WorldSurveyor, WorldRecorder, WorldStreamer, Screenshot
 
-### 🐳 HTTP Streaming MCP Servers (Production/Cloud)
+### 🐳 HTTP MCP Servers (Production/Cloud)
 Located in `~/agent-world/docker/mcp-servers/`
 - **Container-Based**: Dockerized for scalable cloud deployment
-- **HTTP/SSE Streaming**: Server-sent events for real-time data streaming
+- **FastMCP with Streamable HTTP**: Modern MCP protocol using FastMCP framework
 - **Production Ready**: Built for high-availability production environments
 - **Cloud Native**: Designed for Kubernetes, Docker Swarm, or container orchestration
 
