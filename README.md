@@ -67,6 +67,28 @@ Stream Isaac Sim viewport content in real-time via SRT and RTMP protocols. Enabl
 - **Multi-Protocol Support**: Both SRT and RTMP protocols in parallel
 - **OME Integration**: Powered by OvenMediaEngine for production-grade streaming
 
+## Support Infrastructure
+
+### 🎵 Audio Generator (Agent Adventures)
+Multi-channel AI audio generation system designed as support infrastructure for the [Agent Adventures](https://github.com/sherndon79/agent-adventures) interactive streaming platform. Provides real-time audio synthesis for immersive 3D scene presentations.
+
+**Located in:** `docker/audio-generator/`
+
+**Key Features:**
+- **4-Channel Architecture**: Separate microservices for narration, commentary, ambient sound, and music
+- **Audio Mode Switching**: Story mode, commentary mode, and mixed mode with intelligent ducking
+- **WebSocket Integration**: Real-time coordination with Agent Adventures orchestrator
+- **SRT Streaming**: Individual audio streams for OBS composition (ports 9001-9004)
+- **AI-Powered Generation**:
+  - Narration: Kokoro TTS with voice blending and emotional control
+  - Music: Stable Audio Open for adaptive soundtracks
+  - Ambient: Stable Audio Open for environmental soundscapes
+  - Commentary: Kokoro TTS for behind-the-scenes narration
+- **Synchronized Playback**: Auto-ducking and sync groups for coordinated multi-channel audio
+
+**Integration:**
+Works seamlessly with Agent Adventures to provide atmospheric audio that adapts to AI-generated 3D scenes. Audio channels respond to scene changes, camera movements, and story progression in real-time.
+
 ## Quick Start
 
 Get up and running in minutes with the automated installer:
